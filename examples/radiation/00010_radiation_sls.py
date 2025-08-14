@@ -5,10 +5,8 @@
 
 import time
 import numpy as np
-
-from cpymad.madx import Madx
-
 import xtrack as xt
+
 
 # Import a thick sequence
 env = xt.load_madx_lattice('../../test_data/sls_2.0/b075_2024.09.25.madx')
