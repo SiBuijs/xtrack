@@ -6,6 +6,7 @@
 import time
 import numpy as np
 import xtrack as xt
+from matplotlib.animation import FuncAnimation
 
 
 # Import a thick sequence
@@ -127,213 +128,155 @@ for ii, mon in enumerate([mon_mean_mode, mon_quantum_mode]):
     ax3.set_xlabel('Turn')
 
 plt.show()
-# Twiss at the reference location (element 0)
-alfx = float(tw.alfx[0]); betx = float(tw.betx[0]); gamx = (1+alfx**2)/betx
-alfy = float(tw.alfy[0]); bety = float(tw.bety[0]); gamy = (1+alfy**2)/bety
 
-# Pull turn-by-turn data from the quantum-mode run
-nt = mon_quantum_mode.x.shape[1]
-ix, iy = 0, 1  # indices of the particles with x- and y-action
+# --- Twiss at the reference location (element 0)
+alfx = float(tw.alfx[0]);  betx = float(tw.betx[0]);  gamx = (1+alfx**2)/betx
+alfy = float(tw.alfy[0]);  bety = float(tw.bety[0]);  gamy = (1+alfy**2)/bety
+
+# --- Pull turn-by-turn data from the quantum-mode run
+nt        = mon_quantum_mode.x.shape[1]
+ix, iy    = 0, 1  # indices of the particles excited in x, y
+
 x_t  = mon_quantum_mode.x[ix, :].astype(float)
 px_t = mon_quantum_mode.px[ix, :].astype(float)
 y_t  = mon_quantum_mode.y[iy, :].astype(float)
 py_t = mon_quantum_mode.py[iy, :].astype(float)
-# Energy readout (use the “longitudinal” particle or average)
-E0 = float(line.particle_ref.energy0)
-delta_t = mon_quantum_mode.delta[2, :].astype(float)
-E_t = E0 * (1.0 + delta_t)
 
-# Courant–Snyder invariants (single particle each plane)
+# Courant–Snyder invariants / emittances
 emx_t = gamx*x_t**2 + 2*alfx*x_t*px_t + betx*px_t**2
 emy_t = gamy*y_t**2 + 2*alfy*y_t*py_t + bety*py_t**2
+
 emx_t = np.clip(emx_t, 0, None)
 emy_t = np.clip(emy_t, 0, None)
 
-# Precompute a normalized ellipse we will scale each frame
+# --- Precompute normalized ellipse shapes
 phi = np.linspace(0, 2*np.pi, 400)
-x_norm  = np.cos(phi)
-xp_norm = -(alfx*np.cos(phi) + np.sin(phi))    # this is p_x normalized by sqrt(eps/betx)
+c = np.cos(phi); s = np.sin(phi)
 
-fig = plt.figure(figsize=(10, 6))
-gs = fig.add_gridspec(2, 2, height_ratios=[1, 1.15], hspace=0.35, wspace=0.35)
-axx = fig.add_subplot(gs[0, 0]); axy = fig.add_subplot(gs[0, 1]); axe = fig.add_subplot(gs[1, :])
+x_norm  = c
+xp_norm = -(alfx*c + s)
+
+y_norm  = c
+yp_norm = -(alfy*c + s)
+
+# --- Figure & axes
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+
+plt.close('all')
+fig = plt.figure(figsize=(9.5, 6.2), constrained_layout=True)
+gs  = fig.add_gridspec(2, 2, height_ratios=[1, 1.1])
+
+axx = fig.add_subplot(gs[0, 0])   # x–px
+axy = fig.add_subplot(gs[0, 1])   # y–py
+axe = fig.add_subplot(gs[1, :])   # emittances vs turn
 
 for ax in (axx, axy):
-    ax.axhline(0, lw=0.5, alpha=0.3); ax.axvline(0, lw=0.5, alpha=0.3)
+    ax.axhline(0, lw=0.6, alpha=0.3)
+    ax.axvline(0, lw=0.6, alpha=0.3)
     ax.set_aspect('equal', adjustable='box')
+    ax.set_box_aspect(1)
 
-axx.set_xlabel("x [m]");    axx.set_ylabel(r"$p_x$ [rad]")
-axy.set_xlabel("y [m]");    axy.set_ylabel(r"$p_y$ [rad]")
-axe.set_xlabel("turn");     axe.set_ylabel(r"emittance $\varepsilon$ [m·rad]")
-fig.suptitle("Twiss Ellipses and Emittance vs Turn (Xtrack quantum mode)")
+axx.set_xlabel("x [m]");   axx.set_ylabel(r"$p_x$ [rad]")
+axy.set_xlabel("y [m]");   axy.set_ylabel(r"$p_y$ [rad]")
+axe.set_xlabel("turn");    axe.set_ylabel(r"emittance $\varepsilon$ [m·rad]")
 
-# Initial limits from first-turn invariants
+fig.suptitle("Twiss Ellipses and Emittance vs Turn (quantum mode)")
+
+# --- Initial limits from first-turn invariants
 pad = 1.4
 def plane_limits(eps, alpha, beta):
-    xr = np.sqrt(eps*beta)
-    pr = np.sqrt(eps*(1+alpha**2)/beta)
+    eps = max(eps, 1e-30)
+    xr  = np.sqrt(eps*beta)
+    pr  = np.sqrt(eps*(1+alpha**2)/beta)
     return (-pad*xr, pad*xr, -pad*pr, pad*pr)
 
-xlo,xhi,pxlo,pxhi = plane_limits(max(emx_t[0], 1e-16), alfx, betx)
-ylo,yhi,pylo,pyhi = plane_limits(max(emy_t[0], 1e-16), alfy, bety)
-axx.set_xlim(xlo,xhi); axx.set_ylim(pxlo,pxhi)
-axy.set_xlim(ylo,yhi); axy.set_ylim(pylo,pyhi)
+xlo,xhi,pxlo,pxhi = plane_limits(emx_t[0], alfx, betx)
+ylo,yhi,pylo,pyhi = plane_limits(emy_t[0], alfy, bety)
 
-# Artists
+axx.set_xlim(xlo,xhi);  axx.set_ylim(pxlo,pxhi)
+axy.set_xlim(ylo,yhi);  axy.set_ylim(pylo,pyhi)
+
+# --- Artists
 line_x, = axx.plot([], [], lw=2)
 line_y, = axy.plot([], [], lw=2)
+
 txt = axx.text(0.02, 0.02, "", transform=axx.transAxes,
                ha="left", va="bottom", fontsize=10,
-               bbox=dict(boxstyle="round,pad=0.25", fc="w", ec="0.8", alpha=0.8))
+               bbox=dict(boxstyle="round,pad=0.25", fc="w", ec="0.8", alpha=0.85))
 
-turns = np.arange(nt)
-emx_hist = np.full(nt, np.nan); emy_hist = np.full(nt, np.nan)
+turns     = np.arange(nt)
+emx_hist  = np.full(nt, np.nan)
+emy_hist  = np.full(nt, np.nan)
+
 line_emx, = axe.plot([], [], lw=1.8, label=r'$\varepsilon_x$')
 line_emy, = axe.plot([], [], lw=1.8, label=r'$\varepsilon_y$')
+
 pt_emx,   = axe.plot([], [], 'o', ms=4)
 pt_emy,   = axe.plot([], [], 'o', ms=4)
-axe.legend(loc="upper right")
+
 axe.set_xlim(0, nt)
 y0 = max(emx_t[0], emy_t[0], 1e-16)
 axe.set_ylim(0, 1.2*y0)
+axe.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), borderaxespad=0.)
 
+# --- Animation functions
 def init():
-    line_x.set_data([], []); line_y.set_data([], [])
-    line_emx.set_data([], []); line_emy.set_data([], [])
-    pt_emx.set_data([], []); pt_emy.set_data([], [])
+    for ln in (line_x, line_y, line_emx, line_emy, pt_emx, pt_emy):
+        ln.set_data([], [])
     txt.set_text("")
     return line_x, line_y, line_emx, line_emy, pt_emx, pt_emy, txt
 
 def update(i):
-    # Ellipses for current invariants
-    ex = max(emx_t[i], 0.0); ey = max(emy_t[i], 0.0)
+    ex = float(emx_t[i]); ey = float(emy_t[i])
+
+    # current ellipses
     x_  = np.sqrt(ex*betx) * x_norm
     px_ = np.sqrt(ex/betx) * xp_norm
-    y_  = np.sqrt(ey*bety) * x_norm
-    py_ = np.sqrt(ey/bety) * (-(alfy*np.cos(phi) + np.sin(phi)))
+    y_  = np.sqrt(ey*bety) * y_norm
+    py_ = np.sqrt(ey/bety) * yp_norm
 
     line_x.set_data(x_, px_)
     line_y.set_data(y_, py_)
 
-    # History curves
+    # histories
     emx_hist[i] = ex; emy_hist[i] = ey
     t = turns[:i+1]
     line_emx.set_data(t, emx_hist[:i+1])
     line_emy.set_data(t, emy_hist[:i+1])
-    pt_emx.set_data([i], [ex]); pt_emy.set_data([i], [ey])
 
-    # Autoscale if needed
-    y_now = np.nanmax([emx_hist[:i+1].max(), emy_hist[:i+1].max()])
-    ylo, yhi = axe.get_ylim()
+    pt_emx.set_data([i], [ex])
+    pt_emy.set_data([i], [ey])
+
+    # autoscale emittance panel if needed
+    y_now = np.nanmax([np.nanmax(emx_hist[:i+1]),
+                       np.nanmax(emy_hist[:i+1])])
+    _, yhi = axe.get_ylim()
     if y_now > 0.9*yhi:
         axe.set_ylim(0, 1.2*y_now)
 
     txt.set_text(
         f"turn: {i:5d}\n"
-        f"E: {E_t[i]: .3e} eV\n"
         f"εx: {ex:.3e}   εy: {ey:.3e}"
     )
     return line_x, line_y, line_emx, line_emy, pt_emx, pt_emy, txt
 
 anim = FuncAnimation(fig, update, frames=nt, init_func=init, blit=True, interval=30)
-plt.show()
 
-# Animations
-fig = plt.figure(figsize=(10, 6))
-gs = fig.add_gridspec(2, 2, height_ratios=[1, 1.1], hspace=0.35, wspace=0.35)
-axx = fig.add_subplot(gs[0, 0])        # x-x'
-axy = fig.add_subplot(gs[0, 1])        # y-y'
-axe = fig.add_subplot(gs[1, :])        # emittance time-series (spans bottom row)
+# --- Save animation as mp4 (requires ffmpeg installed)
+#anim.save("twiss_emittance.mp4", writer="ffmpeg", fps=30)
 
-for ax in (axx, axy):
-    ax.axhline(0, lw=0.5, alpha=0.3)
-    ax.axvline(0, lw=0.5, alpha=0.3)
-    ax.set_aspect('equal', adjustable='box')
+from tqdm import tqdm
+import matplotlib.animation as animation
 
-axx.set_xlabel("x");    axx.set_ylabel("x'")
-axy.set_xlabel("y");    axy.set_ylabel("y'")
-axe.set_xlabel("turn"); axe.set_ylabel("emittance [mrad]")
+# --- Save animation as mp4 with progress bar (requires ffmpeg installed)
+writer = animation.FFMpegWriter(fps=30)
 
-fig.suptitle("Twiss Ellipses and Emittance vs Turns")
-
-# Axis limits for phase space from initial sizes
-emx0 = gamx*state[0]**2 + 2*alfx*state[0]*state[1] + betx*state[1]**2 + 1e-16
-emy0 = gamy*state[2]**2 + 2*alfy*state[2]*state[3] + bety*state[3]**2 + 1e-16
-pad = 1.4
-axx.set_xlim(-pad*np.sqrt(emx0*betx), pad*np.sqrt(emx0*betx))
-axx.set_ylim(-pad*np.sqrt(emx0*betx), pad*np.sqrt(emx0*betx))
-axy.set_xlim(-pad*np.sqrt(emy0*bety), pad*np.sqrt(emy0*bety))
-axy.set_ylim(-pad*np.sqrt(emy0*(1+alfy**2)/bety), pad*np.sqrt(emy0*(1+alfy**2)/bety))
-
-# Artists for phase-space ellipses
-line_x, = axx.plot([], [], lw=2)
-line_y, = axy.plot([], [], lw=2)
-
-# Status text (attach to an Axes so blitting is happy)
-txt = axx.text(0.02, 0.02, "", transform=axx.transAxes,
-               ha="left", va="bottom", fontsize=10,
-               bbox=dict(boxstyle="round,pad=0.25", fc="w", ec="0.8", alpha=0.8))
-
-# --- Emittance history + artists ---
-turns = np.arange(N_FODO)
-emx_hist = np.full(N_FODO, np.nan)
-emy_hist = np.full(N_FODO, np.nan)
-
-line_emx, = axe.plot([], [], lw=1.8, label=r'$\varepsilon_x$')
-line_emy, = axe.plot([], [], lw=1.8, label=r'$\varepsilon_y$')
-pt_emx,   = axe.plot([], [], 'o', ms=4)
-pt_emy,   = axe.plot([], [], 'o', ms=4)
-axe.legend(loc="upper right")
-axe.set_xlim(0, N_FODO)
-y0 = max(emx0, emy0)
-axe.set_ylim(0, 1.2*y0 if y0 > 0 else 1.0)
-
-def init():
-    line_x.set_data([], []); line_y.set_data([], [])
-    line_emx.set_data([], []); line_emy.set_data([], [])
-    pt_emx.set_data([], []); pt_emy.set_data([], [])
-    txt.set_text("")
-    return line_x, line_y, line_emx, line_emy, pt_emx, pt_emy, txt
-
-def update(frame):
-    global state, Energy, T_FODO, E_avg, n_dot
-
-    # --- one simulation step (same as before) ---
-    state, Energy, T_FODO, E_avg, n_dot, emx, emy, nphot = step(
-        frame, state, Energy, T_FODO, E_avg, n_dot
+with tqdm(total=nt, desc="Rendering MP4") as pbar:
+    anim.save(
+        "twiss_emittance.mp4",
+        writer=writer,
+        progress_callback=lambda i, n: pbar.update()
     )
 
-    # phase-space ellipses
-    x, xp = twiss_ellipse(alfx, betx, emx)
-    y, yp = twiss_ellipse(alfy, bety, emy)
-    line_x.set_data(x, xp)
-    line_y.set_data(y, yp)
-
-    # emittance history
-    emx_hist[frame] = emx
-    emy_hist[frame] = emy
-    t = turns[:frame+1]
-    line_emx.set_data(t, emx_hist[:frame+1])
-    line_emy.set_data(t, emy_hist[:frame+1])
-    pt_emx.set_data([frame], [emx])
-    pt_emy.set_data([frame], [emy])
-
-    # autoscale y if we approach the top
-    y_now = np.nanmax([emx_hist[:frame+1].max(), emy_hist[:frame+1].max()])
-    ylo, yhi = axe.get_ylim()
-    if y_now > 0.9*yhi:
-        axe.set_ylim(0, 1.2*y_now)
-
-    # status text
-    txt.set_text(
-        f"turn: {frame:5d}\n"
-        f"E: {Energy: .3e} eV\n"
-        f"εx: {emx:.3e}   εy: {emy:.3e}\n"
-        f"photons/turn: {nphot}"
-    )
-
-    return line_x, line_y, line_emx, line_emy, pt_emx, pt_emy, txt
-
-anim = FuncAnimation(fig, update, frames=N_FODO, init_func=init,
-                     blit=True, interval=30)
 plt.show()
