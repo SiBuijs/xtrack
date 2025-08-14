@@ -179,9 +179,9 @@ for ax in (axx, axy):
 
 axx.set_xlabel("x [m]");   axx.set_ylabel(r"$p_x$ [rad]")
 axy.set_xlabel("y [m]");   axy.set_ylabel(r"$p_y$ [rad]")
-axe.set_xlabel("turn");    axe.set_ylabel(r"emittance $\varepsilon$ [m·rad]")
+axe.set_xlabel("turn");    axe.set_ylabel(r"emittance $\epsilon$ [m·rad]")
 
-fig.suptitle("Twiss Ellipses and Emittance vs Turn (quantum mode)")
+fig.suptitle("Phase Space Ellipses vs Turn (quantum)")
 
 # --- Initial limits from first-turn invariants
 pad = 1.4
@@ -209,8 +209,8 @@ turns     = np.arange(nt)
 emx_hist  = np.full(nt, np.nan)
 emy_hist  = np.full(nt, np.nan)
 
-line_emx, = axe.plot([], [], lw=1.8, label=r'$\varepsilon_x$')
-line_emy, = axe.plot([], [], lw=1.8, label=r'$\varepsilon_y$')
+line_emx, = axe.plot([], [], lw=1.8, label=r'$\epsilon_x$')
+line_emy, = axe.plot([], [], lw=1.8, label=r'$\epsilon_y$')
 
 pt_emx,   = axe.plot([], [], 'o', ms=4)
 pt_emy,   = axe.plot([], [], 'o', ms=4)
@@ -257,15 +257,13 @@ def update(i):
 
     txt.set_text(
         f"turn: {i:5d}\n"
-        f"εx: {ex:.3e}   εy: {ey:.3e}"
+        f"ϵx: {ex:.3e}   ϵy: {ey:.3e}"
     )
     return line_x, line_y, line_emx, line_emy, pt_emx, pt_emy, txt
 
 anim = FuncAnimation(fig, update, frames=nt, init_func=init, blit=True, interval=30)
 
 # --- Save animation as mp4 (requires ffmpeg installed)
-#anim.save("twiss_emittance.mp4", writer="ffmpeg", fps=30)
-
 from tqdm import tqdm
 import matplotlib.animation as animation
 
