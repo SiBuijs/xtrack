@@ -39,6 +39,9 @@ fitter = FieldFitter(
 
 fitter.fit()
 
+print("Fit parameters:")
+print(fitter.df_fit_pars)
+
 for der in range(0, deg + 1):
     fitter.plot_fields(der=der)
 
