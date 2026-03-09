@@ -12,7 +12,7 @@ import time
 interval = 30
 dx = 0.001
 dy = 0.001
-multipole_order = 2
+multipole_order = 6
 n_steps = 5000
 
 # Make initial particles
@@ -72,10 +72,16 @@ fitter = FieldFitter(
     distance_unit=1,
     min_region_size=10,
     deg=multipole_order - 1,
-    field_tol=1e-4,
+    field_tol=1e-8,
 )
 fitter.fit()
 df_fit_pars = fitter.df_fit_pars
+
+for der in range(0, multipole_order + 1):
+    fitter.plot_fields(der=der)
+    plt.show()
+
+exit()
 
 # Build solenoid using SplineBorisSequence - automatically creates one SplineBoris
 # element per polynomial piece with n_steps based on the data point count

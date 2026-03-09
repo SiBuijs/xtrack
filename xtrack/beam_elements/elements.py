@@ -1189,7 +1189,7 @@ class SplineBoris(BeamElement):
     @staticmethod
     def _validate_hermite_values(name, values):
         if values is None:
-            raise ValueError(f"{name} must be provided as 5 Hermite values")
+            values = np.zeros(5)
         arr = np.asarray(values, dtype=float).ravel()
         if arr.shape[0] != 5:
             raise ValueError(
@@ -1317,8 +1317,8 @@ class SplineBoris(BeamElement):
                  kn=None,
                  ks=None,
                  multipole_order=1,
-                 s_start=None,
-                 s_end=None,
+                 s_start=0,
+                 s_end=0,
                  length=None,
                  n_steps=1,
                  shift_x=0.0,
@@ -1362,13 +1362,16 @@ class SplineBoris(BeamElement):
             super().__init__(**kwargs)
             return
 
+        if '_buffer' in kwargs and bs is None:
+            kwargs.setdefault('par_table', [0.0])
+            super().__init__(**kwargs)
+            return
+
         if 'par_table' in kwargs:
             raise TypeError(
                 "SplineBoris(par_table=...) is no longer supported. "
                 "Pass Hermite inputs instead: bs=..., kn=..., ks=..., s_start=..., s_end=..."
             )
-        if s_start is None or s_end is None:
-            raise ValueError("s_start and s_end must be provided for Hermite-to-polynomial conversion")
         if not isinstance(multipole_order, (int, np.integer)) or int(multipole_order) <= 0:
             raise ValueError("multipole_order must be a positive integer")
 

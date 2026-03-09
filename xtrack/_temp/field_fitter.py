@@ -35,8 +35,13 @@ class FieldFitter:
         ``distance_unit=0.001`` when the input coordinates are in millimetres.
     min_region_size :
         Minimum number of points per longitudinal fitting region.
+        Ignored when ``n_pieces`` is set.
     deg :
         Maximum transverse derivative order to compute and fit.
+    n_pieces : int, optional
+        If set, override automatic region detection and use this many
+        equally-spaced polynomial pieces for all field components.
+        The ``min_region_size`` parameter is ignored in this case.
 
     DataFrames
     ----------
@@ -64,6 +69,7 @@ class FieldFitter:
             min_region_size=10,
             deg=2,
             field_tol=1e-3,
+            n_pieces=None,
     ):
         # Parameters
         self.xy_point = xy_point
@@ -74,6 +80,7 @@ class FieldFitter:
         self.length = None
         self.deg = deg
         self.field_tol = field_tol
+        self.n_pieces = n_pieces
 
         # DataFrames
         self.df_raw_data = None
@@ -209,6 +216,8 @@ class FieldFitter:
         # MultiIndex to estimate transverse scaling for derivative tolerance.
         x_max = np.max(np.abs(self.df_raw_data.index.get_level_values("X")))
 
+        n_data = len(self.df_on_axis_raw[(fields[0], 0)].values)
+
         for field in fields:
             # Bs only has der = 0; other fields range 0..deg
             ders = [0] if field == "Bs" else range(0, self.deg + 1)
@@ -223,6 +232,12 @@ class FieldFitter:
                     # set to single region with zero parameters and skip expensive processing
                     field_extrema = np.array([0, len(series) - 1], dtype=int)
                     to_fit = False
+                elif self.n_pieces is not None:
+                    # Manual override: equally-spaced regions
+                    field_extrema = np.round(
+                        np.linspace(0, n_data - 1, self.n_pieces + 1)
+                    ).astype(int)
+                    to_fit = True
                 else:
                     # SPLIT REGIONS AREA
                     # choose prominence: more permissive for Bs
@@ -258,9 +273,9 @@ class FieldFitter:
                     to_fit = True
 
                 # number of pieces is number of extrema - 1 (ensure at least 1)
-                n_pieces = max(1, len(field_extrema) - 1)
-                print(f"{field} der={der} -> n_pieces={n_pieces}")
-                self._set_df_fit_pars(der, n_pieces, field, field_extrema, to_fit)
+                actual_n_pieces = max(1, len(field_extrema) - 1)
+                print(f"{field} der={der} -> n_pieces={actual_n_pieces}")
+                self._set_df_fit_pars(der, actual_n_pieces, field, field_extrema, to_fit)
 
 
         self.df_fit_pars.set_index(['field_component', 'derivative_x', 'region_name', 's_start', 's_end', 'idx_start', 'idx_end', 'param_index'],
