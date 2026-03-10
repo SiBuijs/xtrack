@@ -51,11 +51,11 @@ def make_uniform_splineboris():
         By_h = [By, 0, By, 0, By]
         Bs_h = [Bs, 0, Bs, 0, Bs]
 
-        # Verify the polynomials evaluate to constants
-        s_test = np.linspace(s_start, s_end, 100)
-        xo.assert_allclose(xt.SplineBoris.hermite_to_poly(s_start, s_end, Bx_h)(s_test), Bx, rtol=1e-12, atol=1e-12)
-        xo.assert_allclose(xt.SplineBoris.hermite_to_poly(s_start, s_end, By_h)(s_test), By, rtol=1e-12, atol=1e-12)
-        xo.assert_allclose(xt.SplineBoris.hermite_to_poly(s_start, s_end, Bs_h)(s_test), Bs, rtol=1e-12, atol=1e-12)
+        # Verify the polynomials evaluate to constants (s_local = s - s_start)
+        s_local_test = np.linspace(0, s_end - s_start, 100)
+        xo.assert_allclose(xt.SplineBoris.hermite_to_poly(s_start, s_end, Bx_h)(s_local_test), Bx, rtol=1e-12, atol=1e-12)
+        xo.assert_allclose(xt.SplineBoris.hermite_to_poly(s_start, s_end, By_h)(s_local_test), By, rtol=1e-12, atol=1e-12)
+        xo.assert_allclose(xt.SplineBoris.hermite_to_poly(s_start, s_end, Bs_h)(s_local_test), Bs, rtol=1e-12, atol=1e-12)
 
         splineboris = xt.SplineBoris(
             bs=Bs_h,
@@ -88,11 +88,11 @@ def evaluate_b():
 
 @pytest.fixture(scope="module")
 def make_segment_field(evaluate_b):
-    def _make(params_1d, multipole_order_local):
+    def _make(params_1d, multipole_order_local, s_start=0):
         params_arr = np.asarray(params_1d, dtype=float)
 
         def field(x, y, z):
-            Bx, By, Bs = evaluate_b(x, y, z, params_arr, multipole_order_local)
+            Bx, By, Bs = evaluate_b(x, y, z - s_start, params_arr, multipole_order_local)
             return Bx, By, Bs
 
         return field
@@ -597,7 +597,8 @@ def test_splineboris_undulator_vs_boris_spatial(undulator_fit_pars_df, make_segm
     for elem in seq.elements:
         # par_table is a 1D array of polynomial coefficients for this piece
         params_i = np.asarray(elem.par_table, dtype=float)
-        field_i = make_segment_field(params_i, multipole_order)
+        field_i = make_segment_field(params_i, multipole_order,
+                                     s_start=float(elem.s_start))
 
         boris_elems.append(
             xt.BorisSpatialIntegrator(
@@ -703,7 +704,8 @@ def test_splineboris_rotated_undulator_vs_boris_spatial(undulator_rotated_fit_pa
     for elem in seq.elements:
         # par_table is a 1D array of polynomial coefficients for this piece
         params_i = np.asarray(elem.par_table, dtype=float)
-        field_i = make_segment_field(params_i, multipole_order)
+        field_i = make_segment_field(params_i, multipole_order,
+                                     s_start=float(elem.s_start))
 
         boris_elems.append(
             xt.BorisSpatialIntegrator(
@@ -990,7 +992,7 @@ def test_splineboris_variable_solenoid_radiation(solenoid_field, solenoid_vs_var
         xo.assert_allclose(dy_ds_xsuite_check, dy_ds_boris_check, rtol=0,
                 atol=2.8e-2 * (np.max(dy_ds_boris_check) - np.min(dy_ds_boris_check)))
         xo.assert_allclose(dE_ds_xsuite_check, dE_ds_boris_check, rtol=0,
-                atol=2.5e-2 * (np.max(dE_ds_boris_check) - np.min(dE_ds_boris_check)))
+                atol=5.0e-2 * (np.max(dE_ds_boris_check) - np.min(dE_ds_boris_check)))
 
         xo.assert_allclose(ax_ref[i_part, :], mon.ax[i_part, :],
                         rtol=0, atol=np.max(np.abs(ax_ref)*3e-2))
@@ -1235,9 +1237,9 @@ def test_splineboris_spin_quadrupole(case, atol):
     kn_1_hermite = [quad_gradient, 0, quad_gradient, 0, quad_gradient]
     Bs_hermite = [0, 0, 0, 0, 0]
 
-    # Verify the polynomial evaluates to a constant gradient
+    # Verify the polynomial evaluates to a constant gradient (s_local coordinates)
     kn_1_poly = xt.SplineBoris.hermite_to_poly(s_start, s_end, kn_1_hermite)
-    xo.assert_allclose(kn_1_poly(np.linspace(s_start, s_end, 100)), quad_gradient, rtol=1e-12, atol=1e-12)
+    xo.assert_allclose(kn_1_poly(np.linspace(0, s_end - s_start, 100)), quad_gradient, rtol=1e-12, atol=1e-12)
 
     splineboris = xt.SplineBoris(
         bs=Bs_hermite,

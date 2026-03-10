@@ -136,27 +136,36 @@ if run_study_1:
           f"{interval} m "
           f"({interval / n_spline_intervals * 1e3:.1f} mm per interval)")
 
-    # Field error (constant for all steps_per_point, since fit is fixed)
-    z_eval = np.linspace(0, interval, 10_000)
-    x_eval_pt, y_eval_pt = 1e-3, 1e-3
-    _, _, Bs_true = sf.get_field(
-        x_eval_pt * np.ones_like(z_eval),
-        y_eval_pt * np.ones_like(z_eval),
-        z_eval,
-    )
-    Bs_true_peak = np.max(np.abs(Bs_true))
+    # Field error along reference trajectory (constant, since fit is fixed)
+    boris_s1_ref = xt.BorisSpatialIntegrator(
+        fieldmap_callable=get_field, s_start=0, s_end=interval,
+        n_steps=n_spline_intervals)
+    boris_s1_ref.log_trajectories = True
+    p_tmp = p0.copy()
+    boris_s1_ref.track(p_tmp)
+    traj_x_s1 = np.array(boris_s1_ref.x_log)[:, 0]
+    traj_y_s1 = np.array(boris_s1_ref.y_log)[:, 0]
+    traj_z_s1 = np.clip(np.array(boris_s1_ref.z_log)[:, 0], 0, interval)
+    Bx_true_s1, By_true_s1, Bs_true_s1 = sf.get_field(
+        traj_x_s1, traj_y_s1, traj_z_s1)
+    B_mag_peak_s1 = np.max(np.sqrt(
+        Bx_true_s1**2 + By_true_s1**2 + Bs_true_s1**2))
+
     seq_for_field = xt.SplineBorisSequence(
         df_fit_pars=df_fit_pars,
         multipole_order=multipole_order,
         steps_per_point=1,
     )
-    Bs_spline = np.array([
-        seq_for_field.evaluate_field(x_eval_pt, y_eval_pt, s)[2]
-        for s in z_eval])
-    field_err_s1 = np.max(np.abs(Bs_spline - Bs_true)) / Bs_true_peak
-    print(f"Field error (|dBs|/Bs_peak): {field_err_s1:.4e}")
+    B_spline_s1 = np.array([
+        seq_for_field.evaluate_field(tx, ty, tz)
+        for tx, ty, tz in zip(traj_x_s1, traj_y_s1, traj_z_s1)])
+    field_err_s1 = np.max(np.sqrt(
+        (B_spline_s1[:, 0] - Bx_true_s1)**2 +
+        (B_spline_s1[:, 1] - By_true_s1)**2 +
+        (B_spline_s1[:, 2] - Bs_true_s1)**2)) / B_mag_peak_s1
+    print(f"Field error (|dB|/|B|_peak on trajectory): {field_err_s1:.4e}")
 
-    steps_per_point_list = [1, 2, 4, 8]#, 16]
+    steps_per_point_list = [1, 2, 4, 8, 16]
     methods = ["SplineBoris", "BorisSpatial", "VariableSolenoid"]
     results = {
         m: {"n_steps": [], "steps_per_point": [], "median_s": [],
@@ -257,7 +266,7 @@ if run_study_1:
             ax.loglog(results[m]["n_steps"], results[m][ck],
                       marker=markers[m], label=m)
         ax.axhline(field_err_s1, color="C3", ls=":", alpha=0.7,
-                   label=r"$|\Delta B_s| / B_{s,\mathrm{peak}}$")
+                   label=r"$|\Delta \mathbf{B}| / |\mathbf{B}|_\mathrm{peak}$ (on trajectory)")
         ax.set_xlabel(r"$n_{\mathrm{steps}}$")
         ax.set_ylabel(cl)
         ax.set_title(f"{cl} vs number of integration steps")
@@ -283,7 +292,7 @@ if run_study_1:
             ax.loglog(results[m]["median_s"], results[m][ck],
                       marker=markers[m], label=m)
         ax.axhline(field_err_s1, color="C3", ls=":", alpha=0.7,
-                   label=r"$|\Delta B_s| / B_{s,\mathrm{peak}}$")
+                   label=r"$|\Delta \mathbf{B}| / |\mathbf{B}|_\mathrm{peak}$ (on trajectory)")
         ax.set_xlabel(r"Median computing time [s]")
         ax.set_ylabel(cl)
         ax.set_title(f"{cl} vs computation time")
@@ -306,7 +315,7 @@ if run_study_2:
     spp_s2 = 1                # steps_per_point fixed at 1
     total_steps_s2 = n_data_points_s2 - 1  # = 10000
 
-    n_pieces_list = [5, 10, 20, 50, 100, 200, 500, 1000, 2000, 3000]
+    n_pieces_list = [5, 10, 20, 50, 100, 200, 500, 1000]#, 2000, 3000]
 
     results_field = {
         "n_pieces": [], "median_s": [],

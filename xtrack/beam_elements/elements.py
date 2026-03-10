@@ -1236,8 +1236,9 @@ class SplineBoris(BeamElement):
         Returns
         -------
         numpy.polynomial.Polynomial
-            Polynomial in *s* that interpolates the given boundary data and
-            whose mean over ``[s_start, s_end]`` equals *average*.
+            Polynomial in *s_local* (where ``s_local = s - s_start``) that
+            interpolates the given boundary data and whose mean over
+            ``[0, s_end - s_start]`` equals *average*.
         """
 
         if len(coeffs) != 5:
@@ -1245,7 +1246,7 @@ class SplineBoris(BeamElement):
 
         c1, c2, c3, c4, c5 = coeffs
         L = s_end - s_start
-        t = np.polynomial.Polynomial([-s_start / L, 1 / L])
+        t = np.polynomial.Polynomial([0, 1 / L])  # t = s_local / L
 
         # Basis functions on [0, 1]
         b1_coeffs = [1, 0, -18, 32, -15]
@@ -1429,7 +1430,7 @@ class SplineBoris(BeamElement):
 
         params = np.array(self.par_table)
         Bx, By, Bs = evaluate_B(
-            x - self.shift_x, y - self.shift_y, s,
+            x - self.shift_x, y - self.shift_y, s - self.s_start,
             params, self.multipole_order,
         )
         return Bx, By, Bs
@@ -1548,10 +1549,32 @@ class SplineBorisSequence:
                     grp.sort_values('param_index')['param_value']
                     .values.astype(float)
                 )
-                piece_poly = SplineBoris.hermite_to_poly(
-                    float(piece_s_start), float(piece_s_end), hermite_vals
-                ).convert()
-                coef = piece_poly.coef
+                ps = float(piece_s_start)
+                pe = float(piece_s_end)
+                if ps == region_start and pe == region_end:
+                    region_poly = SplineBoris.hermite_to_poly(
+                        ps, pe, hermite_vals
+                    )
+                else:
+                    piece_poly = SplineBoris.hermite_to_poly(
+                        ps, pe, hermite_vals
+                    )
+                    a = region_start - ps
+                    b = region_end - ps
+                    L_sub = b - a
+                    dpoly = piece_poly.deriv()
+                    integ = piece_poly.integ()
+                    new_hermite = np.array([
+                        float(piece_poly(a)),
+                        float(dpoly(a)),
+                        float(piece_poly(b)),
+                        float(dpoly(b)),
+                        float((integ(b) - integ(a)) / L_sub),
+                    ])
+                    region_poly = SplineBoris.hermite_to_poly(
+                        region_start, region_end, new_hermite
+                    )
+                coef = region_poly.convert().coef
                 coef_out = np.zeros(num_coeffs, dtype=float)
                 coef_out[:len(coef)] = coef
 

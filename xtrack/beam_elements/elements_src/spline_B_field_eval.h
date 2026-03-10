@@ -5,6 +5,8 @@
 #define _SPLINE_B_FIELD_EVAL_H
 
 // Auto-generated symbolic field expressions for B
+// NOTE: 's' is the local coordinate within the element (s_local = s - s_start),
+//        not the global s-coordinate along the beamline.
 GPUFUN
 void evaluate_B(const double x, const double y, const double s, const double *params, const int multipole_order, double *Bx_out, double *By_out, double *Bs_out){
 

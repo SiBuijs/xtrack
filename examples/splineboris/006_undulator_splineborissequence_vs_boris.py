@@ -144,12 +144,12 @@ if __name__ == "__main__":
           f"{n_intervals} intervals (spp=1)")
 
     # ── Reference solution ───────────────────────────────────────────────────
-    # Pre-computed with SplineBorisSequence (steps_per_point=32).
+    # Pre-computed with SplineBorisSequence (steps_per_point=64).
     # Uncomment the block below to recompute:
 
     # recompute_reference = True
     # if recompute_reference:
-    #     spp_ref = 32
+    #     spp_ref = 64
     #     print(f"\nComputing reference (SplineBorisSequence, spp={spp_ref})…")
     #     seq_hi = xt.SplineBorisSequence(
     #         df_fit_pars=df_fit_pars,
@@ -186,10 +186,10 @@ if __name__ == "__main__":
     #     print(f"    |dy|  = {abs(p_lo.y[0] - y_ref[0]):.2e}")
     #     print(f"    |dpy| = {abs(p_lo.py[0] - py_ref[0]):.2e}")
 
-    x_ref = np.array([1.78760521260834158e-03])
-    px_ref = np.array([9.32069920346281116e-05])
-    y_ref = np.array([5.91477244779323589e-05])
-    py_ref = np.array([-5.40107132485773801e-05])
+    x_ref = np.array([1.78760557712828402e-03])
+    px_ref = np.array([9.32072832640937443e-05])
+    y_ref = np.array([5.91476566940394669e-05])
+    py_ref = np.array([-5.40107590347957501e-05])
 
     def compute_errors(p):
         ex = np.max(np.abs((p.x - x_ref) / x_ref))

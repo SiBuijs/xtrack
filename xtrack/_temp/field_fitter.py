@@ -253,7 +253,7 @@ class FieldFitter:
                     field_extrema = np.append(field_extrema, len(series) - 1)
 
                     # split long regions while ensuring each part has at least `min_region_size` points
-                    this_min_region_size = self.min_region_size if der == 0 else self.min_region_size // 2
+                    this_min_region_size = self.min_region_size
                     new_extrema = [int(field_extrema[0])]
                     for left, right in zip(field_extrema[:-1], field_extrema[1:]):
                         length = int(right - left)
@@ -414,7 +414,7 @@ class FieldFitter:
             ] = param_value
 
         idx_slice = self.df_on_axis_fit.index[idx_left:idx_right + 1]
-        self.df_on_axis_fit.loc[idx_slice, (field, der_order)] = poly(s_region)
+        self.df_on_axis_fit.loc[idx_slice, (field, der_order)] = poly(s_region - s_left)
 
     # PRIVATE
     # This method loops over all fields and derivatives and fits polynomials to each region.
