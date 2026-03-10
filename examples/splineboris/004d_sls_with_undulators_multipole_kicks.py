@@ -74,16 +74,34 @@ env.new("corr2", xt.Multipole, knl=["k0l_corr2"], ksl=["k0sl_corr2"])
 env.new("corr3", xt.Multipole, knl=["k0l_corr3"], ksl=["k0sl_corr3"])
 env.new("corr4", xt.Multipole, knl=["k0l_corr4"], ksl=["k0sl_corr4"])
 
-# Place correctors close to requested locations without slicing nearby drifts
-piecewise_undulator.insert(
-    [
-        env.place("corr1", at=0.02),
-        env.place("corr2", at=0.1),
-        env.place("corr3", at=l_wig - 0.1),
-        env.place("corr4", at=l_wig - 0.02),
-    ],
-    s_tol=5e-3,
-)
+# Insert correctors at nearest existing boundary (no slicing, robust for reuse)
+target_positions = {
+    "corr1": 0.02,
+    "corr2": 0.1,
+    "corr3": l_wig - 0.1,
+    "corr4": l_wig - 0.02,
+}
+base_names = list(piecewise_undulator.element_names)
+tt_und = piecewise_undulator.get_table()
+boundary_positions = [float(tt_und["s", nn]) for nn in base_names]
+boundary_positions.append(l_wig)
+
+corrector_insertions = {}
+for corr_name, s_target in target_positions.items():
+    idx = min(range(len(boundary_positions)), key=lambda ii: abs(boundary_positions[ii] - s_target))
+    corrector_insertions.setdefault(idx, []).append(corr_name)
+    print(f"{corr_name}: requested s={s_target:.4f}, inserting at boundary s={boundary_positions[idx]:.4f}")
+
+names_with_correctors = []
+for ii, ee_name in enumerate(base_names):
+    if ii in corrector_insertions:
+        names_with_correctors.extend(corrector_insertions[ii])
+    names_with_correctors.append(ee_name)
+if len(base_names) in corrector_insertions:
+    names_with_correctors.extend(corrector_insertions[len(base_names)])
+
+piecewise_undulator = xt.Line(env=env, element_names=names_with_correctors)
+piecewise_undulator.particle_ref = p0.copy()
 
 opt = piecewise_undulator.match(
     solve=False,
@@ -129,9 +147,10 @@ wiggler_places = [
 ]
 
 tt = line_sls.get_table()
-for wig_place in wiggler_places:
+for ii, wig_place in enumerate(wiggler_places):
+    und_this = piecewise_undulator.replicate(suffix=f"ins{ii}")
     print(f"Inserting piecewise_undulator {wig_place} at {tt['s', wig_place]}")
-    line_sls.insert(piecewise_undulator, anchor="start", at=tt["s", wig_place])
+    line_sls.insert(und_this, anchor="start", at=tt["s", wig_place])
 
 line_sls.build_tracker()
 tw_sls = line_sls.twiss4d(radiation_integrals=True)
