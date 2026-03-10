@@ -198,7 +198,7 @@ plt.close('all')
 tw_sls.plot('x y')
 tw_sls.plot('betx bety', 'dx dy')
 tw_sls.plot('betx2 bety2')
-plt.show(block=False)
+plt.show()
 
 #['name', 's', 'x', 'px', 'y', 'py', 'zeta', 'delta', 'ptau', 'W_matrix', 'kin_px', 'kin_py', 'kin_ps', 'kin_xprime',
 # 'kin_yprime', 'env_name', 'betx', 'bety', 'alfx', 'alfy', 'gamx', 'gamy', 'dx', 'dpx', 'dy', 'dpy', 'dx_zeta', 'dpx_zeta',
@@ -234,9 +234,6 @@ print()
 print(f"Equilibrium emittances:")
 print(f"  eq_gemitt_x = {tw_sls.rad_int_eq_gemitt_x:.4e}")
 print(f"  eq_gemitt_y = {tw_sls.rad_int_eq_gemitt_y:.4e}")
-print(f"  eq_gemitt_zeta = {tw_sls.rad_int_eq_gemitt_zeta:.4e}")
-print()
-print(f"Energy loss per turn: {tw_sls.rad_int_eneloss_turn:.4e} eV")
 print()
 print(f"C^-: {tw_sls.c_minus:.4e}")
 print()

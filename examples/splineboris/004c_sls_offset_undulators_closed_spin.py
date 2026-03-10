@@ -48,7 +48,7 @@ field_fitter = FieldFitter(
     raw_data=df_raw_data,
     xy_point=(0, 0),
     distance_unit=distance_unit,
-    min_region_size=10,
+    min_region_size=5,
     deg=multipole_order-1,
 )
 
@@ -134,12 +134,11 @@ opt = piecewise_undulator.match(
 )
 opt.step(2)
 
-
 # tw_undulator_corr = piecewise_undulator.twiss4d(betx=1, bety=1, include_collective=True)
 # tw_undulator_corr.plot('x y')
 # tw_undulator_corr.plot('betx bety', 'dx dy')
 # plt.show()
-
+# exit()
 wiggler_places = [
     'ars02_uind_0500_1',
     'ars03_uind_0380_1',
@@ -161,7 +160,7 @@ for wig_place in wiggler_places:
 
 line_offset.build_tracker()
 
-tw_offset = line_offset.twiss4d(radiation_integrals=True, spin=True, polarization=True)
+tw_offset = line_offset.twiss4d(radiation_integrals=True)#, spin=True, polarization=True)
 
 # Plotting:
 import matplotlib.pyplot as plt
@@ -169,9 +168,11 @@ plt.close('all')
 tw_offset.plot('x y')
 tw_offset.plot('betx bety', 'dx dy')
 tw_offset.plot('betx2 bety2')
-tw_offset.plot('spin_x spin_z')
-tw_offset.plot('spin_y')
 plt.show()
+
+# tw_offset.plot('spin_x spin_z')
+# tw_offset.plot('spin_y')
+# plt.show()
 
 #['name', 's', 'x', 'px', 'y', 'py', 'zeta', 'delta', 'ptau', 'W_matrix', 'kin_px', 'kin_py', 'kin_ps', 'kin_xprime',
 # 'kin_yprime', 'env_name', 'betx', 'bety', 'alfx', 'alfy', 'gamx', 'gamy', 'dx', 'dpx', 'dy', 'dpy', 'dx_zeta', 'dpx_zeta',
@@ -207,12 +208,7 @@ print()
 print(f"Equilibrium emittances:")
 print(f"  eq_gemitt_x = {tw_offset.rad_int_eq_gemitt_x:.4e}")
 print(f"  eq_gemitt_y = {tw_offset.rad_int_eq_gemitt_y:.4e}")
-print(f"  eq_gemitt_zeta = {tw_offset.rad_int_eq_gemitt_zeta:.4e}")
-print()
-print(f"Energy loss per turn: {tw_offset.rad_int_eneloss_turn:.4e} eV")
 print()
 print(f"C^-: {tw_offset.c_minus:.4e}")
-print()
-print(f"Spin polarization: {tw_offset.spin_polarization_eq:.4e}")
 print()
 print("=" * 80)
