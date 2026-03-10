@@ -1,3 +1,4 @@
+import json
 import numpy as np
 from scipy.constants import c as clight
 from scipy.constants import e as qe
@@ -10,7 +11,7 @@ import matplotlib.pyplot as plt
 import time
 
 # ── Setup (reused from 005_solenoid.py) ─────────────────────────────────────
-interval = 30
+interval = 8
 dx = 0.001
 dy = 0.001
 multipole_order = 4
@@ -25,7 +26,7 @@ p0 = xt.Particles(
     delta=delta,
 )
 
-sf = SolenoidField(L=4, a=0.3, B0=1.5, z0=20)
+sf = SolenoidField(L=4, a=0.3, B0=1.5, z0=4)
 
 
 def get_field(x, y, z):
@@ -57,9 +58,7 @@ P0_J = p0.p0c[0] * qe / clight
 brho = P0_J / qe / p0.q0
 
 # ── Reference solution ──────────────────────────────────────────────────────
-# Pre-computed with BorisSpatialIntegrator (n_steps=1_000_000, delta=0).
-# Uncomment the block below to recompute:
-
+# Computed with BorisSpatialIntegrator (n_steps=1_000_000, delta=0).
 # n_steps_ref = 1_000_000
 # print(f"Computing reference solution with BorisSpatialIntegrator "
 #       f"(n_steps={n_steps_ref}) ...")
@@ -81,10 +80,10 @@ brho = P0_J / qe / p0.q0
 # print(f"  y_ref = {y_ref[0]:.17e}")
 # print(f"  py_ref = {py_ref[0]:.17e}")
 
-x_ref = np.array([-7.56888172431699896e-02])
-px_ref = np.array([-8.14758308547530730e-03])
-y_ref = np.array([1.07304136022629976e-01])
-py_ref = np.array([1.17566359622342190e-02])
+x_ref = -1.27416576780741407e-03
+px_ref = -5.30211431567380841e-04
+y_ref = 5.46316372713433196e-03
+py_ref = 2.04827892292546408e-03
 
 def compute_errors(p):
     """Return per-coordinate max relative errors vs reference."""
@@ -106,7 +105,10 @@ n_repeats = 10
 # ══════════════════════════════════════════════════════════════════════════════
 # Study 1: Fix spline resolution, vary steps_per_point
 # ══════════════════════════════════════════════════════════════════════════════
-run_study_1 = False  # set to True to rerun study 1
+# Set to a file path to save/load results; only missing spp values will be run
+study1_results_file = None  # e.g. "study1_results.json"
+
+run_study_1 = True  # set to True to rerun study 1
 if run_study_1:
     n_spline_points = 10001
     x_axis = np.linspace(
@@ -136,42 +138,33 @@ if run_study_1:
           f"{interval} m "
           f"({interval / n_spline_intervals * 1e3:.1f} mm per interval)")
 
-    # Field error along reference trajectory (constant, since fit is fixed)
-    boris_s1_ref = xt.BorisSpatialIntegrator(
-        fieldmap_callable=get_field, s_start=0, s_end=interval,
-        n_steps=n_spline_intervals)
-    boris_s1_ref.log_trajectories = True
-    p_tmp = p0.copy()
-    boris_s1_ref.track(p_tmp)
-    traj_x_s1 = np.array(boris_s1_ref.x_log)[:, 0]
-    traj_y_s1 = np.array(boris_s1_ref.y_log)[:, 0]
-    traj_z_s1 = np.clip(np.array(boris_s1_ref.z_log)[:, 0], 0, interval)
-    Bx_true_s1, By_true_s1, Bs_true_s1 = sf.get_field(
-        traj_x_s1, traj_y_s1, traj_z_s1)
-    B_mag_peak_s1 = np.max(np.sqrt(
-        Bx_true_s1**2 + By_true_s1**2 + Bs_true_s1**2))
-
-    seq_for_field = xt.SplineBorisSequence(
-        df_fit_pars=df_fit_pars,
-        multipole_order=multipole_order,
-        steps_per_point=1,
-    )
-    B_spline_s1 = np.array([
-        seq_for_field.evaluate_field(tx, ty, tz)
-        for tx, ty, tz in zip(traj_x_s1, traj_y_s1, traj_z_s1)])
-    field_err_s1 = np.max(np.sqrt(
-        (B_spline_s1[:, 0] - Bx_true_s1)**2 +
-        (B_spline_s1[:, 1] - By_true_s1)**2 +
-        (B_spline_s1[:, 2] - Bs_true_s1)**2)) / B_mag_peak_s1
-    print(f"Field error (|dB|/|B|_peak on trajectory): {field_err_s1:.4e}")
-
-    steps_per_point_list = [1, 2, 4, 8, 16]
+    steps_per_point_list = [1, 2, 4, 8, 16, 32]
     methods = ["SplineBoris", "BorisSpatial", "VariableSolenoid"]
     results = {
         m: {"n_steps": [], "steps_per_point": [], "median_s": [],
              "err_x": [], "err_px": [], "err_y": [], "err_py": []}
         for m in methods
     }
+
+    # Load existing results if available
+    existing_spp = []
+    if study1_results_file:
+        try:
+            with open(study1_results_file) as f:
+                loaded = json.load(f)
+            existing_spp = loaded["SplineBoris"]["steps_per_point"]
+            for m in methods:
+                for k in results[m]:
+                    results[m][k] = loaded[m][k]
+            print(f"Loaded Study 1 results for spp={existing_spp}")
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            print(f"Could not load {study1_results_file}: {e}")
+
+    spp_to_run = [s for s in steps_per_point_list if s not in existing_spp]
+    if not spp_to_run:
+        print("All spp already in results, skipping computation.")
 
     def store_result(method, spp, n_steps_total, t, ex, epx, ey, epy):
         r = results[method]
@@ -183,7 +176,7 @@ if run_study_1:
         r["err_y"].append(ey)
         r["err_py"].append(epy)
 
-    for spp in steps_per_point_list:
+    for spp in spp_to_run:
         n_steps_total = n_spline_intervals * spp
         print(f"steps_per_point = {spp}  "
               f"(n_steps_total = {n_steps_total})")
@@ -241,6 +234,17 @@ if run_study_1:
               f"t={t['median_s']:.4f}s")
         print()
 
+    if study1_results_file and spp_to_run:
+        with open(study1_results_file, "w") as f:
+            json.dump(results, f, indent=2)
+        print(f"Saved Study 1 results to {study1_results_file}")
+
+    # Sort by spp for consistent ordering (in case of load-then-append)
+    order = np.argsort(results["SplineBoris"]["steps_per_point"])
+    for m in methods:
+        for k in results[m]:
+            results[m][k] = [results[m][k][i] for i in order]
+
     header = (f"{'spp':>4s} {'n_steps':>8s}  "
               f"{'SB err_x':>10s} {'SB time':>8s}  "
               f"{'Boris err_x':>12s} {'Boris time':>10s}  "
@@ -248,7 +252,8 @@ if run_study_1:
     print("=" * len(header))
     print(header)
     print("-" * len(header))
-    for i, spp in enumerate(steps_per_point_list):
+    for i in range(len(results["SplineBoris"]["steps_per_point"])):
+        spp = results["SplineBoris"]["steps_per_point"][i]
         ns = results["SplineBoris"]["n_steps"][i]
         row = f"{spp:>4d} {ns:>8d}  "
         for m in methods:
@@ -265,8 +270,6 @@ if run_study_1:
         for m in methods:
             ax.loglog(results[m]["n_steps"], results[m][ck],
                       marker=markers[m], label=m)
-        ax.axhline(field_err_s1, color="C3", ls=":", alpha=0.7,
-                   label=r"$|\Delta \mathbf{B}| / |\mathbf{B}|_\mathrm{peak}$ (on trajectory)")
         ax.set_xlabel(r"$n_{\mathrm{steps}}$")
         ax.set_ylabel(cl)
         ax.set_title(f"{cl} vs number of integration steps")
@@ -291,8 +294,6 @@ if run_study_1:
         for m in methods:
             ax.loglog(results[m]["median_s"], results[m][ck],
                       marker=markers[m], label=m)
-        ax.axhline(field_err_s1, color="C3", ls=":", alpha=0.7,
-                   label=r"$|\Delta \mathbf{B}| / |\mathbf{B}|_\mathrm{peak}$ (on trajectory)")
         ax.set_xlabel(r"Median computing time [s]")
         ax.set_ylabel(cl)
         ax.set_title(f"{cl} vs computation time")
@@ -309,7 +310,7 @@ if run_study_1:
 # Fix data resolution and total integration steps, vary only the number of
 # polynomial pieces (n_pieces) to isolate the field approximation error.
 # ══════════════════════════════════════════════════════════════════════════════
-run_study_2 = True  # set to True to rerun study 2
+run_study_2 = False  # set to True to rerun study 2
 if run_study_2:
     n_data_points_s2 = 10001  # generous data resolution (10000 intervals)
     spp_s2 = 1                # steps_per_point fixed at 1
