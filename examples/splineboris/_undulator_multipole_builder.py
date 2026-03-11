@@ -37,6 +37,21 @@ def _extract_multipole_strengths(seq, s_positions, multipole_order, brho, dx=1e-
     return knl, ksl, ds
 
 
+def _build_native_s_positions_from_sequence(seq):
+    s_positions = []
+    for ii, ee in enumerate(seq.elements):
+        s0 = float(ee.s_start)
+        s1 = float(ee.s_end)
+        n_steps = max(int(ee.n_steps), 1)
+        s_this = np.linspace(s0, s1, n_steps + 1)
+        if ii == 0:
+            s_positions.extend(s_this.tolist())
+        else:
+            # Avoid duplicating the shared boundary with previous piece.
+            s_positions.extend(s_this[1:].tolist())
+    return np.asarray(s_positions, dtype=float)
+
+
 def build_multipole_kick_undulator(
     env,
     p_ref,
@@ -46,6 +61,7 @@ def build_multipole_kick_undulator(
     shift_y=0.0,
     n_slices=None,
     name_prefix="und_kick",
+    multipole_isthick=False,
 ):
     seq = xt.SplineBorisSequence(
         df_fit_pars=df_fit_pars,
@@ -56,12 +72,14 @@ def build_multipole_kick_undulator(
     )
 
     if n_slices is None:
-        n_slices = sum(int(ee.n_steps) for ee in seq.elements)
-
-    df_reset = df_fit_pars.reset_index()
-    s_start = float(df_reset["s_start"].min())
-    s_end = float(df_reset["s_end"].max())
-    s_positions = np.linspace(s_start, s_end, n_slices + 1)
+        # Use native sequence boundaries (piecewise s_start/s_end with each
+        # element's n_steps subdivision) for closest alignment to SplineBoris.
+        s_positions = _build_native_s_positions_from_sequence(seq)
+    else:
+        df_reset = df_fit_pars.reset_index()
+        s_start = float(df_reset["s_start"].min())
+        s_end = float(df_reset["s_end"].max())
+        s_positions = np.linspace(s_start, s_end, int(n_slices) + 1)
 
     brho = _compute_brho(p_ref)
     knl, ksl, ds = _extract_multipole_strengths(
@@ -72,28 +90,43 @@ def build_multipole_kick_undulator(
     )
 
     element_names = []
-    for ii in range(len(ds)):
-        if ii == 0:
-            drift_length = ds[ii] / 2
-            drift_name = f"{name_prefix}_drift_entry"
-        else:
-            drift_length = (ds[ii - 1] + ds[ii]) / 2
-            drift_name = f"{name_prefix}_drift_{ii}"
+    if multipole_isthick:
+        # Thick slices carry finite length, so spin precession is accumulated
+        # directly in each multipole slice.
+        for ii in range(len(ds)):
+            kick_name = f"{name_prefix}_thick_{ii}"
+            env.new(
+                kick_name,
+                xt.Multipole,
+                knl=knl[ii, :].tolist(),
+                ksl=ksl[ii, :].tolist(),
+                length=float(ds[ii]),
+                isthick=True,
+            )
+            element_names.append(kick_name)
+    else:
+        for ii in range(len(ds)):
+            if ii == 0:
+                drift_length = ds[ii] / 2
+                drift_name = f"{name_prefix}_drift_entry"
+            else:
+                drift_length = (ds[ii - 1] + ds[ii]) / 2
+                drift_name = f"{name_prefix}_drift_{ii}"
 
-        kick_name = f"{name_prefix}_kick_{ii}"
+            kick_name = f"{name_prefix}_kick_{ii}"
 
-        env.new(drift_name, xt.Drift, length=float(drift_length))
-        env.new(
-            kick_name,
-            xt.Multipole,
-            knl=knl[ii, :].tolist(),
-            ksl=ksl[ii, :].tolist(),
-        )
-        element_names.extend([drift_name, kick_name])
+            env.new(drift_name, xt.Drift, length=float(drift_length))
+            env.new(
+                kick_name,
+                xt.Multipole,
+                knl=knl[ii, :].tolist(),
+                ksl=ksl[ii, :].tolist(),
+            )
+            element_names.extend([drift_name, kick_name])
 
-    exit_name = f"{name_prefix}_drift_exit"
-    env.new(exit_name, xt.Drift, length=float(ds[-1] / 2))
-    element_names.append(exit_name)
+        exit_name = f"{name_prefix}_drift_exit"
+        env.new(exit_name, xt.Drift, length=float(ds[-1] / 2))
+        element_names.append(exit_name)
 
     line = xt.Line(env=env, element_names=element_names)
     line.particle_ref = p_ref.copy()

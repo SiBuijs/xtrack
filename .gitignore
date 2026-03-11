@@ -6,6 +6,7 @@
 norepository_*
 *~
 build
+dist
 CyFPPS.cpp
 examples/*/res/*
 *.egg-info
@@ -15,4 +16,14 @@ __pycache__
 xtrack/prebuilt_kernels
 !xtrack/prebuilt_kernels/*.py
 checkpoint_restart.dat
+
+# IDE / editor files
+.idea/
+.vscode/
+.cursor/
+*.swp
+*.swo
+
+# OS files
+Thumbs.db
 
