@@ -81,8 +81,6 @@ for der in range(0, multipole_order + 1):
     fitter.plot_fields(der=der)
     plt.show()
 
-exit()
-
 # Build solenoid using SplineBorisSequence - automatically creates one SplineBoris
 # element per polynomial piece with n_steps based on the data point count
 seq = xt.SplineBorisSequence(
