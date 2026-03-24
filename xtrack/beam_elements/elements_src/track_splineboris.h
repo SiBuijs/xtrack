@@ -89,7 +89,7 @@ void SplineBoris_single_particle(
     const double ds   = L / (double) n_steps;
     const double half_ds = 0.5 * ds;
     
-    // Local s coordinate (0 to L) for stepping through the element
+    // Local longitudinal coordinate (0 .. L), used as 3rd argument to evaluate_B
     double s_local = 0.0;
 
     #ifndef XTRACK_MULTIPOLE_NO_SYNRAD
@@ -151,7 +151,7 @@ void SplineBoris_single_particle(
 
         // --------------------------------------------------------------
         //  Evaluate B-field at mid-step (xh, yh, s_local_h)
-        //  Polynomials are in local s coordinates (s_local = s - s_start)
+        //  Polynomials are in local s (s_local = s - s_start); evaluate_B 3rd arg is that offset.
         // --------------------------------------------------------------
         double Bx;
         double By;
@@ -213,7 +213,7 @@ void SplineBoris_single_particle(
         // --------------------------------------------------------------
         x = xh + (px1 * inv_ps1) * half_ds;
         y = yh + (py1 * inv_ps1) * half_ds;
-        s_local += ds;  // Advance local s coordinate
+        s_local += ds;
 
         dt += half_ds * inv_ps1 * gamma * mass_kg;  // [s]
 

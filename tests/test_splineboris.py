@@ -44,7 +44,7 @@ def test_data_dir():
 @pytest.fixture
 def make_uniform_splineboris():
     def _make(Bx=0, By=0, Bs=0, s_start=0, s_end=1, n_steps=100,
-                multipole_order=1, radiation_flag=0, kn=None, ks=None):
+                radiation_flag=0, kn=None, ks=None):
         # Uniform field: Hermite params (f_left, df_left, f_right, df_right, average)
         # For a constant field B, all boundary values = B, derivatives = 0, average = B
         Bx_h = [Bx, 0, Bx, 0, Bx]
@@ -58,12 +58,11 @@ def make_uniform_splineboris():
         xo.assert_allclose(xt.SplineBoris.hermite_to_poly(s_start, s_end, Bs_h)(s_local_test), Bs, rtol=1e-12, atol=1e-12)
 
         splineboris = xt.SplineBoris(
-            bs=Bs_h,
-            kn={0: By_h},
-            ks={0: Bx_h},
+            Bs=Bs_h,
+            Bnorm={0: By_h},
+            Bskew={0: Bx_h},
             s_start=s_start,
-            s_end=s_end,
-            multipole_order=1,
+            length=s_end - s_start,
             n_steps=n_steps,
             radiation_flag=radiation_flag,
         )
@@ -595,8 +594,8 @@ def test_splineboris_undulator_vs_boris_spatial(undulator_fit_pars_df, make_segm
     # ------------------------------------------------------------------
     boris_elems = []
     for elem in seq.elements:
-        # par_table is a 1D array of polynomial coefficients for this piece
-        params_i = np.asarray(elem.par_table, dtype=float)
+        # par_list is a 1D array of polynomial coefficients for this piece
+        params_i = np.asarray(elem.par_list, dtype=float)
         field_i = make_segment_field(params_i, multipole_order,
                                      s_start=float(elem.s_start))
 
@@ -702,8 +701,8 @@ def test_splineboris_rotated_undulator_vs_boris_spatial(undulator_rotated_fit_pa
     # ------------------------------------------------------------------
     boris_elems = []
     for elem in seq.elements:
-        # par_table is a 1D array of polynomial coefficients for this piece
-        params_i = np.asarray(elem.par_table, dtype=float)
+        # par_list is a 1D array of polynomial coefficients for this piece
+        params_i = np.asarray(elem.par_list, dtype=float)
         field_i = make_segment_field(params_i, multipole_order,
                                      s_start=float(elem.s_start))
 
@@ -1242,12 +1241,11 @@ def test_splineboris_spin_quadrupole(case, atol):
     xo.assert_allclose(kn_1_poly(np.linspace(0, s_end - s_start, 100)), quad_gradient, rtol=1e-12, atol=1e-12)
 
     splineboris = xt.SplineBoris(
-        bs=Bs_hermite,
-        kn={1: kn_1_hermite},
-        ks={},
+        Bs=Bs_hermite,
+        Bnorm={1: kn_1_hermite},
+        Bskew={},
         s_start=s_start,
-        s_end=s_end,
-        multipole_order=2,
+        length=length,
         n_steps=n_steps,
     )
 
@@ -1262,3 +1260,119 @@ def test_splineboris_spin_quadrupole(case, atol):
     xo.assert_allclose(p.spin_x[0], p_ref.spin_x[0], atol=atol, rtol=0)
     xo.assert_allclose(p.spin_y[0], p_ref.spin_y[0], atol=atol, rtol=0)
     xo.assert_allclose(p.spin_z[0], p_ref.spin_z[0], atol=atol, rtol=0)
+
+
+def test_splineboris_bn_only_omitting_bz():
+    hermite = [1.0, 0.0, 1.0, 0.0, 1.0]
+    elem = xt.SplineBoris(
+        Bnorm={0: hermite},
+        Bskew={},
+        s_start=0.0,
+        length=1.0,
+        n_steps=1,
+    )
+    assert elem.multipole_order == 1
+    assert len(elem.par_list) == (1 + 2 * elem.multipole_order) * 5
+
+
+def test_splineboris_bz_only_empty_bn_bs():
+    elem = xt.SplineBoris(
+        Bs=[0.1, 0.0, 0.1, 0.0, 0.1],
+        Bnorm={},
+        Bskew={},
+        s_start=0.0,
+        length=1.0,
+        n_steps=1,
+    )
+    assert elem.multipole_order == 1
+
+
+def test_splineboris_requires_at_least_one_field_component():
+    with pytest.raises(ValueError, match="At least one of Bz, Bn, or Bs"):
+        xt.SplineBoris(
+            Bnorm={},
+            Bskew={},
+            s_start=0.0,
+            length=1.0,
+        )
+
+
+def test_splineboris_sparse_derivative_keys_and_zero_fill():
+    hermite_one = [1.0, 0.0, 1.0, 0.0, 1.0]
+    hermite_two = [2.0, 0.0, 2.0, 0.0, 2.0]
+    elem = xt.SplineBoris(
+        Bs=[0.0, 0.0, 0.0, 0.0, 0.0],
+        Bnorm={2: hermite_two},
+        Bskew={0: hermite_one},
+        s_start=0.0,
+        length=1.0,
+        n_steps=1,
+    )
+
+    # Convention: multipole_order is number of derivative orders (max key + 1).
+    assert elem.multipole_order == 3
+    assert len(elem.par_list) == (1 + 2 * elem.multipole_order) * 5
+
+
+def test_splineboris_invalid_derivative_keys_fail():
+    with pytest.raises(ValueError, match="non-negative integers"):
+        xt.SplineBoris(
+            Bs=[0.0, 0.0, 0.0, 0.0, 0.0],
+            Bnorm={-1: [0.0] * 5},
+            Bskew={0: [0.0] * 5},
+            s_start=0.0,
+            length=1.0,
+        )
+
+    with pytest.raises(ValueError, match="non-negative integers"):
+        xt.SplineBoris(
+            Bs=[0.0, 0.0, 0.0, 0.0, 0.0],
+            Bnorm={"0": [0.0] * 5},
+            Bskew={0: [0.0] * 5},
+            s_start=0.0,
+            length=1.0,
+        )
+
+
+def test_splineboris_order_above_max_fails():
+    with pytest.raises(ValueError, match="Unsupported multipole_order=8; max supported is 7"):
+        xt.SplineBoris(
+            Bs=[0.0, 0.0, 0.0, 0.0, 0.0],
+            Bnorm={7: [0.0] * 5},
+            Bskew={},
+            s_start=0.0,
+            length=1.0,
+        )
+
+
+@pytest.mark.parametrize("bad_length", [0.0, -1.0])
+def test_splineboris_length_must_be_positive(bad_length):
+    with pytest.raises(ValueError, match="length must be finite and > 0"):
+        xt.SplineBoris(
+            Bs=[0.0, 0.0, 0.0, 0.0, 0.0],
+            Bnorm={0: [0.0] * 5},
+            Bskew={0: [0.0] * 5},
+            s_start=0.0,
+            length=bad_length,
+        )
+
+
+def test_splineboris_evaluate_field_dispatch_uses_consistent_order(evaluate_b):
+    bz = [0.0, 0.0, 0.0, 0.0, 0.0]
+    bn0 = [1.0, 0.0, 1.0, 0.0, 1.0]
+    bn1 = [3.0, 0.0, 3.0, 0.0, 3.0]
+    bs0 = [2.0, 0.0, 2.0, 0.0, 2.0]
+    elem = xt.SplineBoris(
+        Bs=bz,
+        Bnorm={0: bn0, 1: bn1},
+        Bskew={0: bs0},
+        s_start=2.0,
+        length=1.0,
+    )
+
+    x = 1e-3
+    y = -2e-3
+    s = 2.4
+    ref_bx, ref_by, ref_bs = evaluate_b(x, y, s - elem.s_start, np.asarray(elem.par_list), elem.multipole_order)
+    bx, by, bs = elem.evaluate_field(x, y, s)
+    xo.assert_allclose([bx, by, bs], [ref_bx, ref_by, ref_bs], rtol=0, atol=1e-15)

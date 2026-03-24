@@ -1,8 +1,8 @@
 #include <stddef.h>
 #include <stdio.h>
 
-#ifndef _SPLINE_B_FIELD_EVAL_H
-#define _SPLINE_B_FIELD_EVAL_H
+#ifndef SPLINE_B_FIELD_EVAL_H
+#define SPLINE_B_FIELD_EVAL_H
 
 // Auto-generated symbolic field expressions for B
 // NOTE: 's' is the local coordinate within the element (s_local = s - s_start),
@@ -1050,4 +1050,4 @@ void evaluate_B(const double x, const double y, const double s, const double *pa
 	}
 }
 
-#endif // _SPLINE_B_FIELD_EVAL_H
+#endif // SPLINE_B_FIELD_EVAL_H
