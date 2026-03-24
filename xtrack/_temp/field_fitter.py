@@ -10,6 +10,26 @@ from scipy.signal import find_peaks
 import xtrack as xt
 
 
+def _hermite_csv_param_names(field_component, derivative_x):
+    """Labels for the five Hermite scalars in ``df_fit_pars`` (CSV ``param_name`` column).
+
+    Field-map columns map to :class:`xtrack.SplineBoris` inputs as ``Bx`` → ``Bskew``,
+    ``By`` → ``Bnorm``, ``Bs`` → ``Bs`` (same naming family as :meth:`SplineBoris._get_param_names`
+    but with Hermite suffixes instead of polynomial indices).
+    """
+    if field_component not in ("Bx", "By", "Bs"):
+        raise ValueError(
+            "field_component must be 'Bx', 'By', or 'Bs', "
+            f"got {field_component!r}"
+        )
+    if field_component == "Bs":
+        prefix = "Bs"
+    elif field_component == "By":
+        prefix = f"Bnorm_{derivative_x}"
+    else:
+        prefix = f"Bskew_{derivative_x}"
+    return [f"{prefix}_{suf}" for suf in xt.SplineBoris._HERMITE_SUFFIXES]
+
 
 class FieldFitter:
     '''
@@ -308,9 +328,7 @@ class FieldFitter:
         # Zero-pad index so alphabetical sort matches numerical sort
         index_width = len(str(n_pieces - 1)) if n_pieces > 1 else 1
         for i in range(n_pieces):
-            pars = xt.SplineBoris._fieldfitter_param_names(
-                field, der_order
-            )
+            pars = _hermite_csv_param_names(field, der_order)
 
             idx_start = idx_extrema[i]
             idx_end = idx_extrema[i+1]

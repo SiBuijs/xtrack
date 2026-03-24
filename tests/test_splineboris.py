@@ -1233,16 +1233,16 @@ def test_splineboris_spin_quadrupole(case, atol):
 
     # --- SplineBoris ---
     # Uniform quadrupole: Hermite params (f_left, df_left, f_right, df_right, average)
-    kn_1_hermite = [quad_gradient, 0, quad_gradient, 0, quad_gradient]
-    Bs_hermite = [0, 0, 0, 0, 0]
+    bnorm_1_hermite = [quad_gradient, 0, quad_gradient, 0, quad_gradient]
+    bs_hermite = [0, 0, 0, 0, 0]
 
     # Verify the polynomial evaluates to a constant gradient (s_local coordinates)
-    kn_1_poly = xt.SplineBoris.hermite_to_poly(s_start, s_end, kn_1_hermite)
-    xo.assert_allclose(kn_1_poly(np.linspace(0, s_end - s_start, 100)), quad_gradient, rtol=1e-12, atol=1e-12)
+    bnorm_1_poly = xt.SplineBoris.hermite_to_poly(s_start, s_end, bnorm_1_hermite)
+    xo.assert_allclose(bnorm_1_poly(np.linspace(0, s_end - s_start, 100)), quad_gradient, rtol=1e-12, atol=1e-12)
 
     splineboris = xt.SplineBoris(
-        Bs=Bs_hermite,
-        Bnorm={1: kn_1_hermite},
+        Bs=bs_hermite,
+        Bnorm={1: bnorm_1_hermite},
         Bskew={},
         s_start=s_start,
         length=length,
@@ -1262,7 +1262,7 @@ def test_splineboris_spin_quadrupole(case, atol):
     xo.assert_allclose(p.spin_z[0], p_ref.spin_z[0], atol=atol, rtol=0)
 
 
-def test_splineboris_bn_only_omitting_bz():
+def test_splineboris_bnorm_only_omitting_bs():
     hermite = [1.0, 0.0, 1.0, 0.0, 1.0]
     elem = xt.SplineBoris(
         Bnorm={0: hermite},
@@ -1275,7 +1275,7 @@ def test_splineboris_bn_only_omitting_bz():
     assert len(elem.par_list) == (1 + 2 * elem.multipole_order) * 5
 
 
-def test_splineboris_bz_only_empty_bn_bs():
+def test_splineboris_bs_only_empty_bnorm_bskew():
     elem = xt.SplineBoris(
         Bs=[0.1, 0.0, 0.1, 0.0, 0.1],
         Bnorm={},
@@ -1288,13 +1288,28 @@ def test_splineboris_bz_only_empty_bn_bs():
 
 
 def test_splineboris_requires_at_least_one_field_component():
-    with pytest.raises(ValueError, match="At least one of Bz, Bn, or Bs"):
+    with pytest.raises(ValueError, match="At least one of Bs, Bnorm, or Bskew"):
         xt.SplineBoris(
             Bnorm={},
             Bskew={},
             s_start=0.0,
             length=1.0,
         )
+
+
+def test_splineboris_kernel_param_names_order():
+    n = xt.SplineBoris._NUM_COEFFS
+    names1 = xt.SplineBoris._get_param_names(1)
+    assert names1[:n] == [f"Bs_{k}" for k in range(n)]
+    assert names1[n : 2 * n] == [f"Bnorm_0_{k}" for k in range(n)]
+    assert names1[2 * n :] == [f"Bskew_0_{k}" for k in range(n)]
+
+    names2 = xt.SplineBoris._get_param_names(2)
+    assert names2[:n] == [f"Bs_{k}" for k in range(n)]
+    assert names2[n : 2 * n] == [f"Bnorm_0_{k}" for k in range(n)]
+    assert names2[2 * n : 3 * n] == [f"Bnorm_1_{k}" for k in range(n)]
+    assert names2[3 * n : 4 * n] == [f"Bskew_0_{k}" for k in range(n)]
+    assert names2[4 * n : 5 * n] == [f"Bskew_1_{k}" for k in range(n)]
 
 
 def test_splineboris_sparse_derivative_keys_and_zero_fill():
@@ -1358,12 +1373,12 @@ def test_splineboris_length_must_be_positive(bad_length):
 
 
 def test_splineboris_evaluate_field_dispatch_uses_consistent_order(evaluate_b):
-    bz = [0.0, 0.0, 0.0, 0.0, 0.0]
+    bs_zeros = [0.0, 0.0, 0.0, 0.0, 0.0]
     bn0 = [1.0, 0.0, 1.0, 0.0, 1.0]
     bn1 = [3.0, 0.0, 3.0, 0.0, 3.0]
     bs0 = [2.0, 0.0, 2.0, 0.0, 2.0]
     elem = xt.SplineBoris(
-        Bs=bz,
+        Bs=bs_zeros,
         Bnorm={0: bn0, 1: bn1},
         Bskew={0: bs0},
         s_start=2.0,

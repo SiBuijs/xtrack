@@ -1010,12 +1010,11 @@ class SplineBoris(BeamElement):
         only if ``Bnorm`` and/or ``Bskew`` carry the map; then it defaults to zeros.
     Bnorm : dict, optional
         ``{derivative_order: [_NUM_COEFFS Hermite values]}`` for the **normal**
-        transverse component (the ``By`` channel in ``evaluate_B`` / ``kn_*`` in
-        generated code). ``None`` becomes ``{}``. Missing orders are zero-filled.
+        transverse component (the ``By`` channel in ``evaluate_B``). ``None``
+        becomes ``{}``. Missing orders are zero-filled.
     Bskew : dict, optional
         ``{derivative_order: [_NUM_COEFFS Hermite values]}`` for the **skew**
-        transverse component (the ``Bx`` channel / ``ks_*``). ``None`` becomes
-        ``{}``.
+        transverse component (the ``Bx`` channel). ``None`` becomes ``{}``.
 
     multipole_order : int
         Inferred as one plus the maximum derivative key appearing in ``Bnorm`` or
@@ -1049,6 +1048,10 @@ class SplineBoris(BeamElement):
     orders ``0 … multipole_order-1``, then ``Bskew`` for the same orders (each
     block contributes ``_NUM_COEFFS`` doubles), total length
     ``_NUM_COEFFS * (2 * multipole_order + 1)``, matching ``evaluate_B``.
+
+    In generated ``evaluate_B`` / ``par_list``, polynomial coefficients use the
+    same names and order as :meth:`_get_param_names`: ``Bs_k``, then
+    ``Bnorm_{i}_{k}``, then ``Bskew_{i}_{k}`` (longitudinal block first).
     """
 
     isthick = True
@@ -1076,6 +1079,7 @@ class SplineBoris(BeamElement):
     _depends_on = [RandomUniformAccurate, RandomExponential]
     _internal_record_class = SynchrotronRadiationRecord
 
+    # Keep in sync with XTRACK_SPLINE_B_N_POLY_COEFFS in splineboris.h and poly_order in _generate_bpmeth_to_C.py.
     _POLY_ORDER = 4
     _NUM_COEFFS = _POLY_ORDER + 1
     _MAX_MULTIPOLE_ORDER = 7
@@ -1083,11 +1087,11 @@ class SplineBoris(BeamElement):
 
     @classmethod
     def _get_param_names(cls, multipole_order):
-        """Ordered names of coefficients in ``par_list`` / ``evaluate_B``'s ``params``.
+        """Ordered names of polynomial coefficients in ``par_list`` / ``evaluate_B``'s ``params``.
 
-        Must stay in sync with :meth:`_build_par_table` and
-        ``_generate_bpmeth_to_C.py``: lexicographic sort of ``bs_*``, ``kn_*_*``,
-        ``ks_*_*`` produced from the nested construction used historically.
+        Same packing as :meth:`_build_par_table` and the sympy symbols in
+        ``_generate_bpmeth_to_C.py``: ``Bs_*``, then ``Bnorm_{i}_{k}``, then
+        ``Bskew_{i}_{k}``.
         """
         if multipole_order < 1:
             raise ValueError("multipole_order must be >= 1")
@@ -1096,15 +1100,13 @@ class SplineBoris(BeamElement):
                 f"multipole_order ({multipole_order}) exceeds maximum supported "
                 f"({cls._MAX_MULTIPOLE_ORDER})"
             )
-        param_names = []
+        n = cls._NUM_COEFFS
+        names = [f"Bs_{k}" for k in range(n)]
         for i in range(multipole_order):
-            for k in range(cls._NUM_COEFFS):
-                param_names.append(f"ks_{i}_{k}")
-                param_names.append(f"kn_{i}_{k}")
-                if i == 0:
-                    param_names.append(f"bs_{k}")
-        param_names.sort()
-        return param_names
+            names.extend(f"Bnorm_{i}_{k}" for k in range(n))
+        for i in range(multipole_order):
+            names.extend(f"Bskew_{i}_{k}" for k in range(n))
+        return names
 
     @classmethod
     def hermite_to_poly(cls, s_start, s_end, coeffs):
