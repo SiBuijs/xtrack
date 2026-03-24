@@ -10,6 +10,10 @@ from xtrack._temp.field_fitter import FieldFitter
 import matplotlib.pyplot as plt
 import time
 
+TICK_FONTSIZE = 16
+LABEL_FONTSIZE = 17
+TITLE_FONTSIZE = 18
+
 # ── Setup (reused from 005_solenoid.py) ─────────────────────────────────────
 interval = 8
 dx = 0.001
@@ -139,7 +143,8 @@ if run_study_1:
           f"({interval / n_spline_intervals * 1e3:.1f} mm per interval)")
 
     steps_per_point_list = [1, 2, 4, 8, 16, 32]
-    methods = ["SplineBoris", "BorisSpatial", "VariableSolenoid"]
+    # methods = ["SplineBoris", "BorisSpatial", "VariableSolenoid"]
+    methods = ["SplineBoris", "BorisSpatial"]
     results = {
         m: {"n_steps": [], "steps_per_point": [], "median_s": [],
              "err_x": [], "err_px": [], "err_y": [], "err_py": []}
@@ -212,26 +217,26 @@ if run_study_1:
         print(f"  BorisSpatial      err_x={ex:.4e}  "
               f"t={t['median_s']:.4f}s")
 
-        z_axis_vs = np.linspace(0, interval, n_steps_total + 1)
-        Bz_axis = sf.get_field(
-            0 * z_axis_vs, 0 * z_axis_vs, z_axis_vs)[2]
-        ks = Bz_axis / brho
-        dz = z_axis_vs[1] - z_axis_vs[0]
-        line_varsol = xt.Line(elements=[
-            xt.VariableSolenoid(
-                length=dz, ks_profile=[ks[ii], ks[ii + 1]])
-            for ii in range(len(z_axis_vs) - 1)
-        ])
-        line_varsol.build_tracker()
-        p_test = p0.copy()
-        line_varsol.track(p_test)
-        ex, epx, ey, epy = compute_errors(p_test)
-        t = benchmark_track(lambda: line_varsol.track(p0.copy()),
-                            n_warmup=n_warmup, n_repeats=n_repeats)
-        store_result("VariableSolenoid", spp, n_steps_total,
-                     t, ex, epx, ey, epy)
-        print(f"  VariableSolenoid  err_x={ex:.4e}  "
-              f"t={t['median_s']:.4f}s")
+        # z_axis_vs = np.linspace(0, interval, n_steps_total + 1)
+        # Bz_axis = sf.get_field(
+        #     0 * z_axis_vs, 0 * z_axis_vs, z_axis_vs)[2]
+        # ks = Bz_axis / brho
+        # dz = z_axis_vs[1] - z_axis_vs[0]
+        # line_varsol = xt.Line(elements=[
+        #     xt.VariableSolenoid(
+        #         length=dz, ks_profile=[ks[ii], ks[ii + 1]])
+        #     for ii in range(len(z_axis_vs) - 1)
+        # ])
+        # line_varsol.build_tracker()
+        # p_test = p0.copy()
+        # line_varsol.track(p_test)
+        # ex, epx, ey, epy = compute_errors(p_test)
+        # t = benchmark_track(lambda: line_varsol.track(p0.copy()),
+        #                     n_warmup=n_warmup, n_repeats=n_repeats)
+        # store_result("VariableSolenoid", spp, n_steps_total,
+        #              t, ex, epx, ey, epy)
+        # print(f"  VariableSolenoid  err_x={ex:.4e}  "
+        #       f"t={t['median_s']:.4f}s")
         print()
 
     if study1_results_file and spp_to_run:
@@ -247,8 +252,7 @@ if run_study_1:
 
     header = (f"{'spp':>4s} {'n_steps':>8s}  "
               f"{'SB err_x':>10s} {'SB time':>8s}  "
-              f"{'Boris err_x':>12s} {'Boris time':>10s}  "
-              f"{'VS err_x':>10s} {'VS time':>8s}")
+              f"{'Boris err_x':>12s} {'Boris time':>10s}")
     print("=" * len(header))
     print(header)
     print("-" * len(header))
@@ -262,22 +266,23 @@ if run_study_1:
         print(row)
     print("=" * len(header))
 
-    markers = {"SplineBoris": "o", "BorisSpatial": "s",
-               "VariableSolenoid": "^"}
+    # markers = {"SplineBoris": "o", "BorisSpatial": "s",
+    #            "VariableSolenoid": "^"}
+    markers = {"SplineBoris": "o", "BorisSpatial": "s"}
 
     fig, axes = plt.subplots(2, 2, figsize=(12, 8), sharex=True)
     for ax, ck, cl in zip(axes.ravel(), coord_keys, coord_labels):
         for m in methods:
             ax.loglog(results[m]["n_steps"], results[m][ck],
                       marker=markers[m], label=m)
-        ax.set_xlabel(r"$n_{\mathrm{steps}}$")
-        ax.set_ylabel(cl)
-        ax.tick_params(axis="x", labelbottom=True)
-        ax.tick_params(axis="y", labelleft=True)
-        ax.set_title(f"{cl} vs number of integration steps")
-        ax.legend(fontsize="small")
+        ax.set_xlabel(r"$n_{\mathrm{steps}}$", fontsize=LABEL_FONTSIZE)
+        ax.set_ylabel(cl, fontsize=LABEL_FONTSIZE)
+        ax.tick_params(axis="x", labelbottom=True, labelsize=TICK_FONTSIZE)
+        ax.tick_params(axis="y", labelleft=True, labelsize=TICK_FONTSIZE)
+        ax.set_title(f"{cl} vs number of integration steps", fontsize=TITLE_FONTSIZE)
+        ax.legend(fontsize=11)
         ax.grid(True, which="both", alpha=0.3)
-    fig.suptitle("Study 1: Per-coordinate error vs n_steps", fontsize=13)
+    fig.suptitle("Study 1: Per-coordinate error vs n_steps", fontsize=TITLE_FONTSIZE)
     fig.tight_layout()
 
     fig, ax = plt.subplots(figsize=(8, 5))

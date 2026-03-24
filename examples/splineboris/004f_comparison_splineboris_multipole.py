@@ -37,7 +37,7 @@ OFFSET_X_M = 5e-4
 OFFSET_Y_M = 0
 USE_RANDOM_MISALIGNMENT_DISTRIBUTION = True
 MISALIGNMENT_SEED = 12345
-MISALIGNMENT_X_RANGE_M = (0, 1e-3)
+MISALIGNMENT_X_RANGE_M = (1e-3, 2e-3)
 MISALIGNMENT_Y_RANGE_M = (0.0, 0.0)
 PLOT_STRIDE = 5
 SHOW_PLOTS = True
@@ -56,7 +56,11 @@ USE_THICK_MULTIPOLE_SLICES = True
 CACHE_DIR = Path(__file__).resolve().parent / "_004f_cache"
 CACHE_METRICS_CSV = CACHE_DIR / "summary_metrics.csv"
 CACHE_PLOT_JSON = CACHE_DIR / "plot_payload.json"
-CACHE_VERSION = 26
+CACHE_VERSION = 28
+TICK_FONTSIZE = 16
+LABEL_FONTSIZE = 17
+TITLE_FONTSIZE = 18
+LEGEND_FONTSIZE = 12
 
 WIGGLER_PLACES = [
     "ars02_uind_0500_1",
@@ -698,20 +702,21 @@ def _make_twiss_bet2_figure(case_map, component):
         for ii, (ss0, ss1) in enumerate(undulator_ranges):
             lbl = "Undulator region" if ii == 0 else None
             ax.axvspan(ss0, ss1, color="gray", alpha=0.3, lw=0, zorder=0, label=lbl)
-        ax.set_title(f"{title}: {component}")
-        ax.set_xlabel(r"$s$ [m]")
-        ax.tick_params(axis="y", labelleft=True)
+        ax.set_title(f"{title}: {component}", fontsize=TITLE_FONTSIZE)
+        ax.set_xlabel(r"$s$ [m]", fontsize=LABEL_FONTSIZE)
+        ax.tick_params(axis="x", labelsize=TICK_FONTSIZE)
+        ax.tick_params(axis="y", labelleft=True, labelsize=TICK_FONTSIZE)
         ax.grid(True, alpha=0.35)
-        ax.legend(fontsize=8)
+        ax.legend(fontsize=LEGEND_FONTSIZE)
 
     if component == "betx2":
         ylabel = r"$\beta_{x,2}$ [m]"
     else:
         ylabel = r"$\beta_{y,2}$ [m]"
-    axs[0].set_ylabel(ylabel)
-    axs[1].set_ylabel(ylabel)
+    axs[0].set_ylabel(ylabel, fontsize=LABEL_FONTSIZE)
+    axs[1].set_ylabel(ylabel, fontsize=LABEL_FONTSIZE)
     axs[1].yaxis.set_label_position("right")
-    fig.suptitle(f"Twiss mode-2 beta comparison: {component}")
+    fig.suptitle(f"Twiss mode-2 beta comparison: {component}", fontsize=TITLE_FONTSIZE)
     fig.tight_layout()
     return fig
 
@@ -733,11 +738,13 @@ def _make_twiss_betx2_on_axis_figure(case_map):
         lbl = "Undulator region" if ii == 0 else None
         ax.axvspan(ss0, ss1, color="gray", alpha=0.3, lw=0, zorder=0, label=lbl)
 
-    ax.set_title(r"On-axis: $\beta_{x,2}$")
-    ax.set_xlabel(r"$s$ [m]")
-    ax.set_ylabel(r"$\beta_{x,2}$ [m]")
+    ax.set_title(r"On-axis: $\beta_{x,2}$", fontsize=TITLE_FONTSIZE)
+    ax.set_xlabel(r"$s$ [m]", fontsize=LABEL_FONTSIZE)
+    ax.set_ylabel(r"$\beta_{x,2}$ [m]", fontsize=LABEL_FONTSIZE)
+    ax.tick_params(axis="x", labelsize=TICK_FONTSIZE)
+    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
     ax.grid(True, alpha=0.35)
-    ax.legend(fontsize=8)
+    ax.legend(fontsize=LEGEND_FONTSIZE)
     fig.tight_layout()
     return fig
 
@@ -757,6 +764,8 @@ def _twiss_standalone_spin(corrected_undulator):
         "s": np.asarray(tw.s),
         "x": np.asarray(tw.x),
         "y": np.asarray(tw.y),
+        "px": np.asarray(tw.px),
+        "py": np.asarray(tw.py),
         "spin_x": np.asarray(tw.spin_x),
         "spin_y": np.asarray(tw.spin_y),
         "spin_z": np.asarray(tw.spin_z),
@@ -782,45 +791,55 @@ def _make_tracking_orbit_figure(case_map):
         ax.plot(s_mp, x_mp, "--", lw=1.3, label=r"Multipole $x$")
         ax.plot(s_sp, y_sp, "-", lw=1.3, label=r"SplineBoris $y$")
         ax.plot(s_mp, y_mp, "--", lw=1.3, label=r"Multipole $y$")
-        ax.set_title(title)
-        ax.set_xlabel(r"$s$ [m]")
-        ax.tick_params(axis="y", labelleft=True)
+        ax.set_title(title, fontsize=TITLE_FONTSIZE)
+        ax.set_xlabel(r"$s$ [m]", fontsize=LABEL_FONTSIZE)
+        ax.tick_params(axis="x", labelsize=TICK_FONTSIZE)
+        ax.tick_params(axis="y", labelleft=True, labelsize=TICK_FONTSIZE)
         ax.grid(True, alpha=0.35)
-        ax.legend(loc="upper center", bbox_to_anchor=(0.5, 0.98), fontsize=7, ncol=2)
+        ax.legend(loc="upper center", bbox_to_anchor=(0.5, 0.98), fontsize=LEGEND_FONTSIZE, ncol=2)
 
-    axs[0].set_ylabel(r"$x, y$ [m]")
-    axs[1].set_ylabel(r"$x, y$ [m]")
+    axs[0].set_ylabel(r"$x, y$ [m]", fontsize=LABEL_FONTSIZE)
+    axs[1].set_ylabel(r"$x, y$ [m]", fontsize=LABEL_FONTSIZE)
     axs[1].yaxis.set_label_position("right")
-    fig.suptitle("Standalone corrected-undulator tracking: orbit comparison")
+    fig.suptitle("Standalone corrected-undulator tracking: orbit comparison", fontsize=TITLE_FONTSIZE)
     fig.tight_layout()
     return fig
 
 
 def _make_tracking_spin_component_figure(case_map):
-    fig, axs = plt.subplots(1, 2, figsize=(14, 4.5), sharey=True)
+    fig, axs = plt.subplots(3, 2, figsize=(14, 9), sharex="col")
     panel_data = [("on-axis", "On-axis"), ("off-axis", "Off-axis")]
+    component_data = [
+        ("spin_x", r"$S_x$"),
+        ("spin_y", r"$S_y$"),
+        ("spin_z", r"$S_z$"),
+    ]
 
-    for ax, (key, title) in zip(axs, panel_data):
+    for col, (key, title) in enumerate(panel_data):
         tw_spline = case_map[f"{key}-spline"]
         tw_multipole = case_map[f"{key}-multipole"]
         s_sp = np.asarray(tw_spline["s"])
         s_mp = np.asarray(tw_multipole["s"])
-        for comp in ("spin_x", "spin_y", "spin_z"):
-            comp_label = comp.replace("spin_", "S_")
+
+        for row, (comp, comp_label) in enumerate(component_data):
+            ax = axs[row, col]
             spin_sp = np.asarray(tw_spline[comp])
             spin_mp = np.asarray(tw_multipole[comp])
-            ax.plot(s_sp, spin_sp, "-", lw=1.2, label=rf"SplineBoris ${comp_label}$")
-            ax.plot(s_mp, spin_mp, "--", lw=1.2, label=rf"Multipole ${comp_label}$")
-        ax.set_title(title)
-        ax.set_xlabel(r"$s$ [m]")
-        ax.tick_params(axis="y", labelleft=True)
-        ax.grid(True, alpha=0.35)
-        ax.legend(loc="upper center", bbox_to_anchor=(0.5, 0.98), fontsize=7, ncol=2)
+            ax.plot(s_sp, spin_sp, "-", lw=1.2, label="SplineBoris")
+            ax.plot(s_mp, spin_mp, "--", lw=1.2, label="Multipole")
+            ax.grid(True, alpha=0.35)
+            ax.set_ylabel(comp_label, fontsize=LABEL_FONTSIZE)
+            ax.set_xlabel(r"$s$ [m]", fontsize=LABEL_FONTSIZE)
+            ax.tick_params(axis="x", labelbottom=True, labelsize=TICK_FONTSIZE)
+            ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
+            if row == 0:
+                ax.set_title(title, fontsize=TITLE_FONTSIZE)
+            if col == 1:
+                ax.yaxis.set_label_position("right")
 
-    axs[0].set_ylabel(r"$S_x, S_y, S_z$")
-    axs[1].set_ylabel(r"$S_x, S_y, S_z$")
-    axs[1].yaxis.set_label_position("right")
-    fig.suptitle("Standalone corrected-undulator twiss: spin component comparison")
+    axs[0, 0].legend(loc="upper center", bbox_to_anchor=(0.5, 0.98), fontsize=LEGEND_FONTSIZE, ncol=2)
+    axs[0, 1].legend(loc="upper center", bbox_to_anchor=(0.5, 0.98), fontsize=LEGEND_FONTSIZE, ncol=2)
+    fig.suptitle("Standalone corrected-undulator twiss: spin component comparison", fontsize=TITLE_FONTSIZE)
     fig.tight_layout()
     return fig
 
@@ -845,13 +864,16 @@ def _make_tracking_orbit_3d_figure(case_map):
 
         ax.plot(s_sp, x_sp, y_sp, "-", lw=1.2, label="SplineBoris")
         ax.plot(s_mp, x_mp, y_mp, "--", lw=1.2, label="Multipole")
-        ax.set_title(f"{title} 3D orbit")
-        ax.set_xlabel(r"$s$ [m]")
-        ax.set_ylabel(r"$x$ [m]")
-        ax.set_zlabel(r"$y$ [m]")
-        ax.legend(loc="upper center", bbox_to_anchor=(0.5, 0.98), fontsize=8)
+        ax.set_title(f"{title} 3D orbit", fontsize=TITLE_FONTSIZE)
+        ax.set_xlabel(r"$s$ [m]", fontsize=LABEL_FONTSIZE)
+        ax.set_ylabel(r"$x$ [m]", fontsize=LABEL_FONTSIZE)
+        ax.set_zlabel(r"$y$ [m]", fontsize=LABEL_FONTSIZE)
+        ax.tick_params(axis="x", labelsize=TICK_FONTSIZE)
+        ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
+        ax.tick_params(axis="z", labelsize=TICK_FONTSIZE)
+        ax.legend(loc="upper center", bbox_to_anchor=(0.5, 0.98), fontsize=LEGEND_FONTSIZE)
 
-    fig.suptitle("Standalone corrected-undulator 3D orbit")
+    fig.suptitle("Standalone corrected-undulator 3D orbit", fontsize=TITLE_FONTSIZE)
     fig.tight_layout()
     return fig
 
@@ -875,6 +897,26 @@ def _make_plot_payload(case_map):
         "twiss": twiss_payload,
         "standalone_spin_twiss": standalone_spin_twiss_payload,
     }
+
+
+def _print_standalone_final_rel_differences(standalone_spin_twiss):
+    print("\nStandalone corrected-undulator final-state relative differences")
+    print("(Multipole vs SplineBoris)")
+    eps = 1e-30
+    for scenario in ("on-axis", "off-axis"):
+        tw_spline = standalone_spin_twiss[f"{scenario}-spline"]
+        tw_multipole = standalone_spin_twiss[f"{scenario}-multipole"]
+        print(f"  {scenario}:")
+        for comp in ("x", "y", "px", "py"):
+            spline_val = float(np.asarray(tw_spline[comp])[-1])
+            multipole_val = float(np.asarray(tw_multipole[comp])[-1])
+            abs_diff = abs(multipole_val - spline_val)
+            rel_diff = abs_diff / max(abs(spline_val), eps)
+            print(
+                f"    {comp:>2}: "
+                f"spline={spline_val:+.6e}, multipole={multipole_val:+.6e}, "
+                f"abs_diff={abs_diff:.3e}, rel_diff={rel_diff:.3e}"
+            )
 
 
 def _save_cache(metrics_rows, payload):
@@ -995,6 +1037,7 @@ def main():
             _save_cache(metrics_rows, payload)
 
     _print_metrics_table(metrics_rows)
+    _print_standalone_final_rel_differences(payload["standalone_spin_twiss"])
     fig_twiss_betx2 = _make_twiss_bet2_figure(payload["twiss"], component="betx2")
     fig_twiss_bety2 = _make_twiss_bet2_figure(payload["twiss"], component="bety2")
     fig_twiss_betx2_on_axis = _make_twiss_betx2_on_axis_figure(payload["twiss"])

@@ -9,6 +9,10 @@ from scipy.constants import e as qe
 
 import xtrack as xt
 
+TICK_FONTSIZE = 16
+LABEL_FONTSIZE = 17
+TITLE_FONTSIZE = 18
+
 FIT_PARS_INDEX_COLS = [
     "field_component",
     "derivative_x",
@@ -335,11 +339,13 @@ if __name__ == "__main__":
                   "o-", label="SplineBoris")
         ax.loglog(results_mp["n_slices"], results_mp[ck],
                   "s-", label="Multipole kicks")
-        ax.set_xlabel(r"Total integration steps / slices")
-        ax.set_ylabel(cl)
-        ax.legend(fontsize="small")
+        ax.set_xlabel(r"Total integration steps / slices", fontsize=LABEL_FONTSIZE)
+        ax.set_ylabel(cl, fontsize=LABEL_FONTSIZE)
+        ax.tick_params(axis="x", labelsize=TICK_FONTSIZE)
+        ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
+        ax.legend(fontsize=12)
         ax.grid(True, which="both", alpha=0.3)
-    fig.suptitle("Per-coordinate error vs total steps", fontsize=13)
+    fig.suptitle("Per-coordinate error vs total steps", fontsize=TITLE_FONTSIZE)
     fig.tight_layout()
 
     # Plot 2: Timing vs total steps/slices
@@ -348,10 +354,12 @@ if __name__ == "__main__":
               "o-", label="SplineBoris")
     ax.loglog(results_mp["n_slices"], results_mp["median_s"],
               "s-", label="Multipole kicks")
-    ax.set_xlabel(r"Total integration steps / slices")
-    ax.set_ylabel("Median computing time [s]")
-    ax.set_title("Computing time vs steps")
-    ax.legend()
+    ax.set_xlabel(r"Total integration steps / slices", fontsize=LABEL_FONTSIZE)
+    ax.set_ylabel("Median computing time [s]", fontsize=LABEL_FONTSIZE)
+    ax.set_title("Computing time vs steps", fontsize=TITLE_FONTSIZE)
+    ax.tick_params(axis="x", labelsize=TICK_FONTSIZE)
+    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
+    ax.legend(fontsize=12)
     ax.grid(True, which="both", alpha=0.3)
     fig.tight_layout()
 
@@ -362,21 +370,25 @@ if __name__ == "__main__":
                   "o-", label="SplineBoris")
         ax.loglog(results_mp["median_s"], results_mp[ck],
                   "s-", label="Multipole kicks")
-        ax.set_xlabel("Median computing time [s]")
-        ax.set_ylabel(cl)
-        ax.legend(fontsize="small")
+        ax.set_xlabel("Median computing time [s]", fontsize=LABEL_FONTSIZE)
+        ax.set_ylabel(cl, fontsize=LABEL_FONTSIZE)
+        ax.tick_params(axis="x", labelsize=TICK_FONTSIZE)
+        ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
+        ax.legend(fontsize=12)
         ax.grid(True, which="both", alpha=0.3)
-    fig.suptitle("Per-coordinate error vs computation time", fontsize=13)
+    fig.suptitle("Per-coordinate error vs computation time", fontsize=TITLE_FONTSIZE)
     fig.tight_layout()
 
     # Plot 4: SplineBoris self-convergence
     fig, axes = plt.subplots(2, 2, figsize=(12, 8))
     for ax, ck, cl in zip(axes.ravel(), coord_keys, coord_labels):
         ax.loglog(results_sb["steps_per_point"], results_sb[ck], "o-")
-        ax.set_xlabel("steps_per_point")
-        ax.set_ylabel(cl)
+        ax.set_xlabel("steps_per_point", fontsize=LABEL_FONTSIZE)
+        ax.set_ylabel(cl, fontsize=LABEL_FONTSIZE)
+        ax.tick_params(axis="x", labelsize=TICK_FONTSIZE)
+        ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
         ax.grid(True, which="both", alpha=0.3)
-    fig.suptitle("SplineBoris self-convergence", fontsize=13)
+    fig.suptitle("SplineBoris self-convergence", fontsize=TITLE_FONTSIZE)
     fig.tight_layout()
 
     plt.show()
