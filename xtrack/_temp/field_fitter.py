@@ -125,9 +125,9 @@ class FieldFitter:
         """
         Build a 4th-order polynomial over [s0, s1] from Hermite parameters.
 
-        Convenience wrapper around ``xt.SplineBoris.hermite_to_poly``.
+        Convenience wrapper around ``xt.SplineBoris.hermite_to_polynomial``.
         """
-        return xt.SplineBoris.hermite_to_poly(s0, s1, coeffs)
+        return xt.SplineBoris.hermite_to_polynomial(s0, s1, coeffs)
 
 
 

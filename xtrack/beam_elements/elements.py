@@ -3,6 +3,7 @@
 # Copyright (c) CERN, 2025.                 #
 # ######################################### #
 import copy
+from dataclasses import dataclass
 from typing import List
 from warnings import warn
 
@@ -992,6 +993,39 @@ class Wire(BeamElement):
     ]
 
 
+@dataclass
+class Spline4:
+    """Hermite boundary data used by ``SplineBoris``."""
+
+    val_start: float
+    der_start: float
+    val_end: float
+    der_end: float
+    integral: float
+
+    def as_list(self):
+        return [
+            self.val_start,
+            self.der_start,
+            self.val_end,
+            self.der_end,
+            self.integral,
+        ]
+    
+    def as_dict(self):
+        return {
+            'val_start': self.val_start,
+            'der_start': self.der_start,
+            'val_end': self.val_end,
+            'der_end': self.der_end,
+            'integral': self.integral,
+        }
+
+    def as_np_array(self):
+        return np.array(self.as_list())
+
+
+
 class SplineBoris(BeamElement):
     """
     Thick element integrating the Lorentz force with a Boris stepper through a
@@ -1003,22 +1037,19 @@ class SplineBoris(BeamElement):
 
     Parameters
     ----------
-    Bs : array-like, optional
-        ``_NUM_COEFFS`` (currently 5) Hermite scalars
-        ``(f_left, df_left, f_right, df_right, average)`` for the **longitudinal**
-        component of **B** (the solenoid-like term in ``evaluate_B``). Omitted
-        only if ``Bnorm`` and/or ``Bskew`` carry the map; then it defaults to zeros.
-    Bnorm : dict, optional
-        ``{derivative_order: [_NUM_COEFFS Hermite values]}`` for the **normal**
-        transverse component (the ``By`` channel in ``evaluate_B``). ``None``
-        becomes ``{}``. Missing orders are zero-filled.
-    Bskew : dict, optional
-        ``{derivative_order: [_NUM_COEFFS Hermite values]}`` for the **skew**
-        transverse component (the ``Bx`` channel). ``None`` becomes ``{}``.
+    bs : Spline4, optional
+        Longitudinal component as Hermite boundary data.
+    bx : Spline4 or tuple/list of (Spline4 or None), optional
+        Dataclass form for the skew component (the ``Bx`` channel). If a single
+        ``Spline4`` is provided, it maps to derivative order 0. If a tuple/list is
+        provided, item index gives derivative order and ``None`` entries are skipped.
+    by : Spline4 or tuple/list of (Spline4 or None), optional
+        Dataclass form for the normal component (the ``By`` channel), with the same
+        indexing/``None`` semantics as ``bx``.
 
     multipole_order : int
-        Inferred as one plus the maximum derivative key appearing in ``Bnorm`` or
-        ``Bskew`` when either map is non-empty; otherwise ``1`` for
+        Inferred as one plus the maximum derivative key appearing in ``by`` or
+        ``bx`` when either map is non-empty; otherwise ``1`` for
         longitudinal-only data. Stored for kernel dispatch (must be
         ≤ ``_MAX_MULTIPOLE_ORDER``).
 
@@ -1040,12 +1071,12 @@ class SplineBoris(BeamElement):
 
     Notes
     -----
-    At least one of the following must be supplied: ``Bs`` as an explicit array,
-    a non-empty ``Bnorm``, or a non-empty ``Bskew``.
+    At least one of the following must be supplied: ``bs``, a non-empty ``bx``,
+    or a non-empty ``by``.
 
     On construction, inputs are validated, derivative dicts are deep-copied, and
-    ``par_list`` is filled in the order: longitudinal block, then ``Bnorm`` for
-    orders ``0 … multipole_order-1``, then ``Bskew`` for the same orders (each
+    ``par_list`` is filled in the order: longitudinal block, then ``by`` for
+    orders ``0 … multipole_order-1``, then ``bx`` for the same orders (each
     block contributes ``_NUM_COEFFS`` doubles), total length
     ``_NUM_COEFFS * (2 * multipole_order + 1)``, matching ``evaluate_B``.
 
@@ -1079,12 +1110,12 @@ class SplineBoris(BeamElement):
     _depends_on = [RandomUniformAccurate, RandomExponential]
     _internal_record_class = SynchrotronRadiationRecord
 
-    # Keep in sync with XTRACK_SPLINE_B_N_POLY_COEFFS in splineboris.h and poly_order in _generate_bpmeth_to_C.py.
     _POLY_ORDER = 4
     _NUM_COEFFS = _POLY_ORDER + 1
     _MAX_MULTIPOLE_ORDER = 7
-    _HERMITE_SUFFIXES = ('f_left', 'df_left', 'f_right', 'df_right', 'average')
 
+    # This function is not used here, but is called when generating the C code for the field evaluation.
+    # We keep it here, so that the SplineBoris defines the canonical naming convention for the polynomial coefficients.
     @classmethod
     def _get_param_names(cls, multipole_order):
         """Ordered names of polynomial coefficients in ``par_list`` / ``evaluate_B``'s ``params``.
@@ -1109,9 +1140,8 @@ class SplineBoris(BeamElement):
         return names
 
     @classmethod
-    def hermite_to_poly(cls, s_start, s_end, coeffs):
-        """Build a fourth-order polynomial over ``[s_start, s_end]`` from Hermite
-        parameters.
+    def hermite_to_polynomial(cls, s_start, s_end, coeffs):
+        """Build a fourth-order polynomial over ``[s_start, s_end]`` from Hermite data.
 
         Parameters
         ----------
@@ -1156,100 +1186,104 @@ class SplineBoris(BeamElement):
         return poly_s
 
     @classmethod
-    def validate_field_inputs(cls, Bs, Bnorm, Bskew):
-        """Normalize ``Bnorm`` / ``Bskew`` to dicts, default longitudinal ``Bs`` if omitted.
+    def hermite_to_coeff_list(cls, s_start, s_end, coeffs):
+        """Build fixed-length polynomial coefficients from Hermite parameters."""
+        poly_s = cls.hermite_to_polynomial(s_start, s_end, coeffs)
+        coeffs_out = poly_s.coef.tolist()
+        return coeffs_out + [0.0] * (cls._NUM_COEFFS - len(coeffs_out))
 
-        Validates Hermite vector lengths, key types, and inferred ``multipole_order``.
-        Returns **copies** of ``Bnorm`` / ``Bskew`` (deep) and of ``Bs`` (array/list).
+    @classmethod
+    def validate_field_inputs(cls, bs, by, bx):
+        """Validate and normalize dataclass inputs for longitudinal/normal/skew components.
+
+        Inputs are ``bs`` (longitudinal), ``by`` (normal tuple), and ``bx`` (skew tuple).
 
         Returns
         -------
-        Bs : ndarray or list
+        bs : list
             Longitudinal Hermite data (possibly zero-filled).
-        Bnorm, Bskew : dict
-            Derivative maps (deep-copied, possibly empty).
+        by, bx : tuple
+            Derivative-order tuples where index corresponds to derivative order and
+            entries are either normalized Hermite lists or ``None``.
         multipole_order : int
-            ``max(keys(Bnorm) ∪ keys(Bskew)) + 1`` if any transverse entries, else ``1``.
+            One plus the maximum populated derivative order across ``by`` / ``bx``,
+            or ``1`` if no transverse entries are provided.
         """
-        n_coeffs = cls._NUM_COEFFS
-        Bnorm = {} if Bnorm is None else Bnorm
-        Bskew = {} if Bskew is None else Bskew
+        def _normalize_component_tuple(values, name):
+            if values is None:
+                return ()
+            if isinstance(values, Spline4):
+                values = (values,)
+            elif isinstance(values, list):
+                values = tuple(values)
+            elif not isinstance(values, tuple):
+                raise TypeError(
+                    f"{name} must be a Spline4, tuple/list of Spline4/None, or None; "
+                    f"got {type(values).__name__}"
+                )
 
-        if Bs is None and not Bnorm and not Bskew:
+            out = []
+            for order, item in enumerate(values, start=0):
+                if item is None:
+                    out.append(None)
+                    continue
+                if not isinstance(item, Spline4):
+                    raise TypeError(
+                        f"{name}[{order}] must be a Spline4 or None, got {type(item).__name__}"
+                    )
+                out.append(item.as_list())
+            return tuple(out)
+
+        Bnorm_tuple = _normalize_component_tuple(by, "by")
+        Bskew_tuple = _normalize_component_tuple(bx, "bx")
+
+        if bs is None and not any(v is not None for v in Bnorm_tuple) and not any(v is not None for v in Bskew_tuple):
             raise ValueError(
-                "At least one of Bs, Bnorm, or Bskew must be provided "
-                "(non-empty Bnorm/Bskew, or pass Bs explicitly)."
+                "At least one of bs, bx, or by must be provided "
+                "(non-empty bx/by, or pass bs explicitly)."
             )
-        if Bs is None:
-            Bs = [0.0] * n_coeffs
+        if bs is None:
+            bs = Spline4(0.0, 0.0, 0.0, 0.0, 0.0)
 
-        if isinstance(Bs, np.ndarray):
-            if Bs.shape != (n_coeffs,):
-                raise ValueError(f"Bs must be a {n_coeffs}-element array, got {Bs.shape}")
-            Bs_stored = np.asarray(Bs, dtype=float).copy()
-        elif isinstance(Bs, (list, tuple)):
-            if len(Bs) != n_coeffs:
-                raise ValueError(f"Bs must be a {n_coeffs}-element list, got {len(Bs)}")
-            Bs_stored = list(Bs)
-        else:
-            raise TypeError(f"Bs must be a numpy array or list, got {type(Bs).__name__}")
+        if not isinstance(bs, Spline4):
+            raise TypeError(f"bs must be a Spline4, got {type(bs).__name__}")
+        Bs_stored = bs.as_list()
+        max_order = -1
+        for order, coeffs in enumerate(Bnorm_tuple):
+            if coeffs is not None:
+                max_order = max(max_order, order)
+        for order, coeffs in enumerate(Bskew_tuple):
+            if coeffs is not None:
+                max_order = max(max_order, order)
 
-        if not isinstance(Bnorm, dict):
-            raise TypeError(
-                f"Bnorm must be a dict mapping derivative order to coefficient arrays, "
-                f"got {type(Bnorm).__name__}"
-            )
-        for order in Bnorm:
-            if not isinstance(order, int) or order < 0:
-                raise ValueError("Bnorm/Bskew keys must be non-negative integers")
-            if len(Bnorm[order]) != n_coeffs:
-                raise ValueError(
-                    f"Bnorm[{order}] must be a {n_coeffs}-element array, got {len(Bnorm[order])}"
-                )
-
-        if not isinstance(Bskew, dict):
-            raise TypeError(
-                f"Bskew must be a dict mapping derivative order to coefficient arrays, "
-                f"got {type(Bskew).__name__}"
-            )
-        for order in Bskew:
-            if not isinstance(order, int) or order < 0:
-                raise ValueError("Bskew keys must be non-negative integers")
-            if len(Bskew[order]) != n_coeffs:
-                raise ValueError(
-                    f"Bskew[{order}] must be a {n_coeffs}-element array, got {len(Bskew[order])}"
-                )
-
-        keys = list(Bnorm.keys()) + list(Bskew.keys())
-        multipole_order = max(keys) + 1 if keys else 1
+        multipole_order = max_order + 1 if max_order >= 0 else 1
         if multipole_order > cls._MAX_MULTIPOLE_ORDER:
             raise ValueError(
                 f"Unsupported multipole_order={multipole_order}; "
                 f"max supported is {cls._MAX_MULTIPOLE_ORDER}"
             )
 
-        return Bs_stored, copy.deepcopy(Bnorm), copy.deepcopy(Bskew), multipole_order
+        return Bs_stored, copy.deepcopy(Bnorm_tuple), copy.deepcopy(Bskew_tuple), multipole_order
 
     def __init__(self,
-                 Bs=None,
-                 Bnorm=None,
-                 Bskew=None,
                  s_start=0,
                  length=0,
                  n_steps=1,
                  shift_x=0.0,
                  shift_y=0.0,
                  hx=0.0,
+                 *,
+                 bs=None,
+                 bx=None,
+                 by=None,
                  **kwargs,
     ):
         """
-        Build the element from Hermite data and pass the packed ``par_list`` to ``BeamElement``.
-
-        Field arguments (*Bs*, *Bnorm*, *Bskew*) are documented on the class. Remaining
-        arguments are geometry and tracking options stored on the xobject.
+        Build the element from ``Spline4`` data and pass the packed ``par_list`` to
+        ``BeamElement``.
         """
 
-        self.Bs, self.Bnorm, self.Bskew, multipole_order = self.validate_field_inputs(Bs, Bnorm, Bskew)
+        self.Bs, self.Bnorm, self.Bskew, multipole_order = self.validate_field_inputs(bs, by, bx)
 
         if n_steps <= 0:
             raise ValueError(f"n_steps must be > 0, got {n_steps}")
@@ -1258,17 +1292,17 @@ class SplineBoris(BeamElement):
             raise ValueError(f"length must be finite and > 0, got {length}")
         length_f = float(length)
         s_start_f = float(s_start)
-        s_end = s_start_f + length_f
+        s_end_f = s_start_f + length_f
 
         radiation_flag = kwargs.pop('radiation_flag', 0)
 
-        par_list = self._build_par_table(s_start_f, s_end, multipole_order)
+        par_list = self._build_par_list(s_start_f, s_end_f, multipole_order)
 
         super().__init__(
             par_list=par_list,
             multipole_order=multipole_order,
             s_start=s_start_f,
-            s_end=s_end,
+            s_end=s_end_f,
             length=length_f,
             n_steps=n_steps,
             shift_x=shift_x,
@@ -1278,7 +1312,7 @@ class SplineBoris(BeamElement):
             **kwargs,
         )
     
-    def _build_par_table(self, s_start, s_end, multipole_order):
+    def _build_par_list(self, s_start, s_end, multipole_order):
         """Flatten polynomial coefficients for the kernel: longitudinal, then *Bnorm*, then *Bskew*.
 
         For each of ``multipole_order`` transverse orders, append ``_NUM_COEFFS`` doubles for
@@ -1288,19 +1322,18 @@ class SplineBoris(BeamElement):
         par_list = []
         n_coeffs = self._NUM_COEFFS
 
-        Bs_values = list(self.Bs)
-        Bs_poly = self.hermite_to_poly(s_start, s_end, Bs_values).coef.tolist()
-        par_list.extend(Bs_poly + [0.0] * (n_coeffs - len(Bs_poly)))
+        Bs_poly = self.hermite_to_coeff_list(s_start, s_end, self.Bs)
+        par_list.extend(Bs_poly)
 
         for order in range(multipole_order):
-            Bnorm_values = list(self.Bnorm.get(order, [0.0] * n_coeffs))
-            Bnorm_poly = self.hermite_to_poly(s_start, s_end, Bnorm_values).coef.tolist()
-            par_list.extend(Bnorm_poly + [0.0] * (n_coeffs - len(Bnorm_poly)))
+            Bnorm_entry = self.Bnorm[order] if order < len(self.Bnorm) else [0.0] * n_coeffs
+            Bnorm_poly_coeffs = self.hermite_to_coeff_list(s_start, s_end, Bnorm_entry)
+            par_list.extend(Bnorm_poly_coeffs)
 
         for order in range(multipole_order):
-            Bskew_values = list(self.Bskew.get(order, [0.0] * n_coeffs))
-            Bskew_poly = self.hermite_to_poly(s_start, s_end, Bskew_values).coef.tolist()
-            par_list.extend(Bskew_poly + [0.0] * (n_coeffs - len(Bskew_poly)))
+            Bskew_entry = self.Bskew[order] if order < len(self.Bskew) else [0.0] * n_coeffs
+            Bskew_poly_coeffs = self.hermite_to_coeff_list(s_start, s_end, Bskew_entry)
+            par_list.extend(Bskew_poly_coeffs)
 
         if len(par_list) != n_coeffs * (2 * multipole_order + 1):
             raise ValueError(f"Expected {n_coeffs * (2 * multipole_order + 1)} coefficients, got {len(par_list)}")
