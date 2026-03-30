@@ -1113,6 +1113,8 @@ class SplineBoris(BeamElement):
     _POLY_ORDER = 4
     _NUM_COEFFS = _POLY_ORDER + 1
     _MAX_MULTIPOLE_ORDER = 7
+    # Backward-compatible Hermite field names used by fitter/sequence helpers.
+    _HERMITE_SUFFIXES = ("val_start", "der_start", "val_end", "der_end", "integral")
 
     # This function is not used here, but is called when generating the C code for the field evaluation.
     # We keep it here, so that the SplineBoris defines the canonical naming convention for the polynomial coefficients.
@@ -1326,12 +1328,16 @@ class SplineBoris(BeamElement):
         par_list.extend(Bs_poly)
 
         for order in range(multipole_order):
-            Bnorm_entry = self.Bnorm[order] if order < len(self.Bnorm) else [0.0] * n_coeffs
+            Bnorm_entry = self.Bnorm[order] if order < len(self.Bnorm) else None
+            if Bnorm_entry is None:
+                Bnorm_entry = [0.0] * n_coeffs
             Bnorm_poly_coeffs = self.hermite_to_coeff_list(s_start, s_end, Bnorm_entry)
             par_list.extend(Bnorm_poly_coeffs)
 
         for order in range(multipole_order):
-            Bskew_entry = self.Bskew[order] if order < len(self.Bskew) else [0.0] * n_coeffs
+            Bskew_entry = self.Bskew[order] if order < len(self.Bskew) else None
+            if Bskew_entry is None:
+                Bskew_entry = [0.0] * n_coeffs
             Bskew_poly_coeffs = self.hermite_to_coeff_list(s_start, s_end, Bskew_entry)
             par_list.extend(Bskew_poly_coeffs)
 
