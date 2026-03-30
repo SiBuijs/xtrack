@@ -3,10 +3,10 @@ import numpy as np
 from scipy.constants import c as clight
 from scipy.constants import e as qe
 
-import pandas as pd
 import xtrack as xt
 from xtrack._temp.boris_and_solenoid_map.solenoid_field import SolenoidField
 from xtrack._temp.field_fitter import FieldFitter
+from xtrack._temp.splineboris_sequence import SplineBorisSequence
 import matplotlib.pyplot as plt
 import time
 
@@ -126,17 +126,19 @@ if run_study_1:
         x_axis, y_axis, z_axis, indexing="ij")
     bx, by, bz = sf.get_field(
         x_grid.ravel(), y_grid.ravel(), z_grid.ravel())
-    df_raw = pd.DataFrame(
-        np.column_stack([x_grid.ravel(), y_grid.ravel(), z_grid.ravel(),
-                         bx, by, bz]),
-        columns=["X", "Y", "Z", "Bx", "By", "Bs"],
-    ).set_index(["X", "Y", "Z"])
+    raw_data = {
+        "x": x_grid.ravel().astype(float),
+        "y": y_grid.ravel().astype(float),
+        "z": z_grid.ravel().astype(float),
+        "Bx": bx.ravel().astype(float),
+        "By": by.ravel().astype(float),
+        "Bs": bz.ravel().astype(float),
+    }
     fitter = FieldFitter(
-        raw_data=df_raw, xy_point=(0, 0), distance_unit=1,
+        raw_data=raw_data, xy_point=(0, 0), distance_unit=1,
         min_region_size=10, deg=multipole_order - 1, field_tol=1e-8,
     )
-    fitter.fit()
-    df_fit_pars = fitter.df_fit_pars
+    fit_result = fitter.fit()
     n_spline_intervals = n_spline_points - 1
     print(f"Spline fit built: {n_spline_intervals} intervals over "
           f"{interval} m "
@@ -186,11 +188,10 @@ if run_study_1:
         print(f"steps_per_point = {spp}  "
               f"(n_steps_total = {n_steps_total})")
 
-        seq = xt.SplineBorisSequence(
-            df_fit_pars=df_fit_pars,
-            multipole_order=multipole_order,
-            steps_per_point=spp,
-        )
+    seq = SplineBorisSequence.from_fit_result(
+        fit_result,
+        steps_per_point=spp,
+    )
         line_spline = seq.to_line()
         line_spline.build_tracker()
         p_test = p0.copy()

@@ -2,10 +2,10 @@ import numpy as np
 from scipy.constants import c as clight
 from scipy.constants import e as qe
 
-import pandas as pd
 import xtrack as xt
 from xtrack._temp.boris_and_solenoid_map.solenoid_field import SolenoidField
 from xtrack._temp.field_fitter import FieldFitter
+from xtrack._temp.splineboris_sequence import SplineBorisSequence
 import matplotlib.pyplot as plt
 import time
 # Set basic parameters
@@ -70,21 +70,24 @@ z_axis = np.linspace(0, interval, z_point_count)
 x_grid, y_grid, z_grid = np.meshgrid(x_axis, y_axis, z_axis, indexing="ij")
 bx, by, bz = sf.get_field(x_grid.ravel(), y_grid.ravel(), z_grid.ravel())
 
-df_raw_data = pd.DataFrame(
-    np.column_stack([x_grid.ravel(), y_grid.ravel(), z_grid.ravel(), bx, by, bz]),
-    columns=["X", "Y", "Z", "Bx", "By", "Bs"],
-).set_index(["X", "Y", "Z"])
+raw_data = {
+    "x": x_grid.ravel().astype(float),
+    "y": y_grid.ravel().astype(float),
+    "z": z_grid.ravel().astype(float),
+    "Bx": bx.ravel().astype(float),
+    "By": by.ravel().astype(float),
+    "Bs": bz.ravel().astype(float),
+}
 
 fitter = FieldFitter(
-    raw_data=df_raw_data,
+    raw_data=raw_data,
     xy_point=(0, 0),
     distance_unit=1,
     min_region_size=10,
     deg=multipole_order - 1,
     field_tol=1e-8,
 )
-fitter.fit()
-df_fit_pars = fitter.df_fit_pars
+fit_result = fitter.fit()
 
 # Plot only the longitudinal component (Bs), similar to FieldFitter plotting.
 s_fit = fitter.s_full
@@ -96,14 +99,13 @@ ax.plot(s_fit, bs_raw, label=r"$B_s$ raw", linewidth=2)
 ax.plot(s_fit, bs_fit, "--", label=r"$B_s$ fit", linewidth=2)
 
 # Draw piece boundaries for Bs, derivative_x=0 fit segments.
-idx = fitter.df_fit_pars.index
-comp = np.asarray(idx.get_level_values("field_component"))
-der_x = np.asarray(idx.get_level_values("derivative_x")).astype(int)
-mask = (comp == "Bs") & (der_x == 0)
-if np.any(mask):
-    s_start = np.asarray(idx.get_level_values("s_start"))[mask].astype(float)
-    s_end = np.asarray(idx.get_level_values("s_end"))[mask].astype(float)
-    for sb in np.unique(np.concatenate((s_start, s_end))):
+bs_regions = [
+    (seg.s_start, seg.s_end)
+    for seg in fit_result.segments
+    if seg.field_component == "Bs" and seg.derivative_x == 0
+]
+if bs_regions:
+    for sb in np.unique(np.array(bs_regions, dtype=float)):
         ax.axvline(sb, color="k", linestyle="--", linewidth=1, alpha=0.2)
 
 ax.set_title("Longitudinal field fit (central axis)", fontsize=TITLE_FONTSIZE)
@@ -114,11 +116,8 @@ ax.tick_params(axis="y", labelsize=TICK_FONTSIZE)
 ax.grid(True, alpha=0.3)
 ax.legend(fontsize=12)
 plt.show()
-# Build solenoid using SplineBorisSequence - automatically creates one SplineBoris
-# element per polynomial piece with n_steps based on the data point count
-seq = xt.SplineBorisSequence(
-    df_fit_pars=df_fit_pars,
-    multipole_order=multipole_order,
+seq = SplineBorisSequence.from_fit_result(
+    fit_result,
     steps_per_point=1,  # one integration step per data point
 )
 

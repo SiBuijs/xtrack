@@ -1,13 +1,39 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Dict, List, Tuple
+
 import numpy as np
-import pandas as pd
 import scipy as sc
 import math
 
 from scipy.signal import find_peaks
 
 import xtrack as xt
+
+
+@dataclass
+class FitSegment:
+    """One longitudinal Hermite piece for a given component/derivative."""
+
+    field_component: str  # "Bx", "By", "Bs"
+    derivative_x: int
+    region_index: int  # canonical region id shared across components
+    s_start: float
+    s_end: float
+    idx_start: int
+    idx_end: int
+    hermite_params: np.ndarray  # (f_left, df_left, f_right, df_right, average)
+    to_fit: bool
+
+
+@dataclass
+class FieldFitResult:
+    """Canonical, pandas-free representation of a full field fit."""
+
+    s_full: np.ndarray
+    segments: List[FitSegment]
+    multipole_order: int  # max derivative_x across By/Bx plus 1
 
 
 def _hermite_csv_param_names(field_component, derivative_x):
@@ -42,8 +68,8 @@ class FieldFitter:
     Parameters
     ----------
     raw_data :
-        A ``pd.DataFrame`` with MultiIndex ``('X', 'Y', 'Z')`` and columns
-        ``('Bx', 'By', 'Bs')``.
+        A numpy-based field grid, e.g. a dict with 1D arrays
+        ``{'x', 'y', 'z', 'Bx', 'By', 'Bs'}`` of equal length.
     xy_point :
         On-axis transverse point ``(X, Y)`` in meters, used to select the
         longitudinal series for fitting. Because the input coordinates are
@@ -63,22 +89,9 @@ class FieldFitter:
         equally-spaced polynomial pieces for all field components.
         The ``min_region_size`` parameter is ignored in this case.
 
-    DataFrames
-    ----------
-    df_raw_data :
-        Raw data DataFrame with MultiIndex ``('X', 'Y', 'Z')`` and columns
-        ``('Bx', 'By', 'Bs')``.
-    df_on_axis_raw :
-        On-axis raw data DataFrame with MultiIndex ``('X', 'Y', 'Z')`` and columns
-        ``('Bx', 'By', 'Bs')``. Filled with the on-axis data from the raw data and
-        the on-axis transverse derivatives from fit_transverse_polynomials.
-    df_on_axis_fit :
-        On-axis fit data DataFrame with MultiIndex ``('X', 'Y', 'Z')`` and columns
-        ``('Bx', 'By', 'Bs')``. Filled with the on-axis fit data from the raw data and
-        the on-axis transverse derivatives from fit_transverse_polynomials.
-    df_fit_pars :
-        Fit parameters DataFrame with MultiIndex ``('field_component', 'derivative_x', 'region_name', 's_start', 's_end', 'idx_start', 'idx_end', 'param_index')``.
-        Filled with the fit parameters for each polynomial piece for each field and derivative.
+    Notes
+    -----
+    All internal storage is numpy-based; no pandas dependency is required.
     '''
 
     def __init__(
@@ -102,21 +115,65 @@ class FieldFitter:
         self.field_tol = field_tol
         self.n_pieces = n_pieces
 
-        # DataFrames
-        self.df_raw_data = None
-        self.df_on_axis_raw  = None
-        self.df_on_axis_fit = None
-        self.df_fit_pars = None
+        # Raw field grid (flattened arrays)
+        self._x = None
+        self._y = None
+        self._z = None
+        self._Bx = None
+        self._By = None
+        self._Bs = None
+
+        # On-axis raw and fitted series: (field, der) -> np.ndarray over s_full
+        self._on_axis_raw: Dict[Tuple[str, int], np.ndarray] = {}
+        self._on_axis_fit: Dict[Tuple[str, int], np.ndarray] = {}
+        # Numpy-native view of the final fit, filled during region setup and fitting.
+        self._fit_segments: List[FitSegment] = []
+        # Map (field, der, region_name, s_start, s_end, idx_start, idx_end) -> index in _fit_segments
+        self._segment_index = {}
         self._set_raw_data(raw_data)
 
     # PUBLIC
     # Method that calls all the other methods to arrive at a fit.
-    def fit(self):
-        if self.df_raw_data is None:
+    def fit(self) -> FieldFitResult:
+        if self._x is None:
             raise RuntimeError("Raw data must be provided before calling fit().")
+
+        # Reset any previous fit so that fit() is idempotent.
+        self._on_axis_raw = {}
+        self._on_axis_fit = {}
+        self._fit_segments = []
+        self._segment_index = {}
+
         self._set_df_on_axis()
         self._find_regions()
         self._fit_slices()
+
+        if not self._fit_segments:
+            raise RuntimeError("No fit segments were produced by FieldFitter.")
+
+        # Multipole order is driven by transverse derivatives (Bx, By).
+        max_der = -1
+        for seg in self._fit_segments:
+            if seg.field_component in ("Bx", "By"):
+                if seg.derivative_x > max_der:
+                    max_der = seg.derivative_x
+        multipole_order = max_der + 1 if max_der >= 0 else 1
+
+        # Renumber region_index canonically by unique geometry to keep grouping stable.
+        geom_to_region = {}
+        next_region = 0
+        for seg in self._fit_segments:
+            key = (seg.s_start, seg.s_end, seg.idx_start, seg.idx_end)
+            if key not in geom_to_region:
+                geom_to_region[key] = next_region
+                next_region += 1
+            seg.region_index = geom_to_region[key]
+
+        return FieldFitResult(
+            s_full=np.asarray(self.s_full, dtype=float).copy(),
+            segments=list(self._fit_segments),
+            multipole_order=multipole_order,
+        )
 
 
 
@@ -132,78 +189,82 @@ class FieldFitter:
 
 
     # PRIVATE
-    # This method stores raw data and extracts on-axis data.
+    # This method stores raw data and extracts the global s grid.
     def _set_raw_data(self, raw_data):
         """
-        Set the raw data DataFrame, scale coordinates to meters, and compute ``s_full``.
-
-        After loading the DataFrame, the X, Y, and Z index levels are
-        multiplied by ``self.distance_unit`` so that all downstream code
-        operates in metres.
-
-        Parameters
-        ----------
-        raw_data :
-            A ``pd.DataFrame`` with MultiIndex ``('X', 'Y', 'Z')`` and columns
-            ``('Bx', 'By', 'Bs')``.
+        Set the raw data arrays, scale coordinates to meters, and compute ``s_full``.
         """
 
-        if not isinstance(raw_data, pd.DataFrame):
+        try:
+            x = np.asarray(raw_data["x"], dtype=float)
+            y = np.asarray(raw_data["y"], dtype=float)
+            z = np.asarray(raw_data["z"], dtype=float)
+            Bx = np.asarray(raw_data["Bx"], dtype=float)
+            By = np.asarray(raw_data["By"], dtype=float)
+            Bs = np.asarray(raw_data["Bs"], dtype=float)
+        except Exception as exc:  # pragma: no cover - defensive
             raise TypeError(
-                f"raw_data must be a pd.DataFrame with MultiIndex "
-                f"('X', 'Y', 'Z'), got {type(raw_data).__name__}"
+                "raw_data must be a mapping with keys 'x', 'y', 'z', 'Bx', 'By', 'Bs' "
+                f"containing 1D numpy-compatible arrays; got {type(raw_data).__name__}"
+            ) from exc
+
+        if not (x.shape == y.shape == z.shape == Bx.shape == By.shape == Bs.shape):
+            raise ValueError("All raw_data arrays must have the same shape.")
+
+        # Apply distance scaling to coordinates (field values are left untouched).
+        self._x = x.astype(float) * float(self.distance_unit)
+        self._y = y.astype(float) * float(self.distance_unit)
+        self._z = z.astype(float) * float(self.distance_unit)
+        self._Bx = Bx.astype(float)
+        self._By = By.astype(float)
+        self._Bs = Bs.astype(float)
+
+        # Build the global s grid from points on the chosen transverse axis.
+        x0, y0 = self.xy_point
+        mask_axis = np.isclose(self._x, x0) & np.isclose(self._y, y0)
+        if not np.any(mask_axis):
+            raise ValueError(
+                f"No data points found on axis at xy_point={self.xy_point!r}; "
+                "check the raw grid coordinates and distance_unit."
             )
-
-        self.df_raw_data = raw_data
-
-        # Convert coordinates to meters (e.g. ds=1e-3 for mm input)
-        idx = self.df_raw_data.index
-        self.df_raw_data.index = pd.MultiIndex.from_arrays(
-            [idx.get_level_values(lvl).astype(float) * self.distance_unit for lvl in idx.names],
-            names=idx.names,
-        )
-
-        self.s_full = np.sort(self.df_raw_data.index.get_level_values("Z").unique()).astype(float)
-
-        # Check if Bs is much smaller than Bx and By
-        # Sets an additional index der = 0.
-        der = 0
-        df_on = self.df_raw_data.xs(self.xy_point, level=("X", "Y")).sort_index().copy(deep=True)
-        # convert columns to MultiIndex (field, derivative)
-        df_on.columns = pd.MultiIndex.from_tuples([(col, der) for col in df_on.columns])
-        self.df_on_axis_raw = df_on
-
-    def save_fit_pars(self, file_path):
-        """
-        Save the fit parameters DataFrame to a CSV file.
-
-        The DataFrame has a MultiIndex with levels ``('field_component', 'derivative_x', 'region_name', 's_start', 's_end', 'idx_start', 'idx_end', 'param_index')``.
-        """
-        self.df_fit_pars.to_csv(file_path, index=True)
+        s_on_axis = self._z[mask_axis]
+        self.s_full = np.sort(np.unique(s_on_axis))
+        if self.s_full.size < 2:
+            raise ValueError("Need at least two distinct s samples on axis to build a fit.")
+        self.length = float(self.s_full[-1] - self.s_full[0])
 
     # PRIVATE
-    # This method extracts on-axis data from the raw DataFrame and fits it to polynomials.
-    # It computes the derivatives of said polynomials and stores them in the self.df_on_axis_raw DataFrame.
-    # The data is not "raw" in the technical sense, but is used to fit a function of s to.
+    # This method extracts on-axis data into numpy arrays and fits transverse polynomials.
     def _set_df_on_axis(self):
         """
         Extract on-axis data and compute transverse derivatives.
 
-        The on-axis data is extracted from the raw DataFrame and stored in the self.df_on_axis_raw DataFrame.
-        The transverse derivatives are computed and stored in the self.df_on_axis_raw DataFrame.
+        On-axis data and all transverse derivatives are stored in
+        ``self._on_axis_raw[(field, der)]`` and corresponding fit values in
+        ``self._on_axis_fit[(field, der)]``.
         """
 
-        # Re-extract on-axis data from raw data so that fit() is idempotent
-        df_on = self.df_raw_data.xs(self.xy_point, level=("X", "Y")).sort_index().copy(deep=True)
-        df_on.columns = pd.MultiIndex.from_tuples([(col, 0) for col in df_on.columns])
-        self.df_on_axis_raw = df_on
-        # compute transverse derivatives for der 1..deg and add as columns (skip Bs derivatives)
-        self._fit_transverse_polynomials()
+        if self.s_full is None:
+            raise RuntimeError("s_full must be set before extracting on-axis data.")
 
-        # create a zeros-only DataFrame with the same index/columns as the on-axis raw data
-        self.df_on_axis_fit = self.df_on_axis_raw.copy(deep=True)
-        # set all values to 0.0 while preserving index and column structure
-        self.df_on_axis_fit.loc[:, :] = 0.0
+        x0, y0 = self.xy_point
+        n_s = self.s_full.size
+
+        # Base on-axis series for Bx, By, Bs (derivative 0).
+        for field, arr in (("Bx", self._Bx), ("By", self._By), ("Bs", self._Bs)):
+            vals = np.zeros(n_s, dtype=float)
+            for i_s, s in enumerate(self.s_full):
+                mask = np.isclose(self._x, x0) & np.isclose(self._y, y0) & np.isclose(self._z, s)
+                field_vals = arr[mask]
+                if field_vals.size == 0:
+                    vals[i_s] = 0.0
+                else:
+                    vals[i_s] = float(np.mean(field_vals))
+            self._on_axis_raw[(field, 0)] = vals
+            self._on_axis_fit[(field, 0)] = np.zeros_like(vals)
+
+        # Compute transverse derivatives (Bx, By only).
+        self._fit_transverse_polynomials()
 
     # PRIVATE
     # This method loops over all fields and derivatives.
@@ -225,25 +286,28 @@ class FieldFitter:
 
         fields = ["Bx", "By", "Bs"]
 
-        abs_max = 0
+        abs_max = 0.0
         for field in fields:
-            series = self.df_on_axis_raw[(field, 0)].values
-            field_max = np.max(np.abs(series))
+            series = self._on_axis_raw.get((field, 0))
+            if series is None:
+                continue
+            field_max = float(np.max(np.abs(series)))
             if field_max > abs_max:
                 abs_max = field_max
 
-        # df_on_axis_raw is indexed by Z only (after xs on X,Y), so use the raw
-        # MultiIndex to estimate transverse scaling for derivative tolerance.
-        x_max = np.max(np.abs(self.df_raw_data.index.get_level_values("X")))
+        # Estimate transverse scale from the raw x-array.
+        x_max = float(np.max(np.abs(self._x)))
 
-        n_data = len(self.df_on_axis_raw[(fields[0], 0)].values)
+        n_data = len(self.s_full)
 
         for field in fields:
             # Bs only has der = 0; other fields range 0..deg
             ders = [0] if field == "Bs" else range(0, self.deg + 1)
 
             for der in ders:
-                series = self.df_on_axis_raw[(field, der)].values
+                series = self._on_axis_raw.get((field, der))
+                if series is None:
+                    continue
 
                 # FIELD TOLERANCE AREA: check if this field/derivative needs fitting
                 field_der_max = np.max(np.abs(series))
@@ -297,17 +361,6 @@ class FieldFitter:
                 print(f"{field} der={der} -> n_pieces={actual_n_pieces}")
                 self._set_df_fit_pars(der, actual_n_pieces, field, field_extrema, to_fit)
 
-
-        self.df_fit_pars.set_index(['field_component', 'derivative_x', 'region_name', 's_start', 's_end', 'idx_start', 'idx_end', 'param_index'],
-                                       inplace=True)
-
-        # ensure MultiIndex is lexsorted so partial-key .loc lookups (e.g. .loc[(field, der)]) are fast and avoid PerformanceWarning
-        if not self.df_fit_pars.empty:
-            self.df_fit_pars.sort_index(inplace=True)
-
-        #with pd.option_context('display.max_columns', None, 'display.max_rows', None, 'display.width', None):
-            #print(self.df_fit_pars)
-
     # PRIVATE
     # This method initializes and appends rows to the df_fit_pars DataFrame.
     # Each row corresponds to a polynomial piece for a specific field and derivative.
@@ -324,34 +377,34 @@ class FieldFitter:
         In case the set consists of only one piece, the parameters are initialized to 0.
         """
 
-        rows = []
         # Zero-pad index so alphabetical sort matches numerical sort
         index_width = len(str(n_pieces - 1)) if n_pieces > 1 else 1
         for i in range(n_pieces):
-            pars = _hermite_csv_param_names(field, der_order)
-
             idx_start = idx_extrema[i]
             idx_end = idx_extrema[i+1]
             s_start = self.s_full[idx_start]
             s_end = self.s_full[idx_end]
+            region_name = f"Poly_{i:0{index_width}d}"
 
-            for idx, name in enumerate(pars):
-                rows.append({
-                    "field_component": field,
-                    "derivative_x": der_order,
-                    "region_name": f"Poly_{i:0{index_width}d}",
-                    "s_start": s_start,
-                    "s_end": s_end,
-                    "idx_start": idx_start,
-                    "idx_end": idx_end,
-                    "param_index": idx,
-                    "param_name": name,
-                    "param_value": 0 if not to_fit else None,
-                    "to_fit": to_fit,
-                })
-
-        results = pd.DataFrame(rows)
-        self.df_fit_pars = pd.concat([self.df_fit_pars, results])
+            # Create or register a numpy-native FitSegment placeholder for this piece.
+            key = (field, int(der_order), region_name, float(s_start), float(s_end), int(idx_start), int(idx_end))
+            if key not in self._segment_index:
+                seg_idx = len(self._fit_segments)
+                self._segment_index[key] = seg_idx
+                self._fit_segments.append(
+                    FitSegment(
+                        field_component=str(field),
+                        derivative_x=int(der_order),
+                        region_index=seg_idx,  # temporary; will be renumbered in fit()
+                        s_start=float(s_start),
+                        s_end=float(s_end),
+                        idx_start=int(idx_start),
+                        idx_end=int(idx_end),
+                        hermite_params=np.zeros(len(xt.SplineBoris._HERMITE_SUFFIXES), dtype=float),
+                        to_fit=bool(to_fit),
+                    )
+                )
+            # No DataFrame construction; segments are tracked in self._fit_segments.
 
 
     
@@ -385,7 +438,7 @@ class FieldFitter:
 
 
 
-    def _fit_single_poly(self, field, der_order, sub_df_this, sub_df_prev=None):
+    def _fit_single_poly(self, field, der_order, segment: FitSegment, prev_segment: FitSegment | None = None):
         """
         Fit a single polynomial piece and store its Hermite parameters.
 
@@ -395,25 +448,22 @@ class FieldFitter:
         previous piece when available, avoiding polynomial reconstruction.
         """
 
-        idx_left = int(sub_df_this.index.get_level_values('idx_start')[0])
-        idx_right = int(sub_df_this.index.get_level_values('idx_end')[0])
-        s_left = float(sub_df_this.index.get_level_values('s_start')[0])
-        s_right = float(sub_df_this.index.get_level_values('s_end')[0])
+        idx_left = int(segment.idx_start)
+        idx_right = int(segment.idx_end)
+        s_left = float(segment.s_start)
+        s_right = float(segment.s_end)
 
         s_region = self.s_full[idx_left:idx_right + 1]
-        b_region = self.df_on_axis_raw[(field, der_order)].values[idx_left:idx_right + 1]
+        b_region = self._on_axis_raw[(field, der_order)][idx_left:idx_right + 1]
         L = s_right - s_left
         average = sc.integrate.trapezoid(b_region, s_region) / L
 
-        if sub_df_prev is not None:
-            sub_df_prev_fitted = sub_df_prev[sub_df_prev['param_value'].notna()].sort_values('param_index')
-            if len(sub_df_prev_fitted) == 0:
-                left_bounds = self._boundary_from_finite_differences(b_region, s_region, get_right_point=False)
-            else:
-                prev_vals = sub_df_prev_fitted['param_value'].values
-                left_bounds = np.array([float(prev_vals[2]),   # f_right of previous
-                                        float(prev_vals[3])],  # df_right of previous
-                                       dtype=float)
+        if prev_segment is not None and prev_segment.to_fit and np.any(prev_segment.hermite_params):
+            prev_vals = prev_segment.hermite_params
+            left_bounds = np.array(
+                [float(prev_vals[2]), float(prev_vals[3])],  # f_right, df_right of previous
+                dtype=float,
+            )
         else:
             left_bounds = self._boundary_from_finite_differences(b_region, s_region, get_right_point=False)
 
@@ -423,16 +473,12 @@ class FieldFitter:
 
         poly = self._poly(s_left, s_right, hermite_params)
 
-        region_name = sub_df_this['region_name'].iloc[0]
-        for i, param_value in enumerate(hermite_params):
-            self.df_fit_pars.at[
-                (field, der_order, region_name,
-                 s_left, s_right, idx_left, idx_right, i),
-                'param_value'
-            ] = param_value
+        # Store Hermite parameters on the segment.
+        segment.hermite_params = np.asarray(hermite_params, dtype=float)
 
-        idx_slice = self.df_on_axis_fit.index[idx_left:idx_right + 1]
-        self.df_on_axis_fit.loc[idx_slice, (field, der_order)] = poly(s_region - s_left)
+        # Update fitted on-axis series.
+        idx_slice = slice(idx_left, idx_right + 1)
+        self._on_axis_fit[(field, der_order)][idx_slice] = poly(s_region - s_left)
 
     # PRIVATE
     # This method loops over all fields and derivatives and fits polynomials to each region.
@@ -441,8 +487,7 @@ class FieldFitter:
         Fit polynomials to each region for all fields and derivatives.
 
         This method loops over all fields and derivatives and fits polynomials to each region.
-        It skips the derivatives of Bs and the regions that do not need fitting.
-        It then fits a polynomial (see _fit_single_poly) to each region and stores the coefficients in the df_fit_pars DataFrame.
+        It skips the derivatives of Bs and regions that do not need fitting.
         """
 
         for field in ["Bx", "By", "Bs"]:
@@ -451,23 +496,23 @@ class FieldFitter:
                     continue
 
                 print(f"Fitting field {field} derivative {der}")
-                sub_df = self.df_fit_pars.loc[(field, der)]
-
-                if not sub_df['to_fit'].any():
+                # Collect segments for this (field, der) and sort by s_start.
+                segs = [
+                    seg
+                    for seg in self._fit_segments
+                    if seg.field_component == field and seg.derivative_x == int(der)
+                ]
+                if not segs:
                     continue
+                segs.sort(key=lambda s: (s.s_start, s.idx_start))
 
-                sub_df.reset_index(level='region_name', inplace=True)
-                n_regions = sub_df['region_name'].nunique()
-                index_width = len(str(n_regions - 1)) if n_regions > 1 else 1
-
-                for i in range(n_regions):
-                    sub_df_this = sub_df[sub_df['region_name'] == f"Poly_{i:0{index_width}d}"]
-                    if i == 0:
-                        sub_df_prev = None
-                    else:
-                        sub_df_prev = sub_df[sub_df['region_name'] == f"Poly_{i - 1:0{index_width}d}"]
-
-                    self._fit_single_poly(field, der, sub_df_this, sub_df_prev)
+                prev_seg = None
+                for seg in segs:
+                    if not seg.to_fit:
+                        prev_seg = seg
+                        continue
+                    self._fit_single_poly(field, der, seg, prev_seg)
+                    prev_seg = seg
 
 
 
@@ -484,28 +529,32 @@ class FieldFitter:
         """
         x_point, y_point = self.xy_point
 
-        idx = self.df_raw_data.index
-        ys = idx.get_level_values("Y")
-        xs = idx.get_level_values("X")
-        mask = ys == y_point
-        points = sorted(set(xs[mask]))
+        if self.s_full is None:
+            raise RuntimeError("s_full must be set before computing transverse polynomials.")
 
-        subsets = {px: self.df_raw_data.xs((px, y_point), level=["X", "Y"]).sort_index() for px in points}
+        n_s = self.s_full.size
 
-        for field in ["Bx", "By"]:
-            x = points
-            n = len(subsets[points[0]][field])
-            derivs = {der: np.zeros(n) for der in range(1, self.deg + 1)}
+        for field, arr in (("Bx", self._Bx), ("By", self._By)):
+            # Prepare derivative arrays for this field.
+            derivs = {der: np.zeros(n_s, dtype=float) for der in range(1, self.deg + 1)}
 
-            for i in range(n):
-                B_i = [subsets[px][field].to_numpy()[i] for px in points]
-                coeffs = np.polyfit(x, B_i, self.deg)
+            for i_s, s in enumerate(self.s_full):
+                # All points at this longitudinal position and y = y_point.
+                mask_plane = np.isclose(self._y, y_point) & np.isclose(self._z, s)
+                xs = self._x[mask_plane]
+                Bs = arr[mask_plane]
+                if xs.size == 0:
+                    # No data at this s-slice; leave derivatives at zero.
+                    continue
+                # Fit polynomial of degree self.deg: B(x) ~ poly(x).
+                coeffs = np.polyfit(xs, Bs, self.deg)
                 for der in range(1, self.deg + 1):
                     d_coeffs = np.polyder(coeffs, m=der)
-                    derivs[der][i] = np.polyval(d_coeffs, x_point)
+                    derivs[der][i_s] = float(np.polyval(d_coeffs, x_point))
 
             for der in range(1, self.deg + 1):
-                self.df_on_axis_raw[(field, der)] = derivs[der]
+                self._on_axis_raw[(field, der)] = derivs[der]
+                self._on_axis_fit[(field, der)] = np.zeros_like(derivs[der])
 
 
 
@@ -519,24 +568,15 @@ class FieldFitter:
         """
         import matplotlib.pyplot as plt
 
-        if self.df_on_axis_raw is None or self.df_on_axis_fit is None:
-            raise RuntimeError("`df_on_axis_raw` and `df_on_axis_fit` must be set before plotting.")
-
         s = self.s_full
 
-        Bx_raw = self.df_on_axis_raw[('Bx', 0)].to_numpy()
-        By_raw = self.df_on_axis_raw[('By', 0)].to_numpy()
-        try:
-            Bs_raw = self.df_on_axis_raw[('Bs', 0)].to_numpy()
-        except KeyError:
-            Bs_raw = np.zeros_like(Bx_raw)
+        Bx_raw = self._on_axis_raw.get(("Bx", 0), np.zeros_like(s, dtype=float))
+        By_raw = self._on_axis_raw.get(("By", 0), np.zeros_like(s, dtype=float))
+        Bs_raw = self._on_axis_raw.get(("Bs", 0), np.zeros_like(s, dtype=float))
 
-        Bx_fit = self.df_on_axis_fit[('Bx', 0)].to_numpy()
-        By_fit = self.df_on_axis_fit[('By', 0)].to_numpy()
-        try:
-            Bs_fit = self.df_on_axis_fit[('Bs', 0)].to_numpy()
-        except KeyError:
-            Bs_fit = np.zeros_like(Bx_fit)
+        Bx_fit = self._on_axis_fit.get(("Bx", 0), np.zeros_like(s, dtype=float))
+        By_fit = self._on_axis_fit.get(("By", 0), np.zeros_like(s, dtype=float))
+        Bs_fit = self._on_axis_fit.get(("Bs", 0), np.zeros_like(s, dtype=float))
 
         fig1, (ax1, ax2, ax3) = plt.subplots(3, figsize=(10, 4), constrained_layout=True)
 
@@ -583,44 +623,32 @@ class FieldFitter:
         """
         import matplotlib.pyplot as plt
 
-        if self.df_on_axis_raw is None or self.df_on_axis_fit is None:
-            raise RuntimeError("`df_on_axis_raw` and `df_on_axis_fit` must be set before plotting.")
-
         s = self.s_full
         fig1, (ax1, ax2, ax3) = plt.subplots(3, figsize=(10, 4), constrained_layout=True)
 
-        def get_series(df, field, der):
-            try:
-                return df[(field, der)].to_numpy()
-            except KeyError:
-                # fallback to zeros if Bs not present or derivative missing
-                ref = df.iloc[:, 0].to_numpy()
-                return np.zeros_like(ref)
+        def get_series_raw(field, der):
+            return self._on_axis_raw.get((field, der), np.zeros_like(s, dtype=float))
 
-        ax1.plot(s, get_series(self.df_on_axis_raw, "Bx", der), label='Raw Data')
-        ax1.plot(s, get_series(self.df_on_axis_fit, "Bx", der), label='Fit', linestyle='--')
-        ax2.plot(s, get_series(self.df_on_axis_raw, "By", der), label='Raw Data')
-        ax2.plot(s, get_series(self.df_on_axis_fit, "By", der), label='Fit', linestyle='--')
-        ax3.plot(s, get_series(self.df_on_axis_raw, "Bs", der), label='Raw Data')
-        ax3.plot(s, get_series(self.df_on_axis_fit, "Bs", der), label='Fit', linestyle='--')
+        def get_series_fit(field, der):
+            return self._on_axis_fit.get((field, der), np.zeros_like(s, dtype=float))
 
-        # compute border indices per field/derivative (fall back to existing attribute if absent)
+        ax1.plot(s, get_series_raw("Bx", der), label='Raw Data')
+        ax1.plot(s, get_series_fit("Bx", der), label='Fit', linestyle='--')
+        ax2.plot(s, get_series_raw("By", der), label='Raw Data')
+        ax2.plot(s, get_series_fit("By", der), label='Fit', linestyle='--')
+        ax3.plot(s, get_series_raw("Bs", der), label='Raw Data')
+        ax3.plot(s, get_series_fit("Bs", der), label='Fit', linestyle='--')
+
+        # compute border indices per field/derivative from FitSegments
         def _borders_for_field(field_ax):
-            if getattr(self, "df_fit_pars", None) is None:
-                return getattr(self, "borders_idx", []) or []
-            try:
-                lvl_field = np.asarray(self.df_fit_pars.index.get_level_values('field_component'))
-                lvl_der = np.asarray(self.df_fit_pars.index.get_level_values('derivative_x')).astype(int)
-                mask = (lvl_field == field_ax) & (lvl_der == int(der))
-                if not np.any(mask):
-                    return []
-                s_start_vals = np.asarray(self.df_fit_pars.index.get_level_values('s_start'))[mask].astype(float)
-                s_end_vals = np.asarray(self.df_fit_pars.index.get_level_values('s_end'))[mask].astype(float)
-                s_borders = np.unique(np.concatenate((s_start_vals, s_end_vals)))
-                s_arr = np.asarray(s)
-                return sorted({int(np.argmin(np.abs(s_arr - float(sb)))) for sb in s_borders})
-            except Exception:
-                return getattr(self, "borders_idx", []) or []
+            idxs = []
+            for seg in self._fit_segments:
+                if seg.field_component != field_ax or int(seg.derivative_x) != int(der):
+                    continue
+                for sb in (seg.s_start, seg.s_end):
+                    idx = int(np.argmin(np.abs(s - float(sb))))
+                    idxs.append(idx)
+            return sorted(set(i for i in idxs if 0 <= i < len(s)))
 
         for field_ax in ["Bx", "By", "Bs"]:
             ax = {"Bx": ax1, "By": ax2, "Bs": ax3}[field_ax]

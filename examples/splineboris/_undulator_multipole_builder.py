@@ -52,10 +52,13 @@ def _build_native_s_positions_from_sequence(seq):
     return np.asarray(s_positions, dtype=float)
 
 
+from xtrack._temp.splineboris_sequence import SplineBorisSequence
+
+
 def build_multipole_kick_undulator(
     env,
     p_ref,
-    df_fit_pars,
+    fit_result,
     multipole_order=3,
     shift_x=0.0,
     shift_y=0.0,
@@ -63,9 +66,8 @@ def build_multipole_kick_undulator(
     name_prefix="und_kick",
     multipole_isthick=False,
 ):
-    seq = xt.SplineBorisSequence(
-        df_fit_pars=df_fit_pars,
-        multipole_order=multipole_order,
+    seq = SplineBorisSequence.from_fit_result(
+        fit_result,
         steps_per_point=1,
         shift_x=shift_x,
         shift_y=shift_y,
@@ -76,9 +78,8 @@ def build_multipole_kick_undulator(
         # element's n_steps subdivision) for closest alignment to SplineBoris.
         s_positions = _build_native_s_positions_from_sequence(seq)
     else:
-        df_reset = df_fit_pars.reset_index()
-        s_start = float(df_reset["s_start"].min())
-        s_end = float(df_reset["s_end"].max())
+        s_start = float(min(seg.s_start for seg in fit_result.segments))
+        s_end = float(max(seg.s_end for seg in fit_result.segments))
         s_positions = np.linspace(s_start, s_end, int(n_slices) + 1)
 
     brho = _compute_brho(p_ref)

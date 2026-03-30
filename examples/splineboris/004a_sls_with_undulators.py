@@ -7,9 +7,9 @@ inserts wigglers at 11 locations, computes twiss with radiation integrals, and p
 
 import xtrack as xt
 from pathlib import Path
-import pandas as pd
 import matplotlib.pyplot as plt
 from xtrack._temp.field_fitter import FieldFitter
+from xtrack._temp.splineboris_sequence import SplineBorisSequence
 
 multipole_order = 3
 
@@ -29,41 +29,36 @@ line_sls.particle_ref = p0.copy()
 
 BASE_DIR = Path(__file__).resolve().parent
 
-# Load the raw field map data from shared test_data
+# Load the raw field map data from shared test_data (tab-separated text file)
 field_map_path = BASE_DIR.parent.parent / "test_data" / "sls" / "undulator_field_map.txt"
-df_raw_data = pd.read_csv(
-    field_map_path,
-    sep='\t',
-    header=None,
-    names=['X', 'Y', 'Z', 'Bx', 'By', 'Bs'],
-)
-df_raw_data = df_raw_data.set_index(['X', 'Y', 'Z'])
+data = np.loadtxt(field_map_path, delimiter="\t")
+x_raw, y_raw, z_raw, bx_raw, by_raw, bs_raw = data.T
 
 # Distance unit in meters (the dataset uses mm, so 1 mm = 0.001 m)
 distance_unit = 0.001
 
+raw_data = {
+    "x": x_raw.astype(float),
+    "y": y_raw.astype(float),
+    "z": z_raw.astype(float),
+    "Bx": bx_raw.astype(float),
+    "By": by_raw.astype(float),
+    "Bs": bs_raw.astype(float),
+}
+
 field_fitter = FieldFitter(
-    raw_data=df_raw_data,
+    raw_data=raw_data,
     xy_point=(0, 0),
     distance_unit=distance_unit,
     min_region_size=5,
     deg=multipole_order-1,
 )
 
-field_fitter.fit()
+fit_result = field_fitter.fit()
 
-# Save fit parameters if needed
-# field_fitter.save_fit_pars(
-#     BASE_DIR
-#     / "test_data" / "sls"
-#     / "undulator_fit_pars.csv"
-# )
-
-# Build undulator using SplineBorisSequence - automatically creates one SplineBoris
-# element per polynomial piece with n_steps based on the data point count
-seq = xt.SplineBorisSequence(
-    df_fit_pars=field_fitter.df_fit_pars,
-    multipole_order=multipole_order,
+# Build undulator using SplineBorisSequence from FieldFitResult
+seq = SplineBorisSequence.from_fit_result(
+    fit_result,
     steps_per_point=1,
 )
 

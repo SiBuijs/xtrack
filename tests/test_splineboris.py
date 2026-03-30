@@ -5,13 +5,13 @@ from scipy.constants import epsilon_0, hbar
 import pytest
 import xobjects as xo
 from xobjects.test_helpers import fix_random_seed
-import pandas as pd
 from pathlib import Path
 import importlib.util
 
 import xtrack as xt
 from xtrack._temp.boris_and_solenoid_map.solenoid_field import SolenoidField
 from xtrack._temp.field_fitter import FieldFitter
+from xtrack._temp.splineboris_sequence import SplineBorisSequence
 
 FIT_PARS_INDEX_COLS = [
     "field_component",
@@ -107,7 +107,7 @@ def solenoid_field():
     return SolenoidField(**SOLENOID_MODEL_PARAMS)
 
 @pytest.fixture(scope="module")
-def solenoid_vs_varsol_fit_pars_df(solenoid_field):
+def solenoid_vs_varsol_fit_result(solenoid_field):
     sf = solenoid_field
 
     x_axis = np.linspace(
@@ -124,48 +124,31 @@ def solenoid_vs_varsol_fit_pars_df(solenoid_field):
     x_grid, y_grid, z_grid = np.meshgrid(x_axis, y_axis, z_axis, indexing="ij")
     bx, by, bz = sf.get_field(x_grid.ravel(), y_grid.ravel(), z_grid.ravel())
 
-    df_raw_data = pd.DataFrame(
-        np.column_stack(
-            [x_grid.ravel(), y_grid.ravel(), z_grid.ravel(), bx.ravel(), by.ravel(), bz.ravel()]
-        ),
-        columns=["X", "Y", "Z", "Bx", "By", "Bs"],
-    ).set_index(["X", "Y", "Z"])
+    # Build a numpy-based field grid and pass it to FieldFitter
+    raw_data = {
+        "x": x_grid.ravel().astype(float),
+        "y": y_grid.ravel().astype(float),
+        "z": z_grid.ravel().astype(float),
+        "Bx": bx.ravel().astype(float),
+        "By": by.ravel().astype(float),
+        "Bs": bz.ravel().astype(float),
+    }
 
     fitter = FieldFitter(
-        raw_data=df_raw_data,
+        raw_data=raw_data,
         xy_point=(0, 0),
         distance_unit=1,
         min_region_size=10,
         deg=SOLENOID_MULTIPOLE_ORDER - 1,
         field_tol=1e-4,
     )
-    fitter.fit()
-    df_fit_pars = fitter.df_fit_pars
+    fit_result = fitter.fit()
 
-    assert df_fit_pars is not None
-    assert not df_fit_pars.empty, "FieldFitter produced an empty fit-parameter table"
-
-    df_fit_pars_reset = df_fit_pars.reset_index()
-    required_cols = {
-        "field_component",
-        "derivative_x",
-        "s_start",
-        "s_end",
-        "idx_start",
-        "idx_end",
-        "param_name",
-        "param_value",
-    }
-    missing_cols = required_cols.difference(df_fit_pars_reset.columns)
-    assert not missing_cols, f"Missing required fit-parameter columns: {sorted(missing_cols)}"
-    assert {"Bx", "By", "Bs"}.issubset(set(df_fit_pars_reset["field_component"])), (
-        "FieldFitter output is missing one or more field components (Bx, By, Bs)"
-    )
-
-    s_start_min = float(df_fit_pars_reset["s_start"].min())
-    s_end_max = float(df_fit_pars_reset["s_end"].max())
-    idx_start_min = int(df_fit_pars_reset["idx_start"].min())
-    idx_end_max = int(df_fit_pars_reset["idx_end"].max())
+    # Basic sanity checks on the fit result geometry
+    s_start_min = min(seg.s_start for seg in fit_result.segments)
+    s_end_max = max(seg.s_end for seg in fit_result.segments)
+    idx_start_min = min(seg.idx_start for seg in fit_result.segments)
+    idx_end_max = max(seg.idx_end for seg in fit_result.segments)
     point_count = idx_end_max - idx_start_min + 1
 
     assert np.isclose(s_start_min, 0.0), f"Unexpected s_start min: {s_start_min}"
@@ -174,17 +157,69 @@ def solenoid_vs_varsol_fit_pars_df(solenoid_field):
     assert idx_end_max == SOLENOID_N_STEPS, f"Unexpected idx_end max: {idx_end_max}"
     assert point_count == SOLENOID_Z_POINT_COUNT, f"Unexpected point_count: {point_count}"
 
-    return df_fit_pars
+    # Ensure we have Bs (derivative_x == 0) and some transverse content
+    fields = {(seg.field_component, seg.derivative_x) for seg in fit_result.segments}
+    assert ("Bs", 0) in fields
+    assert any(fc in (("Bx", d), ("By", d)) for (fc, d) in fields)
+
+    return fit_result
+
+def _fit_result_from_undulator_csv(path: Path):
+    import pandas as pd
+
+    df = pd.read_csv(path, index_col=FIT_PARS_INDEX_COLS)
+    df_reset = df.reset_index()
+    segments = []
+    # Build FitSegment objects directly from the CSV structure.
+    for (field_component, derivative_x, region_name, s_start, s_end, idx_start, idx_end), grp in df_reset.groupby(
+        ["field_component", "derivative_x", "region_name", "s_start", "s_end", "idx_start", "idx_end"],
+        sort=True,
+    ):
+        grp_sorted = grp.sort_values("param_index")
+        hermite_vals = grp_sorted["param_value"].to_numpy(dtype=float)
+        to_fit_flags = np.ones_like(hermite_vals, dtype=bool)
+        # Region index is just an integer label derived from region_name ordering.
+        region_index = int(region_name.split("_")[-1])
+        segments.append(
+            xt._temp.field_fitter.FitSegment(  # type: ignore[attr-defined]
+                field_component=str(field_component),
+                derivative_x=int(derivative_x),
+                region_index=region_index,
+                s_start=float(s_start),
+                s_end=float(s_end),
+                idx_start=int(idx_start),
+                idx_end=int(idx_end),
+                hermite_params=hermite_vals.copy(),
+                to_fit=bool(to_fit_flags.any()),
+            )
+        )
+    multipole_order = max(
+        (seg.derivative_x for seg in segments if seg.field_component in ("Bx", "By")),
+        default=0,
+    ) + 1
+    # z-grid is not encoded in the CSV; reconstruct a simple uniform grid from idx range.
+    idx_start_min = min(seg.idx_start for seg in segments)
+    idx_end_max = max(seg.idx_end for seg in segments)
+    n_points = idx_end_max - idx_start_min + 1
+    s_start_min = min(seg.s_start for seg in segments)
+    s_end_max = max(seg.s_end for seg in segments)
+    s_full = np.linspace(s_start_min, s_end_max, n_points)
+    return xt._temp.field_fitter.FieldFitResult(  # type: ignore[attr-defined]
+        s_full=s_full,
+        segments=segments,
+        multipole_order=multipole_order,
+    )
+
 
 @pytest.fixture(scope="module")
-def undulator_fit_pars_df(test_data_dir):
-    return pd.read_csv(test_data_dir / "sls" / "undulator_fit_pars.csv", index_col=FIT_PARS_INDEX_COLS)
+def undulator_fit_result(test_data_dir):
+    return _fit_result_from_undulator_csv(test_data_dir / "sls" / "undulator_fit_pars.csv")
+
 
 @pytest.fixture(scope="module")
-def undulator_rotated_fit_pars_df(test_data_dir):
-    return pd.read_csv(
-        test_data_dir / "sls" / "undulator_fit_pars_rotated.csv",
-        index_col=FIT_PARS_INDEX_COLS,
+def undulator_rotated_fit_result(test_data_dir):
+    return _fit_result_from_undulator_csv(
+        test_data_dir / "sls" / "undulator_fit_pars_rotated.csv"
     )
 
 
@@ -466,8 +501,7 @@ def test_splineboris_spin_uniform_solenoid(make_uniform_splineboris):
 
 
 
-@pytest.mark.skip(reason="Temporarily skipped while migrating SplineBorisSequence API.")
-def test_splineboris_solenoid_vs_variable_solenoid(solenoid_field, solenoid_vs_varsol_fit_pars_df):
+def test_splineboris_solenoid_vs_variable_solenoid(solenoid_field, solenoid_vs_varsol_fit_result):
     """
     Test SplineBoris element against VariableSolenoid for a solenoid field.
 
@@ -491,13 +525,12 @@ def test_splineboris_solenoid_vs_variable_solenoid(solenoid_field, solenoid_vs_v
     # Make solenoid field instance
     sf = solenoid_field
 
-    # Build solenoid using SplineBorisSequence - automatically creates one SplineBoris
-    # element per polynomial piece with n_steps based on the data point count
-    df_fit_pars = solenoid_vs_varsol_fit_pars_df
-    seq = xt.SplineBorisSequence(
-        df_fit_pars=df_fit_pars,
-        multipole_order=multipole_order,
+    # Build solenoid using SplineBorisSequence from the canonical FieldFitResult.
+    fit_result = solenoid_vs_varsol_fit_result
+    seq = SplineBorisSequence.from_fit_result(
+        fit_result,
         steps_per_point=1,  # one integration step per data point
+        radiation_flag=0,
     )
 
     # Get the Line of SplineBoris elements and track
@@ -558,8 +591,7 @@ def test_splineboris_solenoid_vs_variable_solenoid(solenoid_field, solenoid_vs_v
 
 
 
-@pytest.mark.skip(reason="Temporarily skipped while migrating SplineBorisSequence API.")
-def test_splineboris_undulator_vs_boris_spatial(undulator_fit_pars_df, make_segment_field):
+def test_splineboris_undulator_vs_boris_spatial(undulator_fit_result, make_segment_field):
     """
     Build a lightweight undulator from spline-fit parameters using SplineBorisSequence
     and check that tracking with SplineBoris and BorisSpatialIntegrator gives consistent
@@ -571,12 +603,11 @@ def test_splineboris_undulator_vs_boris_spatial(undulator_fit_pars_df, make_segm
     # ------------------------------------------------------------------
     multipole_order = 3
 
-    df = undulator_fit_pars_df
+    fit_result = undulator_fit_result
 
-    # Build undulator using SplineBorisSequence
-    seq = xt.SplineBorisSequence(
-        df_fit_pars=df,
-        multipole_order=multipole_order,
+    # Build undulator using SplineBorisSequence from FieldFitResult
+    seq = SplineBorisSequence.from_fit_result(
+        fit_result,
         steps_per_point=1,
     )
 
@@ -637,8 +668,7 @@ def test_splineboris_undulator_vs_boris_spatial(undulator_fit_pars_df, make_segm
 
 
 
-@pytest.mark.skip(reason="Temporarily skipped while migrating SplineBorisSequence API.")
-def test_splineboris_rotated_undulator_vs_boris_spatial(undulator_rotated_fit_pars_df, undulator_fit_pars_df, make_segment_field):
+def test_splineboris_rotated_undulator_vs_boris_spatial(undulator_rotated_fit_result, undulator_fit_result, make_segment_field):
     '''
     Rotate the field map by 90 degrees and check that the fit parameters obey the rotation rule:
     Bx_rotated == By_original,
@@ -651,40 +681,49 @@ def test_splineboris_rotated_undulator_vs_boris_spatial(undulator_rotated_fit_pa
     # ------------------------------------------------------------------
     multipole_order = 3
 
-    df = undulator_rotated_fit_pars_df
+    # Rebuild FieldFitResult objects for rotated and original cases
+    df_rot = undulator_rotated_fit_result
 
     # ------------------------------------------------------------------
     # Check that the fit parameters obey the rotation rule:
     #   Bx_rotated == By_original,  By_rotated == -Bx_original,
     #   Bs_rotated == Bs_original
     # ------------------------------------------------------------------
-    df_orig = undulator_fit_pars_df
+    df_orig = undulator_fit_result
 
     # Bx_rotated coefficients should equal By_original coefficients
+    def _collect_hermite(fit_res, field, der):
+        return np.concatenate(
+            [
+                seg.hermite_params
+                for seg in fit_res.segments
+                if seg.field_component == field and seg.derivative_x == der
+            ]
+        )
+
     for der in range(multipole_order):
-        rot_vals = np.array(df.loc[('Bx', der), 'param_value'].values, dtype=float)
-        orig_vals = np.array(df_orig.loc[('By', der), 'param_value'].values, dtype=float)
+        rot_vals = _collect_hermite(df_rot, "Bx", der)
+        orig_vals = _collect_hermite(df_orig, "By", der)
         assert len(rot_vals) == len(orig_vals), (
             f"Bx_rot vs By_orig length mismatch for der={der}")
         xo.assert_allclose(rot_vals, orig_vals, atol=1e-15, rtol=0)
 
     # By_rotated coefficients should equal -Bx_original coefficients
     for der in range(multipole_order):
-        rot_vals = np.array(df.loc[('By', der), 'param_value'].values, dtype=float)
-        orig_vals = np.array(df_orig.loc[('Bx', der), 'param_value'].values, dtype=float)
+        rot_vals = _collect_hermite(df_rot, "By", der)
+        orig_vals = _collect_hermite(df_orig, "Bx", der)
         assert len(rot_vals) == len(orig_vals), (
             f"By_rot vs Bx_orig length mismatch for der={der}")
         xo.assert_allclose(rot_vals, -orig_vals, atol=1e-15, rtol=0)
 
     # Bs_rotated coefficients should equal Bs_original coefficients
-    rot_vals = np.array(df.loc[('Bs', 0), 'param_value'].values, dtype=float)
-    orig_vals = np.array(df_orig.loc[('Bs', 0), 'param_value'].values, dtype=float)
+    rot_vals = _collect_hermite(df_rot, "Bs", 0)
+    orig_vals = _collect_hermite(df_orig, "Bs", 0)
     xo.assert_allclose(rot_vals, orig_vals, atol=1e-15, rtol=0)
 
-    # Build undulator using SplineBorisSequence
-    seq = xt.SplineBorisSequence(
-        df_fit_pars=df,
-        multipole_order=multipole_order,
+    # Build undulator using SplineBorisSequence from rotated FieldFitResult
+    seq = SplineBorisSequence.from_fit_result(
+        df_rot,
         steps_per_point=1,
     )
 
@@ -878,8 +917,7 @@ def test_splineboris_bend_radiation(make_uniform_splineboris):
 
 
 
-@pytest.mark.skip(reason="Temporarily skipped while migrating SplineBorisSequence API.")
-def test_splineboris_variable_solenoid_radiation(solenoid_field, solenoid_vs_varsol_fit_pars_df):
+def test_splineboris_variable_solenoid_radiation(solenoid_field, solenoid_vs_varsol_fit_result):
 
     delta=np.array([0, 4])
     p0 = xt.Particles(mass0=xt.ELECTRON_MASS_EV, q0=1,
@@ -890,12 +928,12 @@ def test_splineboris_variable_solenoid_radiation(solenoid_field, solenoid_vs_var
     sf = solenoid_field
 
     # --- SplineBoris tracking ---
-    df_fit_pars = solenoid_vs_varsol_fit_pars_df
+    fit_result = solenoid_vs_varsol_fit_result
 
-    seq = xt.SplineBorisSequence(
-        df_fit_pars=df_fit_pars,
-        multipole_order=SOLENOID_MULTIPOLE_ORDER,
+    seq = SplineBorisSequence.from_fit_result(
+        fit_result,
         steps_per_point=1,
+        radiation_flag=1,
     )
 
     line_boris = seq.to_line()

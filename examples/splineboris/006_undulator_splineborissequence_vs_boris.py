@@ -2,7 +2,6 @@ import time
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.constants import c as clight
 from scipy.constants import e as qe
@@ -121,11 +120,53 @@ def build_multipole_line(knl, ksl, ds, p_ref):
 
 
 if __name__ == "__main__":
+    from xtrack._temp.field_fitter import FieldFitResult, FitSegment
+    from xtrack._temp.splineboris_sequence import SplineBorisSequence
+    import pandas as pd
+
     base_dir = Path(__file__).resolve().parent.parent.parent
 
+    # Rebuild FieldFitResult from the precomputed CSV fit parameters.
     df_fit_pars = pd.read_csv(
         base_dir / "test_data" / "sls" / "undulator_fit_pars.csv",
         index_col=FIT_PARS_INDEX_COLS,
+    )
+    df_reset = df_fit_pars.reset_index()
+    segments = []
+    for (field_component, derivative_x, region_name, s_start, s_end, idx_start, idx_end), grp in df_reset.groupby(
+        ["field_component", "derivative_x", "region_name", "s_start", "s_end", "idx_start", "idx_end"],
+        sort=True,
+    ):
+        grp_sorted = grp.sort_values("param_index")
+        hermite_vals = grp_sorted["param_value"].to_numpy(dtype=float)
+        region_index = int(region_name.split("_")[-1])
+        segments.append(
+            FitSegment(
+                field_component=str(field_component),
+                derivative_x=int(derivative_x),
+                region_index=region_index,
+                s_start=float(s_start),
+                s_end=float(s_end),
+                idx_start=int(idx_start),
+                idx_end=int(idx_end),
+                hermite_params=hermite_vals.copy(),
+                to_fit=True,
+            )
+        )
+    multipole_order = max(
+        (seg.derivative_x for seg in segments if seg.field_component in ("Bx", "By")),
+        default=0,
+    ) + 1
+    idx_start_min = min(seg.idx_start for seg in segments)
+    idx_end_max = max(seg.idx_end for seg in segments)
+    n_points = idx_end_max - idx_start_min + 1
+    s_start_min = min(seg.s_start for seg in segments)
+    s_end_max = max(seg.s_end for seg in segments)
+    s_full = np.linspace(s_start_min, s_end_max, n_points)
+    fit_result = FieldFitResult(
+        s_full=s_full,
+        segments=segments,
+        multipole_order=multipole_order,
     )
     multipole_order = 3
 
@@ -133,14 +174,12 @@ if __name__ == "__main__":
     P0_J = p_ref.p0c[0] * qe / clight
     brho = P0_J / qe
 
-    df_reset = df_fit_pars.reset_index()
-    s_start = df_reset["s_start"].min()
-    s_end = df_reset["s_end"].max()
+    s_start = float(s_start_min)
+    s_end = float(s_end_max)
     print(f"Undulator s-range: [{s_start}, {s_end}] m")
 
-    seq_ref = xt.SplineBorisSequence(
-        df_fit_pars=df_fit_pars,
-        multipole_order=multipole_order,
+    seq_ref = SplineBorisSequence.from_fit_result(
+        fit_result,
         steps_per_point=1,
     )
     n_intervals = sum(int(e.n_steps) for e in seq_ref.elements)
@@ -229,9 +268,8 @@ if __name__ == "__main__":
         n_steps_total = n_intervals * spp
         print(f"  spp={spp:>2d}  (total steps = {n_steps_total})", end="")
 
-        seq_i = xt.SplineBorisSequence(
-            df_fit_pars=df_fit_pars,
-            multipole_order=multipole_order,
+        seq_i = SplineBorisSequence.from_fit_result(
+            fit_result,
             steps_per_point=spp,
         )
         line_i = seq_i.to_line()
