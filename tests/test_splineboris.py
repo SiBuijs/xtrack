@@ -4,7 +4,7 @@ from scipy.constants import e as qe
 from scipy.constants import epsilon_0, hbar
 import pytest
 import xobjects as xo
-from xobjects.test_helpers import fix_random_seed
+from xobjects.test_helpers import fix_random_seed, for_all_test_contexts
 import pandas as pd
 from pathlib import Path
 
@@ -37,6 +37,60 @@ SOLENOID_DY = 0.001
 SOLENOID_MULTIPOLE_ORDER = 2
 SOLENOID_N_STEPS = 5000
 SOLENOID_Z_POINT_COUNT = SOLENOID_N_STEPS + 1
+
+@for_all_test_contexts
+def test_splineboris_to_dict_from_dict_roundtrip(test_context):
+    element = xt.SplineBoris(
+        length=1.2,
+        n_steps=4,
+        shift_x=1e-3,
+        shift_y=-2e-3,
+        hx=0.0,
+        radiation_flag=1,
+        bs=xt.Spline4(0.1, 0.2, 0.3, 0.4, 0.5),
+        by=(
+            xt.Spline4(1.0, 1.1, 1.2, 1.3, 1.4),
+            None,
+            xt.Spline4(3.0, 3.1, 3.2, 3.3, 3.4),
+        ),
+        bx=(
+            None,
+            xt.Spline4(-2.0, -2.1, -2.2, -2.3, -2.4),
+        ),
+        _context=test_context,
+    )
+
+    element_dict = element.to_dict()
+
+    assert 'bs' in element_dict
+    assert 'by' in element_dict
+    assert 'bx' in element_dict
+    assert 'Bs_hermite' not in element_dict
+    assert 'B_norm_hermite' not in element_dict
+    assert 'B_skew_hermite' not in element_dict
+    assert 'multipole_order' not in element_dict
+
+    roundtrip = xt.SplineBoris.from_dict(element_dict, _context=test_context)
+
+    ctor_dict = element_dict.copy()
+    ctor_dict.pop('__class__', None)
+    ctor_roundtrip = xt.SplineBoris(_context=test_context, **ctor_dict)
+
+    element_cpu = element.copy(_context=xo.ContextCpu())
+    roundtrip_cpu = roundtrip.copy(_context=xo.ContextCpu())
+    ctor_roundtrip_cpu = ctor_roundtrip.copy(_context=xo.ContextCpu())
+
+    for candidate in (roundtrip_cpu, ctor_roundtrip_cpu):
+        xo.assert_allclose(candidate.length, element_cpu.length, atol=0, rtol=0)
+        xo.assert_allclose(candidate.n_steps, element_cpu.n_steps, atol=0, rtol=0)
+        xo.assert_allclose(candidate.shift_x, element_cpu.shift_x, atol=0, rtol=0)
+        xo.assert_allclose(candidate.shift_y, element_cpu.shift_y, atol=0, rtol=0)
+        xo.assert_allclose(candidate.hx, element_cpu.hx, atol=0, rtol=0)
+        xo.assert_allclose(candidate.radiation_flag, element_cpu.radiation_flag, atol=0, rtol=0)
+        xo.assert_allclose(candidate.Bs_hermite, element_cpu.Bs_hermite, atol=0, rtol=0)
+        xo.assert_allclose(candidate.B_norm_hermite, element_cpu.B_norm_hermite, atol=0, rtol=0)
+        xo.assert_allclose(candidate.B_skew_hermite, element_cpu.B_skew_hermite, atol=0, rtol=0)
+
 
 @pytest.fixture(scope="module")
 def test_data_dir():

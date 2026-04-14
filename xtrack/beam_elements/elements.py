@@ -1165,6 +1165,8 @@ class SplineBoris(BeamElement):
             return ()
         if isinstance(values, Spline4):
             values = (values,)
+        elif isinstance(values, dict):
+            values = (values,)
         elif isinstance(values, list):
             values = tuple(values)
         elif not isinstance(values, tuple):
@@ -1177,11 +1179,7 @@ class SplineBoris(BeamElement):
             if item is None:
                 out.append(None)
                 continue
-            if not isinstance(item, Spline4):
-                raise TypeError(
-                    f"{name}[{order}] must be a Spline4 or None, got {type(item).__name__}"
-                )
-            out.append(item.as_list())
+            out.append(SplineBoris._spline4_from_serialized(item, f"{name}[{order}]").as_list())
         return tuple(out)
 
 
@@ -1192,9 +1190,7 @@ class SplineBoris(BeamElement):
         Bnorm_tuple = cls._normalize_component_tuple(by, "by")
         Bskew_tuple = cls._normalize_component_tuple(bx, "bx")
 
-        if not isinstance(bs, Spline4):
-            raise TypeError(f"bs must be a Spline4, got {type(bs).__name__}")
-        Bs_stored = bs.as_list()
+        Bs_stored = cls._spline4_from_serialized(bs, "bs").as_list()
 
         max_order = -1
         for order, coeffs in enumerate(Bnorm_tuple):
@@ -1280,6 +1276,105 @@ class SplineBoris(BeamElement):
             radiation_flag=radiation_flag,
             **kwargs,
         )
+
+    @staticmethod
+    def _spline4_from_serialized(data, name):
+        if isinstance(data, Spline4):
+            return data
+
+        if isinstance(data, dict):
+            required = ('val_start', 'der_start', 'val_end', 'der_end', 'integral')
+            missing = [kk for kk in required if kk not in data]
+            if missing:
+                raise ValueError(f"{name} is missing keys: {missing}")
+            return Spline4(**{kk: data[kk] for kk in required})
+
+        if isinstance(data, (list, tuple, np.ndarray)):
+            if len(data) != SplineBoris._NUM_COEFFS:
+                raise ValueError(
+                    f"{name} must contain {SplineBoris._NUM_COEFFS} values, got {len(data)}"
+                )
+            return Spline4(*data)
+
+        raise TypeError(
+            f"{name} must be a Spline4, dict, or list/tuple of "
+            f"{SplineBoris._NUM_COEFFS} values; got {type(data).__name__}"
+        )
+
+    @classmethod
+    def _component_from_serialized(cls, data, name):
+        if data is None:
+            return None
+        if isinstance(data, (list, tuple)):
+            out = []
+            for ii, item in enumerate(data):
+                if item is None:
+                    out.append(None)
+                else:
+                    out.append(cls._spline4_from_serialized(item, f"{name}[{ii}]"))
+            return out
+        return cls._spline4_from_serialized(data, name)
+
+    def to_dict(self, copy_to_cpu=True):
+        out = super().to_dict(copy_to_cpu=copy_to_cpu)
+
+        out['bs'] = Spline4(*out['Bs_hermite']).as_dict()
+
+        by = []
+        bx = []
+        for order in range(int(out['multipole_order'])):
+            norm_coeffs = np.asarray(out['B_norm_hermite'][order], dtype=float)
+            skew_coeffs = np.asarray(out['B_skew_hermite'][order], dtype=float)
+
+            by.append(None if np.allclose(norm_coeffs, 0, atol=1e-16)
+                      else Spline4(*norm_coeffs).as_dict())
+            bx.append(None if np.allclose(skew_coeffs, 0, atol=1e-16)
+                      else Spline4(*skew_coeffs).as_dict())
+
+        out['by'] = by
+        out['bx'] = bx
+
+        for key in ('Bs_hermite', 'B_norm_hermite', 'B_skew_hermite', 'multipole_order'):
+            out.pop(key, None)
+
+        return out
+
+    @classmethod
+    def from_dict(cls, dct, **kwargs):
+        dct = dct.copy()
+
+        high_level_keys = {'bs', 'by', 'bx'}
+        raw_keys = {'Bs_hermite', 'B_norm_hermite', 'B_skew_hermite', 'multipole_order'}
+
+        has_high_level = any(kk in dct for kk in high_level_keys)
+        has_raw = any(kk in dct for kk in raw_keys)
+
+        if has_high_level and has_raw:
+            raise ValueError(
+                "Mixed SplineBoris schemas are not supported; provide either "
+                "high-level keys (bs/by/bx) or raw Hermite keys "
+                "(Bs_hermite/B_norm_hermite/B_skew_hermite/multipole_order)."
+            )
+
+        if has_raw:
+            return super().from_dict(dct, **kwargs)
+
+        if not has_high_level:
+            return super().from_dict(dct, **kwargs)
+
+        if 'bs' not in dct:
+            raise ValueError("SplineBoris high-level schema requires 'bs'.")
+
+        dct.pop('__class__', None)
+
+        dct['bs'] = cls._spline4_from_serialized(dct['bs'], 'bs')
+        if 'by' in dct:
+            dct['by'] = cls._component_from_serialized(dct['by'], 'by')
+        if 'bx' in dct:
+            dct['bx'] = cls._component_from_serialized(dct['bx'], 'bx')
+
+        dct.update(kwargs)
+        return cls(**dct)
 
     def get_field(self, x, y, s_local):
         """Evaluate **B** in the element's local longitudinal coordinate.
