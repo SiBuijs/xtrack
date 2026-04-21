@@ -1,5 +1,6 @@
 import numpy as np
 import xtrack as xt
+from xtrack._temp.splineboris_sequence import SplineBorisSequence
 
 
 def _compute_brho(p_ref):
@@ -39,9 +40,9 @@ def _extract_multipole_strengths(seq, s_positions, multipole_order, brho, dx=1e-
 
 def _build_native_s_positions_from_sequence(seq):
     s_positions = []
-    for ii, ee in enumerate(seq.elements):
-        s0 = float(ee.s_start)
-        s1 = float(ee.s_end)
+    for ii, (ee, s0, s1) in enumerate(zip(seq.elements, seq.s_starts, seq.s_ends)):
+        s0 = float(s0)
+        s1 = float(s1)
         n_steps = max(int(ee.n_steps), 1)
         s_this = np.linspace(s0, s1, n_steps + 1)
         if ii == 0:
@@ -63,7 +64,7 @@ def build_multipole_kick_undulator(
     name_prefix="und_kick",
     multipole_isthick=False,
 ):
-    seq = xt.SplineBorisSequence(
+    seq = SplineBorisSequence(
         df_fit_pars=df_fit_pars,
         multipole_order=multipole_order,
         steps_per_point=1,

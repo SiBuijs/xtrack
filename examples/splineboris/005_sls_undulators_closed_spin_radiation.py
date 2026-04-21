@@ -1,9 +1,8 @@
 """
-SLS simulation with offset undulators and closed spin tracking.
+SLS simulation with undulators, closed spin tracking and radiation.
 
-This script loads the SLS MADX file, builds undulator using SplineBorisSequence
-with transverse offset, inserts wigglers at 11 locations, and computes twiss
-with spin tracking.
+This script loads the SLS MADX file, builds undulator using SplineBorisSequence,
+inserts wigglers at 11 locations, computes twiss with spin tracking and radiation.
 """
 
 import xtrack as xt
@@ -11,23 +10,26 @@ from pathlib import Path
 import pandas as pd
 import matplotlib.pyplot as plt
 from xtrack._temp.field_fitter import FieldFitter
+from xtrack._temp.splineboris_sequence import SplineBorisSequence
 
 
 multipole_order = 3
 
+E0 = 2.7e9
+
 # Particle reference
-p0 = xt.Particles(mass0=xt.ELECTRON_MASS_EV, q0=1, p0c=2.7e9)
+p0 = xt.Particles(mass0=xt.ELECTRON_MASS_EV, q0=1, p0c=E0)
 
 # Load SLS MADX file
 madx_file = Path(__file__).resolve().parent.parent.parent / 'test_data' / 'sls' / 'sls.madx'
 env = xt.load(str(madx_file))
-line_offset = env.ring
+line_sls = env.ring
 
 # Configure bend model
-line_offset.configure_bend_model(core='mat-kick-mat')
+line_sls.configure_bend_model(core='mat-kick-mat')
 
 # Set particle reference
-line_offset.particle_ref = p0.copy()
+line_sls.particle_ref = p0.copy()
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -35,11 +37,10 @@ BASE_DIR = Path(__file__).resolve().parent
 field_map_path = BASE_DIR.parent.parent / "test_data" / "sls" / "undulator_field_map.txt"
 df_raw_data = pd.read_csv(
     field_map_path,
-    sep='\t',
+    sep=r"\s+",
     header=None,
-    names=['X', 'Y', 'Z', 'Bx', 'By', 'Bs'],
-)
-df_raw_data = df_raw_data.set_index(['X', 'Y', 'Z'])
+    names=["X", "Y", "Z", "Bskew", "Bnorm", "Bs"],
+).set_index(["X", "Y", "Z"])
 
 # Distance unit in meters (the dataset uses mm, so 1 mm = 0.001 m)
 distance_unit = 0.001
@@ -48,30 +49,18 @@ field_fitter = FieldFitter(
     raw_data=df_raw_data,
     xy_point=(0, 0),
     distance_unit=distance_unit,
-    min_region_size=5,
+    min_region_size=10,
     deg=multipole_order-1,
 )
 
 field_fitter.fit()
 
-# Save fit parameters if needed
-# field_fitter.save_fit_pars(
-#     BASE_DIR
-#     / "test_data" / "sls"
-#     / "undulator_fit_pars.csv"
-# )
-
-# Define offsets for the undulator
-x_off = 5e-4  # 0.0005 m offset in x
-y_off = 0  # 0 offset in y
-
-# Build undulator using SplineBorisSequence with offset
-seq = xt.SplineBorisSequence(
+# Build undulator using SplineBorisSequence - automatically creates one SplineBoris
+# element per polynomial piece with n_steps based on the data point count
+seq = SplineBorisSequence(
     df_fit_pars=field_fitter.df_fit_pars,
     multipole_order=multipole_order,
     steps_per_point=1,
-    shift_x=x_off,
-    shift_y=y_off,
 )
 
 # Get the Line of SplineBoris elements (pass env for insert support)
@@ -81,16 +70,6 @@ l_wig = seq.length
 piecewise_undulator.build_tracker()
 
 piecewise_undulator.particle_ref = p0.copy()
-
-piecewise_undulator.discard_tracker()
-
-# The issue: When you use betx=1, bety=1, twiss4d treats the line as OPEN (non-periodic).
-# For an open line, the orbit is computed from initial conditions in particle_on_co.
-# If particle_on_co has zero initial conditions (x=0, px=0, y=0, py=0), the orbit will
-# be zero unless there are kicks from the wiggler.
-#
-# Solution: Use only_orbit=True to explicitly compute the orbit, which should properly
-# propagate through the wiggler and show any kicks/deviations.
 
 # Create env variables for corrector strengths (needed for matching)
 env['k0l_corr1'] = 0.
@@ -138,7 +117,9 @@ opt.step(2)
 # tw_undulator_corr.plot('x y')
 # tw_undulator_corr.plot('betx bety', 'dx dy')
 # plt.show()
-# exit()
+
+piecewise_undulator.discard_tracker()
+
 wiggler_places = [
     'ars02_uind_0500_1',
     'ars03_uind_0380_1',
@@ -153,26 +134,17 @@ wiggler_places = [
     'ars12_uind_0500_1',
 ]
 
-tt = line_offset.get_table()
+tt = line_sls.get_table()
 for wig_place in wiggler_places:
     print(f"Inserting piecewise_undulator {wig_place} at {tt['s', wig_place]}")
-    line_offset.insert(piecewise_undulator, anchor='start', at=tt['s', wig_place])
+    line_sls.insert(piecewise_undulator, anchor='start', at=tt['s', wig_place])
 
-line_offset.build_tracker()
 
-tw_offset = line_offset.twiss4d(radiation_integrals=True)#, spin=True, polarization=True)
+line_sls.configure_radiation(model='mean')
 
-# Plotting:
-import matplotlib.pyplot as plt
-plt.close('all')
-tw_offset.plot('x y')
-tw_offset.plot('betx bety', 'dx dy')
-tw_offset.plot('betx2 bety2')
-plt.show()
+line_sls.build_tracker()
 
-# tw_offset.plot('spin_x spin_z')
-# tw_offset.plot('spin_y')
-# plt.show()
+tw_sls = line_sls.twiss4d(radiation_integrals=True, spin=True, polarization=True, radiation_method='full')
 
 #['name', 's', 'x', 'px', 'y', 'py', 'zeta', 'delta', 'ptau', 'W_matrix', 'kin_px', 'kin_py', 'kin_ps', 'kin_xprime',
 # 'kin_yprime', 'env_name', 'betx', 'bety', 'alfx', 'alfy', 'gamx', 'gamy', 'dx', 'dpx', 'dy', 'dpy', 'dx_zeta', 'dpx_zeta',
@@ -184,31 +156,39 @@ plt.show()
 
 # Extract and print results
 print("=" * 80)
-print("SLS WITH OFFSET UNDULATORS")
+print("SLS WITH UNDULATORS")
 print("=" * 80)
 print(f"Tunes:")
-print(f"  qx = {tw_offset.qx:.4e}")
-print(f"  qy = {tw_offset.qy:.4e}")
-print(f"  qs = {tw_offset.qs:.4e}")
+print(f"  qx = {tw_sls.qx:.4e}")
+print(f"  qy = {tw_sls.qy:.4e}")
+print(f"  qs = {tw_sls.qs:.4e}")
 print()
 print(f"Chromaticity:")
-print(f"  dqx = {tw_offset.dqx:.4e}")
-print(f"  dqy = {tw_offset.dqy:.4e}")
-print()
-print(f"Partition numbers:")
-print(f"  J_x = {tw_offset.rad_int_partition_number_x:.4e}")
-print(f"  J_y = {tw_offset.rad_int_partition_number_y:.4e}")
-print(f"  J_zeta = {tw_offset.rad_int_partition_number_zeta:.4e}")
+print(f"  dqx = {tw_sls.dqx:.4e}")
+print(f"  dqy = {tw_sls.dqy:.4e}")
 print()
 print(f"Damping constants per second:")
-print(f"  alpha_x = {tw_offset.rad_int_damping_constant_x_s:.4e}")
-print(f"  alpha_y = {tw_offset.rad_int_damping_constant_y_s:.4e}")
-print(f"  alpha_zeta = {tw_offset.rad_int_damping_constant_zeta_s:.4e}")
+print(f"  alpha_x = {tw_sls.rad_int_damping_constant_x_s:.4e}")
+print(f"  alpha_y = {tw_sls.rad_int_damping_constant_y_s:.4e}")
+print(f"  alpha_zeta = {tw_sls.rad_int_damping_constant_zeta_s:.4e}")
 print()
 print(f"Equilibrium emittances:")
-print(f"  eq_gemitt_x = {tw_offset.rad_int_eq_gemitt_x:.4e}")
-print(f"  eq_gemitt_y = {tw_offset.rad_int_eq_gemitt_y:.4e}")
+print(f"  eq_gemitt_x = {tw_sls.rad_int_eq_gemitt_x:.4e}")
+print(f"  eq_gemitt_y = {tw_sls.rad_int_eq_gemitt_y:.4e}")
 print()
-print(f"C^-: {tw_offset.c_minus:.4e}")
+print(f"C^-: {tw_sls.c_minus:.4e}")
+print()
+print(f"Spin polarization: {tw_sls.spin_polarization_eq:.4e}")
 print()
 print("=" * 80)
+
+# Plotting:
+import matplotlib.pyplot as plt
+plt.close('all')
+tw_sls.plot('x y')
+tw_sls.plot('betx bety', 'dx dy')
+tw_sls.plot('betx2 bety2')
+tw_sls.plot('spin_x spin_z')
+tw_sls.plot('spin_y')
+tw_sls.plot('delta')
+plt.show()

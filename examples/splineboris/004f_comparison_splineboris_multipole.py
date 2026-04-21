@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 import xtrack as xt
 import scipy as sc
 from xtrack._temp.field_fitter import FieldFitter
+from xtrack._temp.splineboris_sequence import SplineBorisSequence
 
 from _undulator_multipole_builder import build_multipole_kick_undulator
 
@@ -236,7 +237,7 @@ def _load_raw_field_data():
         field_map_path,
         sep="\t",
         header=None,
-        names=["X", "Y", "Z", "Bx", "By", "Bs"],
+        names=["X", "Y", "Z", "Bskew", "Bnorm", "Bs"],
     ).set_index(["X", "Y", "Z"])
 
 
@@ -355,7 +356,7 @@ def _build_corrected_undulator(
     corr_names = {cc: f"{name_prefix}_{cc}" for cc in CORRECTOR_KEYS}
 
     if model == "splineboris":
-        seq = xt.SplineBorisSequence(
+        seq = SplineBorisSequence(
             df_fit_pars=df_fit_pars,
             multipole_order=MULTIPOLE_ORDER,
             steps_per_point=1,

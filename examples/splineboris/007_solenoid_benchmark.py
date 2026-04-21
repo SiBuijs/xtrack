@@ -7,6 +7,7 @@ import pandas as pd
 import xtrack as xt
 from xtrack._temp.boris_and_solenoid_map.solenoid_field import SolenoidField
 from xtrack._temp.field_fitter import FieldFitter
+from xtrack._temp.splineboris_sequence import SplineBorisSequence
 import matplotlib.pyplot as plt
 import time
 
@@ -129,7 +130,7 @@ if run_study_1:
     df_raw = pd.DataFrame(
         np.column_stack([x_grid.ravel(), y_grid.ravel(), z_grid.ravel(),
                          bx, by, bz]),
-        columns=["X", "Y", "Z", "Bx", "By", "Bs"],
+        columns=["X", "Y", "Z", "Bskew", "Bnorm", "Bs"],
     ).set_index(["X", "Y", "Z"])
     fitter = FieldFitter(
         raw_data=df_raw, xy_point=(0, 0), distance_unit=1,
@@ -186,7 +187,7 @@ if run_study_1:
         print(f"steps_per_point = {spp}  "
               f"(n_steps_total = {n_steps_total})")
 
-        seq = xt.SplineBorisSequence(
+        seq = SplineBorisSequence(
             df_fit_pars=df_fit_pars,
             multipole_order=multipole_order,
             steps_per_point=spp,
@@ -346,7 +347,7 @@ if run_study_2:
     df_s2 = pd.DataFrame(
         np.column_stack([xg.ravel(), yg.ravel(), zg.ravel(),
                          bx_f, by_f, bz_f]),
-        columns=["X", "Y", "Z", "Bx", "By", "Bs"],
+        columns=["X", "Y", "Z", "Bskew", "Bnorm", "Bs"],
     ).set_index(["X", "Y", "Z"])
 
     # Use BorisSpatial at the same total step count as reference,
@@ -396,7 +397,7 @@ if run_study_2:
             n_pieces=n_pieces,
         )
         fit.fit()
-        seq_f = xt.SplineBorisSequence(
+        seq_f = SplineBorisSequence(
             df_fit_pars=fit.df_fit_pars,
             multipole_order=multipole_order,
             steps_per_point=spp_s2,

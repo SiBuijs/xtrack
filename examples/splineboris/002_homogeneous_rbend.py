@@ -39,15 +39,37 @@ for field_angle in field_angles:
     # ------------------------------------------------------------------
     # Build SplineBoris element with homogeneous field
     # ------------------------------------------------------------------
-    # Hermite params: [f_left, df_left, f_right, df_right, average]
-    # For a constant field, all boundary values equal the field and derivatives are zero.
+    # For a constant field, boundary values are equal and derivatives are zero.
+    Bs = xt.Spline4(
+        val_start=0.0,
+        der_start=0.0,
+        val_end=0.0,
+        der_end=0.0,
+        integral=0.0,
+    )
+
+    # Constant transverse components Bx(s) = B_x, By(s) = B_y
+    # The last argument is the integral; for a constant field it is value * length.
+    Bx_spline = xt.Spline4(
+        val_start=B_x,
+        der_start=0.0,
+        val_end=B_x,
+        der_end=0.0,
+        integral=B_x * length,
+    )
+    By_spline = xt.Spline4(
+        val_start=B_y,
+        der_start=0.0,
+        val_end=B_y,
+        der_end=0.0,
+        integral=B_y * length,
+    )
+
     splineboris = xt.SplineBoris(
-        bs=[0, 0, 0, 0, 0],
-        kn={0: [B_y, 0, B_y, 0, B_y]},
-        ks={0: [B_x, 0, B_x, 0, B_x]},
-        s_start=s_start,
-        s_end=s_end,
-        multipole_order=1,
+        bs=Bs,
+        by=(By_spline,),
+        bx=(Bx_spline,),
+        length=length,
         n_steps=n_steps,
     )
 

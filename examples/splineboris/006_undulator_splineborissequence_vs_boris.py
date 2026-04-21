@@ -8,6 +8,7 @@ from scipy.constants import c as clight
 from scipy.constants import e as qe
 
 import xtrack as xt
+from xtrack._temp.splineboris_sequence import SplineBorisSequence
 
 TICK_FONTSIZE = 16
 LABEL_FONTSIZE = 17
@@ -138,7 +139,7 @@ if __name__ == "__main__":
     s_end = df_reset["s_end"].max()
     print(f"Undulator s-range: [{s_start}, {s_end}] m")
 
-    seq_ref = xt.SplineBorisSequence(
+    seq_ref = SplineBorisSequence(
         df_fit_pars=df_fit_pars,
         multipole_order=multipole_order,
         steps_per_point=1,
@@ -229,7 +230,7 @@ if __name__ == "__main__":
         n_steps_total = n_intervals * spp
         print(f"  spp={spp:>2d}  (total steps = {n_steps_total})", end="")
 
-        seq_i = xt.SplineBorisSequence(
+        seq_i = SplineBorisSequence(
             df_fit_pars=df_fit_pars,
             multipole_order=multipole_order,
             steps_per_point=spp,

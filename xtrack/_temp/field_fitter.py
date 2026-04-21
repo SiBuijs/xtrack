@@ -10,7 +10,6 @@ from scipy.signal import find_peaks
 import xtrack as xt
 
 
-
 class FieldFitter:
     '''
     Fit on-axis field data and transverse derivatives using piecewise polynomials.
@@ -35,13 +34,8 @@ class FieldFitter:
         ``distance_unit=0.001`` when the input coordinates are in millimetres.
     min_region_size :
         Minimum number of points per longitudinal fitting region.
-        Ignored when ``n_pieces`` is set.
     deg :
         Maximum transverse derivative order to compute and fit.
-    n_pieces : int, optional
-        If set, override automatic region detection and use this many
-        equally-spaced polynomial pieces for all field components.
-        The ``min_region_size`` parameter is ignored in this case.
 
     DataFrames
     ----------
@@ -69,7 +63,6 @@ class FieldFitter:
             min_region_size=10,
             deg=2,
             field_tol=1e-3,
-            n_pieces=None,
     ):
         # Parameters
         self.xy_point = xy_point
@@ -80,7 +73,6 @@ class FieldFitter:
         self.length = None
         self.deg = deg
         self.field_tol = field_tol
-        self.n_pieces = n_pieces
 
         # DataFrames
         self.df_raw_data = None
@@ -102,12 +94,13 @@ class FieldFitter:
 
     @staticmethod
     def _poly(s0, s1, coeffs):
-        """
-        Build a 4th-order polynomial over [s0, s1] from Hermite parameters.
+        """Build a 4th-order polynomial over [s0, s1] from Hermite parameters.
 
-        Convenience wrapper around ``xt.SplineBoris.hermite_to_poly``.
+        Returns a polynomial in *s_local* (local coordinate starting at 0).
+        Convenience wrapper around ``xt.SplineBoris.hermite_to_polynomial``.
         """
-        return xt.SplineBoris.hermite_to_poly(s0, s1, coeffs)
+        from xtrack.beam_elements.splineboris_src.spline_B_field_eval_python import hermite_to_polynomial
+        return hermite_to_polynomial(s0, s1, coeffs)
 
 
 
@@ -203,7 +196,7 @@ class FieldFitter:
         Finally, it stores the regions in the df_fit_pars DataFrame.
         """
 
-        fields = ["Bx", "By", "Bs"]
+        fields = ["Bskew", "Bnorm", "Bs"]
 
         abs_max = 0
         for field in fields:
@@ -215,8 +208,6 @@ class FieldFitter:
         # df_on_axis_raw is indexed by Z only (after xs on X,Y), so use the raw
         # MultiIndex to estimate transverse scaling for derivative tolerance.
         x_max = np.max(np.abs(self.df_raw_data.index.get_level_values("X")))
-
-        n_data = len(self.df_on_axis_raw[(fields[0], 0)].values)
 
         for field in fields:
             # Bs only has der = 0; other fields range 0..deg
@@ -232,12 +223,6 @@ class FieldFitter:
                     # set to single region with zero parameters and skip expensive processing
                     field_extrema = np.array([0, len(series) - 1], dtype=int)
                     to_fit = False
-                elif self.n_pieces is not None:
-                    # Manual override: equally-spaced regions
-                    field_extrema = np.round(
-                        np.linspace(0, n_data - 1, self.n_pieces + 1)
-                    ).astype(int)
-                    to_fit = True
                 else:
                     # SPLIT REGIONS AREA
                     # choose prominence: more permissive for Bs
@@ -253,11 +238,11 @@ class FieldFitter:
                     field_extrema = np.append(field_extrema, len(series) - 1)
 
                     # split long regions while ensuring each part has at least `min_region_size` points
-                    this_min_region_size = self.min_region_size
+                    this_min_region_size = self.min_region_size if der == 0 else self.min_region_size // 2
                     new_extrema = [int(field_extrema[0])]
                     for left, right in zip(field_extrema[:-1], field_extrema[1:]):
                         length = int(right - left)
-                        if length < 2 * this_min_region_size:
+                        if length < this_min_region_size:
                             new_extrema.append(int(right))
                             continue
                         n_parts = int(np.floor(length / this_min_region_size))
@@ -273,9 +258,9 @@ class FieldFitter:
                     to_fit = True
 
                 # number of pieces is number of extrema - 1 (ensure at least 1)
-                actual_n_pieces = max(1, len(field_extrema) - 1)
-                print(f"{field} der={der} -> n_pieces={actual_n_pieces}")
-                self._set_df_fit_pars(der, actual_n_pieces, field, field_extrema, to_fit)
+                n_pieces = max(1, len(field_extrema) - 1)
+                print(f"{field} der={der} -> n_pieces={n_pieces}")
+                self._set_df_fit_pars(der, n_pieces, field, field_extrema, to_fit)
 
 
         self.df_fit_pars.set_index(['field_component', 'derivative_x', 'region_name', 's_start', 's_end', 'idx_start', 'idx_end', 'param_index'],
@@ -305,12 +290,19 @@ class FieldFitter:
         """
 
         rows = []
+        field_component = field
         # Zero-pad index so alphabetical sort matches numerical sort
         index_width = len(str(n_pieces - 1)) if n_pieces > 1 else 1
         for i in range(n_pieces):
-            pars = xt.SplineBoris._fieldfitter_param_names(
-                field, der_order
-            )
+            if field_component == "Bskew":
+                prefix = f"bx_{der_order}"
+            elif field_component == "Bnorm":
+                prefix = f"by_{der_order}"
+            elif field_component == "Bs":
+                prefix = "Bs"
+            else:
+                raise ValueError(f"Unknown field_component: {field_component!r}")
+            pars = [f"{prefix}_{s}" for s in xt.SplineBoris._SB_HERMITE_SUFFIXES]
 
             idx_start = idx_extrema[i]
             idx_end = idx_extrema[i+1]
@@ -319,7 +311,7 @@ class FieldFitter:
 
             for idx, name in enumerate(pars):
                 rows.append({
-                    "field_component": field,
+                    "field_component": field_component,
                     "derivative_x": der_order,
                     "region_name": f"Poly_{i:0{index_width}d}",
                     "s_start": s_start,
@@ -416,8 +408,8 @@ class FieldFitter:
         idx_slice = self.df_on_axis_fit.index[idx_left:idx_right + 1]
         self.df_on_axis_fit.loc[idx_slice, (field, der_order)] = poly(s_region - s_left)
 
-    # PRIVATE
-    # This method loops over all fields and derivatives and fits polynomials to each region.
+
+
     def _fit_slices(self):
         """
         Fit polynomials to each region for all fields and derivatives.
@@ -427,13 +419,13 @@ class FieldFitter:
         It then fits a polynomial (see _fit_single_poly) to each region and stores the coefficients in the df_fit_pars DataFrame.
         """
 
-        for field in ["Bx", "By", "Bs"]:
+        for field, field_component in [("Bskew", "Bskew"), ("Bnorm", "Bnorm"), ("Bs", "Bs")]:
             for der in range(0, self.deg + 1):
                 if field == "Bs" and der > 0:
                     continue
 
                 print(f"Fitting field {field} derivative {der}")
-                sub_df = self.df_fit_pars.loc[(field, der)]
+                sub_df = self.df_fit_pars.loc[(field_component, der)]
 
                 if not sub_df['to_fit'].any():
                     continue
@@ -474,7 +466,7 @@ class FieldFitter:
 
         subsets = {px: self.df_raw_data.xs((px, y_point), level=["X", "Y"]).sort_index() for px in points}
 
-        for field in ["Bx", "By"]:
+        for field in ["Bskew", "Bnorm"]:
             x = points
             n = len(subsets[points[0]][field])
             derivs = {der: np.zeros(n) for der in range(1, self.deg + 1)}
@@ -488,6 +480,93 @@ class FieldFitter:
 
             for der in range(1, self.deg + 1):
                 self.df_on_axis_raw[(field, der)] = derivs[der]
+
+
+
+    def plot_fields(self, der=0):
+        """
+        Plot the data against the fit.
+
+        This method plots the data against the fit.
+        It accepts the derivative order.
+        It computes the derivatives of the polynomials and stores them in the df_on_axis_raw DataFrame.
+        """
+        import matplotlib.pyplot as plt
+
+        if self.df_on_axis_raw is None or self.df_on_axis_fit is None:
+            raise RuntimeError("`df_on_axis_raw` and `df_on_axis_fit` must be set before plotting.")
+
+        s = self.s_full
+        fig1, (ax1, ax2, ax3) = plt.subplots(3, figsize=(10, 4), constrained_layout=True)
+
+        def get_series(df, field, der):
+            try:
+                return df[(field, der)].to_numpy()
+            except KeyError:
+                # fallback to zeros if Bs not present or derivative missing
+                ref = df.iloc[:, 0].to_numpy()
+                return np.zeros_like(ref)
+
+        ax1.plot(s, get_series(self.df_on_axis_raw, "Bskew", der), label='Raw Data')
+        ax1.plot(s, get_series(self.df_on_axis_fit, "Bskew", der), label='Fit', linestyle='--')
+        ax2.plot(s, get_series(self.df_on_axis_raw, "Bnorm", der), label='Raw Data')
+        ax2.plot(s, get_series(self.df_on_axis_fit, "Bnorm", der), label='Fit', linestyle='--')
+        ax3.plot(s, get_series(self.df_on_axis_raw, "Bs", der), label='Raw Data')
+        ax3.plot(s, get_series(self.df_on_axis_fit, "Bs", der), label='Fit', linestyle='--')
+
+        # compute border indices per field/derivative (fall back to existing attribute if absent)
+        def _borders_for_field(field_ax):
+            if getattr(self, "df_fit_pars", None) is None:
+                return getattr(self, "borders_idx", []) or []
+            try:
+                lvl_field = np.asarray(self.df_fit_pars.index.get_level_values('field_component'))
+                lvl_der = np.asarray(self.df_fit_pars.index.get_level_values('derivative_x')).astype(int)
+                mask = (lvl_field == field_ax) & (lvl_der == int(der))
+                if not np.any(mask):
+                    return []
+                s_start_vals = np.asarray(self.df_fit_pars.index.get_level_values('s_start'))[mask].astype(float)
+                s_end_vals = np.asarray(self.df_fit_pars.index.get_level_values('s_end'))[mask].astype(float)
+                s_borders = np.unique(np.concatenate((s_start_vals, s_end_vals)))
+                s_arr = np.asarray(s)
+                return sorted({int(np.argmin(np.abs(s_arr - float(sb)))) for sb in s_borders})
+            except Exception:
+                return getattr(self, "borders_idx", []) or []
+
+        for field_ax in ["Bskew", "Bnorm", "Bs"]:
+            ax = {"Bskew": ax1, "Bnorm": ax2, "Bs": ax3}[field_ax]
+            borders_idx_field = _borders_for_field(field_ax)
+            for idx in borders_idx_field or []:
+                if 0 <= idx < len(s):
+                    ax.axvline(x=s[idx], color='k', linestyle='--', linewidth=1, alpha=0.3)
+
+        if der == 2:
+            x_label = r"$\frac{d^2 B_x}{d x^2}$"
+            y_label = r"$\frac{d^2 B_y}{d x^2}$"
+            s_label = r"$\frac{d^2 B_s}{d x^2}$"
+        elif der == 1:
+            x_label = r"$\frac{d B_x}{d x}$"
+            y_label = r"$\frac{d B_y}{d x}$"
+            s_label = r"$\frac{d B_s}{d x}$"
+        else:
+            x_label = r"$B_x$"
+            y_label = r"$B_y$"
+            s_label = r"$B_s$"
+
+        ax1.set_title(f"Magnetic Field at (X, Y) = {self.xy_point}")
+        ax1.set_ylabel(f"Horizontal Field, {x_label} [T]")
+        ax2.set_ylabel(f"Vertical Field, {y_label} [T]")
+        ax3.set_ylabel(f"Longitudinal Field, {s_label} [T]")
+        ax3.set_xlabel(r"Longitudinal Position, $s$ [m]")
+
+        ax1.legend([f"{x_label} Data", f"{x_label} Fit"], loc="lower right")
+        ax2.legend([f"{y_label} Data", f"{y_label} Fit"], loc="lower right")
+        ax3.legend([f"{s_label} Data", f"{s_label} Fit"], loc="upper right")
+
+        ax1.grid()
+        ax2.grid()
+        ax3.grid()
+
+        plt.show()
 
 
 
@@ -506,15 +585,15 @@ class FieldFitter:
 
         s = self.s_full
 
-        Bx_raw = self.df_on_axis_raw[('Bx', 0)].to_numpy()
-        By_raw = self.df_on_axis_raw[('By', 0)].to_numpy()
+        Bx_raw = self.df_on_axis_raw[('Bskew', 0)].to_numpy()
+        By_raw = self.df_on_axis_raw[('Bnorm', 0)].to_numpy()
         try:
             Bs_raw = self.df_on_axis_raw[('Bs', 0)].to_numpy()
         except KeyError:
             Bs_raw = np.zeros_like(Bx_raw)
 
-        Bx_fit = self.df_on_axis_fit[('Bx', 0)].to_numpy()
-        By_fit = self.df_on_axis_fit[('By', 0)].to_numpy()
+        Bx_fit = self.df_on_axis_fit[('Bskew', 0)].to_numpy()
+        By_fit = self.df_on_axis_fit[('Bnorm', 0)].to_numpy()
         try:
             Bs_fit = self.df_on_axis_fit[('Bs', 0)].to_numpy()
         except KeyError:
@@ -548,91 +627,6 @@ class FieldFitter:
         ax1.legend(loc="lower right")
         ax2.legend(loc="lower right")
         ax3.legend(loc="upper right")
-
-        ax1.grid()
-        ax2.grid()
-        ax3.grid()
-
-        plt.show()
-
-    def plot_fields(self, der=0):
-        """
-        Plot the data against the fit.
-
-        This method plots the data against the fit.
-        It accepts the derivative order.
-        It computes the derivatives of the polynomials and stores them in the df_on_axis_raw DataFrame.
-        """
-        import matplotlib.pyplot as plt
-
-        if self.df_on_axis_raw is None or self.df_on_axis_fit is None:
-            raise RuntimeError("`df_on_axis_raw` and `df_on_axis_fit` must be set before plotting.")
-
-        s = self.s_full
-        fig1, (ax1, ax2, ax3) = plt.subplots(3, figsize=(10, 4), constrained_layout=True)
-
-        def get_series(df, field, der):
-            try:
-                return df[(field, der)].to_numpy()
-            except KeyError:
-                # fallback to zeros if Bs not present or derivative missing
-                ref = df.iloc[:, 0].to_numpy()
-                return np.zeros_like(ref)
-
-        ax1.plot(s, get_series(self.df_on_axis_raw, "Bx", der), label='Raw Data')
-        ax1.plot(s, get_series(self.df_on_axis_fit, "Bx", der), label='Fit', linestyle='--')
-        ax2.plot(s, get_series(self.df_on_axis_raw, "By", der), label='Raw Data')
-        ax2.plot(s, get_series(self.df_on_axis_fit, "By", der), label='Fit', linestyle='--')
-        ax3.plot(s, get_series(self.df_on_axis_raw, "Bs", der), label='Raw Data')
-        ax3.plot(s, get_series(self.df_on_axis_fit, "Bs", der), label='Fit', linestyle='--')
-
-        # compute border indices per field/derivative (fall back to existing attribute if absent)
-        def _borders_for_field(field_ax):
-            if getattr(self, "df_fit_pars", None) is None:
-                return getattr(self, "borders_idx", []) or []
-            try:
-                lvl_field = np.asarray(self.df_fit_pars.index.get_level_values('field_component'))
-                lvl_der = np.asarray(self.df_fit_pars.index.get_level_values('derivative_x')).astype(int)
-                mask = (lvl_field == field_ax) & (lvl_der == int(der))
-                if not np.any(mask):
-                    return []
-                s_start_vals = np.asarray(self.df_fit_pars.index.get_level_values('s_start'))[mask].astype(float)
-                s_end_vals = np.asarray(self.df_fit_pars.index.get_level_values('s_end'))[mask].astype(float)
-                s_borders = np.unique(np.concatenate((s_start_vals, s_end_vals)))
-                s_arr = np.asarray(s)
-                return sorted({int(np.argmin(np.abs(s_arr - float(sb)))) for sb in s_borders})
-            except Exception:
-                return getattr(self, "borders_idx", []) or []
-
-        for field_ax in ["Bx", "By", "Bs"]:
-            ax = {"Bx": ax1, "By": ax2, "Bs": ax3}[field_ax]
-            borders_idx_field = _borders_for_field(field_ax)
-            for idx in borders_idx_field or []:
-                if 0 <= idx < len(s):
-                    ax.axvline(x=s[idx], color='k', linestyle='--', linewidth=1, alpha=0.3)
-
-        if der == 2:
-            x_label = r"$\frac{d^2 B_x}{d x^2}$"
-            y_label = r"$\frac{d^2 B_y}{d x^2}$"
-            s_label = r"$\frac{d^2 B_s}{d x^2}$"
-        elif der == 1:
-            x_label = r"$\frac{d B_x}{d x}$"
-            y_label = r"$\frac{d B_y}{d x}$"
-            s_label = r"$\frac{d B_s}{d x}$"
-        else:
-            x_label = r"$B_x$"
-            y_label = r"$B_y$"
-            s_label = r"$B_s$"
-
-        ax1.set_title(f"Magnetic Field at (X, Y) = {self.xy_point}")
-        ax1.set_ylabel(f"Horizontal Field, {x_label} [T]")
-        ax2.set_ylabel(f"Vertical Field, {y_label} [T]")
-        ax3.set_ylabel(f"Longitudinal Field, {s_label} [T]")
-        ax3.set_xlabel(r"Longitudinal Position, $s$ [m]")
-
-        ax1.legend([f"{x_label} Data", f"{x_label} Fit"], loc="lower right")
-        ax2.legend([f"{y_label} Data", f"{y_label} Fit"], loc="lower right")
-        ax3.legend([f"{s_label} Data", f"{s_label} Fit"], loc="upper right")
 
         ax1.grid()
         ax2.grid()

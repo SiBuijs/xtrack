@@ -6,7 +6,7 @@
 #define XTRACK_TRACK_SPLINEBORIS_H
 
 #include "xtrack/headers/track.h"
-#include "spline_B_field_eval.h" // evaluate_B for Bx, By, Bs (scalar version)
+#include "xtrack/beam_elements/splineboris_src/spline_B_field_eval.h" // evaluate_B for Bx, By, Bs (scalar version)
 #ifndef XTRACK_MULTIPOLE_NO_SYNRAD
 // Forward declarations for random functions needed by synrad_spectrum.h
 // (These are normally declared in random headers but we avoid including them
@@ -20,21 +20,17 @@ GPUFUN double RandomExponential_generate(LocalParticle* part);
 GPUFUN
 void SplineBoris_single_particle(
     LocalParticle* part,
-    const double* params,
+    const double  bs[5],
+    const double* const *by,
+    const double* const *bx,
     const int      multipole_order,
-    const double   s_start,
-    const double   s_end,
+    const double   length,
     const int      n_steps,
     const double   shift_x,
     const double   shift_y,
-    const double   hx,
     const int64_t  radiation_flag,
     SynchrotronRadiationRecordData radiation_record
 ){
-    
-    // TODO: When curvature is implemented, remove this check.
-    // For now, if hx != 0, we skip spin tracking but continue with particle tracking
-    // (The check is done per-step in the loop below)
 
     // Skip dead particles (state <= 0)
     if (LocalParticle_get_state(part) <= 0){
@@ -83,9 +79,9 @@ void SplineBoris_single_particle(
     const double q_coulomb = q0 * qe;  // [C]
 
     // ----------------------------------------------------------------------
-    //  Set up longitudinal stepping
+    //  Set up longitudinal stepping in local s \in [0, length]
     // ----------------------------------------------------------------------
-    const double L    = s_end - s_start;
+    const double L    = length;
     const double ds   = L / (double) n_steps;
     const double half_ds = 0.5 * ds;
     
@@ -151,17 +147,24 @@ void SplineBoris_single_particle(
 
         // --------------------------------------------------------------
         //  Evaluate B-field at mid-step (xh, yh, s_local_h)
-        //  Polynomials are in local s coordinates (s_local = s - s_start)
+        //  Polynomials are in local s (s_local = s - s_start); evaluate_B 3rd arg is that offset.
         // --------------------------------------------------------------
         double Bx;
         double By;
         double Bs;
-        
+
         evaluate_B(
-            xh - shift_x, yh - shift_y, s_local_h,
-            params,
+            xh - shift_x,
+            yh - shift_y,
+            s_local_h,
+            bs,
+            by,
+            bx,
+            L,
             multipole_order,
-            &Bx, &By, &Bs
+            &Bx,
+            &By,
+            &Bs
         );
 
         // --------------------------------------------------------------
@@ -233,11 +236,7 @@ void SplineBoris_single_particle(
         
         // Track spin over this step
         // Field is evaluated at midpoint (xh, yh), track over step length ds
-        // TODO: When curvature is fully implemented, remove the curvature check
-        if (hx == 0.0) {
-            magnet_spin(part, Bx, By, Bs, hx, ds, l_path);
-        }
-        // If hx != 0, skip spin tracking for now (curvature not yet implemented)
+        magnet_spin(part, Bx, By, Bs, 0.0, ds, l_path);
         
         // Track radiation over this step
         if (radiation_flag && ds > 0) {

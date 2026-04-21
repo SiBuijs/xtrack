@@ -11,10 +11,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from xtrack._temp.field_fitter import FieldFitter
-
-TICK_FONTSIZE = 16
-LABEL_FONTSIZE = 17
-TITLE_FONTSIZE = 18
+from xtrack._temp.splineboris_sequence import SplineBorisSequence
 
 
 multipole_order = 3
@@ -39,12 +36,10 @@ BASE_DIR = Path(__file__).resolve().parent
 field_map_path = BASE_DIR.parent.parent / "test_data" / "sls" / "undulator_field_map.txt"
 df_raw_data = pd.read_csv(
     field_map_path,
-    sep='\t',
+    sep=r"\s+",
     header=None,
-    names=['X', 'Y', 'Z', 'Bx', 'By', 'Bs'],
-)
-
-df_raw_data = df_raw_data.set_index(['X', 'Y', 'Z'])
+    names=["X", "Y", "Z", "Bskew", "Bnorm", "Bs"],
+).set_index(["X", "Y", "Z"])
 
 # Distance unit in meters (the dataset uses mm, so 1 mm = 0.001 m)
 distance_unit = 0.001
@@ -68,7 +63,7 @@ field_fitter.fit()
 
 # Build undulator using SplineBorisSequence - automatically creates one SplineBoris
 # element per polynomial piece with n_steps based on the data point count
-seq = xt.SplineBorisSequence(
+seq = SplineBorisSequence(
     df_fit_pars=field_fitter.df_fit_pars,
     multipole_order=multipole_order,
     steps_per_point=1,
@@ -206,12 +201,9 @@ axs[2].plot(tw_undulator_corr_spin.s, tw_undulator_corr_spin.spin_z, label='spin
 axs[2].plot(tw_undulator_corr_spin_rad.s, tw_undulator_corr_spin_rad.spin_x, label='spin_x (with rad)', linestyle='--')
 axs[2].plot(tw_undulator_corr_spin_rad.s, tw_undulator_corr_spin_rad.spin_y, label='spin_y (with rad)', linestyle='--')
 axs[2].plot(tw_undulator_corr_spin_rad.s, tw_undulator_corr_spin_rad.spin_z, label='spin_z (with rad)', linestyle='--')
-axs[2].set_ylabel('spin', fontsize=LABEL_FONTSIZE)
-axs[2].set_xlabel('s [m]', fontsize=LABEL_FONTSIZE)
-axs[2].set_title('Spin components with/without radiation', fontsize=TITLE_FONTSIZE)
-axs[2].tick_params(axis='x', labelsize=TICK_FONTSIZE)
-axs[2].tick_params(axis='y', labelsize=TICK_FONTSIZE)
-axs[2].legend(fontsize=11)
+axs[2].set_ylabel('spin')
+axs[2].set_xlabel('s [m]')
+axs[2].legend()
 axs[2].grid(True)
 
 plt.tight_layout()
