@@ -514,6 +514,22 @@ class FieldFitter:
         ax3.plot(s, get_series(self.df_on_axis_raw, "Bs", der), label='Raw Data')
         ax3.plot(s, get_series(self.df_on_axis_fit, "Bs", der), label='Fit', linestyle='--')
 
+        # Use a shared vertical scale based on the largest component.
+        plotted_series = [
+            get_series(self.df_on_axis_raw, "Bskew", der),
+            get_series(self.df_on_axis_fit, "Bskew", der),
+            get_series(self.df_on_axis_raw, "Bnorm", der),
+            get_series(self.df_on_axis_fit, "Bnorm", der),
+            get_series(self.df_on_axis_raw, "Bs", der),
+            get_series(self.df_on_axis_fit, "Bs", der),
+        ]
+        max_abs = max(float(np.max(np.abs(series))) for series in plotted_series)
+        y_pad = 0.05 * max_abs if max_abs > 0 else 1e-12
+        y_limits = (-max_abs - y_pad, max_abs + y_pad)
+        ax1.set_ylim(*y_limits)
+        ax2.set_ylim(*y_limits)
+        ax3.set_ylim(*y_limits)
+
         # compute border indices per field/derivative (fall back to existing attribute if absent)
         def _borders_for_field(field_ax):
             if getattr(self, "df_fit_pars", None) is None:

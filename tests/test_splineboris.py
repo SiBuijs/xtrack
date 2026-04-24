@@ -1274,3 +1274,79 @@ def test_splineboris_spin_quadrupole(case, atol):
     xo.assert_allclose(p.spin_x[0], p_ref.spin_x[0], atol=atol, rtol=0)
     xo.assert_allclose(p.spin_y[0], p_ref.spin_y[0], atol=atol, rtol=0)
     xo.assert_allclose(p.spin_z[0], p_ref.spin_z[0], atol=atol, rtol=0)
+
+
+def _make_maxwell_regression_coeffs(multipole_order):
+    bs = [0.021, -0.006, 0.015, 0.009, -0.003]
+    by = []
+    bx = []
+    for i in range(multipole_order):
+        scale = 0.03 / (i + 1)
+        by.append([
+            0.4 * scale,
+            -0.1 * scale,
+            0.3 * scale,
+            0.2 * scale,
+            0.05 * scale,
+        ])
+        bx.append([
+            -0.35 * scale,
+            0.12 * scale,
+            -0.25 * scale,
+            0.08 * scale,
+            -0.03 * scale,
+        ])
+    return bs, by, bx
+
+
+def _finite_diff_jacobian(field_fn, x0, y0, s0, step_x, step_y, step_s):
+    bx_xp, by_xp, bs_xp = field_fn(x0 + step_x, y0, s0)
+    bx_xm, by_xm, bs_xm = field_fn(x0 - step_x, y0, s0)
+    bx_yp, by_yp, bs_yp = field_fn(x0, y0 + step_y, s0)
+    bx_ym, by_ym, bs_ym = field_fn(x0, y0 - step_y, s0)
+    bx_sp, by_sp, bs_sp = field_fn(x0, y0, s0 + step_s)
+    bx_sm, by_sm, bs_sm = field_fn(x0, y0, s0 - step_s)
+
+    return {
+        "dBx_dx": (bx_xp - bx_xm) / (2.0 * step_x),
+        "dBx_dy": (bx_yp - bx_ym) / (2.0 * step_y),
+        "dBx_ds": (bx_sp - bx_sm) / (2.0 * step_s),
+        "dBy_dx": (by_xp - by_xm) / (2.0 * step_x),
+        "dBy_dy": (by_yp - by_ym) / (2.0 * step_y),
+        "dBy_ds": (by_sp - by_sm) / (2.0 * step_s),
+        "dBs_dx": (bs_xp - bs_xm) / (2.0 * step_x),
+        "dBs_dy": (bs_yp - bs_ym) / (2.0 * step_y),
+        "dBs_ds": (bs_sp - bs_sm) / (2.0 * step_s),
+    }
+
+
+@pytest.mark.parametrize("multipole_order", [1, 4, 7])
+def test_splineboris_evaluate_b_maxwell_consistency(multipole_order):
+    length = 0.83
+    bs, by, bx = _make_maxwell_regression_coeffs(multipole_order=multipole_order)
+
+    def field_fn(x, y, s):
+        return evaluate_B(x, y, s, bs, by, bx, length, multipole_order)
+
+    x0 = 2.5e-4
+    y0 = -1.7e-4
+    s0 = 0.37 * length
+    derivs = _finite_diff_jacobian(
+        field_fn=field_fn,
+        x0=x0,
+        y0=y0,
+        s0=s0,
+        step_x=2e-7,
+        step_y=2e-7,
+        step_s=2e-7,
+    )
+
+    div_b = derivs["dBx_dx"] + derivs["dBy_dy"] + derivs["dBs_ds"]
+    curl_x = derivs["dBs_dy"] - derivs["dBy_ds"]
+    curl_y = derivs["dBx_ds"] - derivs["dBs_dx"]
+    curl_s = derivs["dBy_dx"] - derivs["dBx_dy"]
+
+    xo.assert_allclose(div_b, 0.0, rtol=0.0, atol=2e-6)
+    xo.assert_allclose(curl_x, 0.0, rtol=0.0, atol=2e-6)
+    xo.assert_allclose(curl_y, 0.0, rtol=0.0, atol=2e-6)
+    xo.assert_allclose(curl_s, 0.0, rtol=0.0, atol=2e-6)

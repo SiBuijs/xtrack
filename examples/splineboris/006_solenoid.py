@@ -19,6 +19,7 @@ S_PLOT_MAX_M = 30#24.0
 TICK_FONTSIZE = 16
 LABEL_FONTSIZE = 17
 TITLE_FONTSIZE = 18
+PLOT_ALL_FIELD_DERIVATIVES = True
 
 # Make initial particles
 delta = np.array([0, 4])
@@ -72,7 +73,7 @@ bx, by, bz = sf.get_field(x_grid.ravel(), y_grid.ravel(), z_grid.ravel())
 
 df_raw_data = pd.DataFrame(
     np.column_stack([x_grid.ravel(), y_grid.ravel(), z_grid.ravel(), bx, by, bz]),
-    columns=["X", "Y", "Z", "Bx", "By", "Bs"],
+    columns=["X", "Y", "Z", "Bskew", "Bnorm", "Bs"],
 ).set_index(["X", "Y", "Z"])
 
 fitter = FieldFitter(
@@ -81,10 +82,16 @@ fitter = FieldFitter(
     distance_unit=1,
     min_region_size=10,
     deg=multipole_order - 1,
-    field_tol=1e-8,
+    field_tol=1e-12,
 )
 fitter.fit()
 df_fit_pars = fitter.df_fit_pars
+
+if PLOT_ALL_FIELD_DERIVATIVES:
+    for der in range(multipole_order):
+        fitter.plot_fields(der=der)
+
+
 
 # Plot only the longitudinal component (Bs), similar to FieldFitter plotting.
 s_fit = fitter.s_full

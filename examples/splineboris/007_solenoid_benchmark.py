@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 import numpy as np
 from scipy.constants import c as clight
 from scipy.constants import e as qe
@@ -14,12 +15,15 @@ import time
 TICK_FONTSIZE = 16
 LABEL_FONTSIZE = 17
 TITLE_FONTSIZE = 18
+SAVE_RESULTS = True
+RESULTS_DIRNAME = "_007_results"
 
 # ── Setup (reused from 005_solenoid.py) ─────────────────────────────────────
 interval = 8
 dx = 0.001
 dy = 0.001
-multipole_order = 4
+multipole_order = 2
+multipole_orders_study1 = [2, 4]
 
 delta = np.array([0])
 p0 = xt.Particles(
@@ -38,7 +42,7 @@ def get_field(x, y, z):
     return sf.get_field(x, y, z)
 
 
-def benchmark_track(track_callable, n_warmup=1, n_repeats=20):
+def benchmark_track(track_callable, n_warmup=1, n_repeats=10):
     t0 = time.perf_counter()
     track_callable()
     first_call_s = time.perf_counter() - t0
@@ -110,100 +114,32 @@ n_repeats = 10
 # ══════════════════════════════════════════════════════════════════════════════
 # Study 1: Fix spline resolution, vary steps_per_point
 # ══════════════════════════════════════════════════════════════════════════════
-# Set to a file path to save/load results; only missing spp values will be run
-study1_results_file = None  # e.g. "study1_results.json"
+results_dir = Path(__file__).resolve().parent / RESULTS_DIRNAME
+if SAVE_RESULTS:
+    results_dir.mkdir(exist_ok=True)
 
 run_study_1 = True  # set to True to rerun study 1
 if run_study_1:
-    n_spline_points = 10001
-    x_axis = np.linspace(
-        -multipole_order * dx / 2, multipole_order * dx / 2,
-        multipole_order + 1)
-    y_axis = np.linspace(
-        -multipole_order * dy / 2, multipole_order * dy / 2,
-        multipole_order + 1)
-    z_axis = np.linspace(0, interval, n_spline_points)
-    x_grid, y_grid, z_grid = np.meshgrid(
-        x_axis, y_axis, z_axis, indexing="ij")
-    bx, by, bz = sf.get_field(
-        x_grid.ravel(), y_grid.ravel(), z_grid.ravel())
-    df_raw = pd.DataFrame(
-        np.column_stack([x_grid.ravel(), y_grid.ravel(), z_grid.ravel(),
-                         bx, by, bz]),
-        columns=["X", "Y", "Z", "Bskew", "Bnorm", "Bs"],
-    ).set_index(["X", "Y", "Z"])
-    fitter = FieldFitter(
-        raw_data=df_raw, xy_point=(0, 0), distance_unit=1,
-        min_region_size=10, deg=multipole_order - 1, field_tol=1e-8,
-    )
-    fitter.fit()
-    df_fit_pars = fitter.df_fit_pars
-    n_spline_intervals = n_spline_points - 1
-    print(f"Spline fit built: {n_spline_intervals} intervals over "
-          f"{interval} m "
-          f"({interval / n_spline_intervals * 1e3:.1f} mm per interval)")
-
     steps_per_point_list = [1, 2, 4, 8, 16, 32]
-    # methods = ["SplineBoris", "BorisSpatial", "VariableSolenoid"]
-    methods = ["SplineBoris", "BorisSpatial"]
-    results = {
-        m: {"n_steps": [], "steps_per_point": [], "median_s": [],
-             "err_x": [], "err_px": [], "err_y": [], "err_py": []}
-        for m in methods
+    boris_results = {
+        "n_steps": [],
+        "steps_per_point": [],
+        "median_s": [],
+        "err_x": [],
+        "err_px": [],
+        "err_y": [],
+        "err_py": [],
     }
+    boris_done_spp = set()
+    spline_results_by_order = {}
 
-    # Load existing results if available
-    existing_spp = []
-    if study1_results_file:
-        try:
-            with open(study1_results_file) as f:
-                loaded = json.load(f)
-            existing_spp = loaded["SplineBoris"]["steps_per_point"]
-            for m in methods:
-                for k in results[m]:
-                    results[m][k] = loaded[m][k]
-            print(f"Loaded Study 1 results for spp={existing_spp}")
-        except FileNotFoundError:
-            pass
-        except Exception as e:
-            print(f"Could not load {study1_results_file}: {e}")
-
-    spp_to_run = [s for s in steps_per_point_list if s not in existing_spp]
-    if not spp_to_run:
-        print("All spp already in results, skipping computation.")
-
-    def store_result(method, spp, n_steps_total, t, ex, epx, ey, epy):
-        r = results[method]
-        r["steps_per_point"].append(spp)
-        r["n_steps"].append(n_steps_total)
-        r["median_s"].append(t["median_s"])
-        r["err_x"].append(ex)
-        r["err_px"].append(epx)
-        r["err_y"].append(ey)
-        r["err_py"].append(epy)
-
-    for spp in spp_to_run:
-        n_steps_total = n_spline_intervals * spp
-        print(f"steps_per_point = {spp}  "
+    print("\n" + "=" * 70)
+    print("Computing BorisSpatial baseline once (analytic field)")
+    print("=" * 70)
+    for spp in steps_per_point_list:
+        n_steps_total = (10001 - 1) * spp
+        print(f"BorisSpatial baseline: steps_per_point = {spp}  "
               f"(n_steps_total = {n_steps_total})")
-
-        seq = SplineBorisSequence(
-            df_fit_pars=df_fit_pars,
-            multipole_order=multipole_order,
-            steps_per_point=spp,
-        )
-        line_spline = seq.to_line()
-        line_spline.build_tracker()
-        p_test = p0.copy()
-        line_spline.track(p_test)
-        ex, epx, ey, epy = compute_errors(p_test)
-        t = benchmark_track(lambda: line_spline.track(p0.copy()),
-                            n_warmup=n_warmup, n_repeats=n_repeats)
-        store_result("SplineBoris", spp, n_steps_total,
-                     t, ex, epx, ey, epy)
-        print(f"  SplineBoris       err_x={ex:.4e}  "
-              f"t={t['median_s']:.4f}s")
-
         boris = xt.BorisSpatialIntegrator(
             fieldmap_callable=get_field, s_start=0, s_end=interval,
             n_steps=n_steps_total)
@@ -213,95 +149,248 @@ if run_study_1:
         ex, epx, ey, epy = compute_errors(p_test)
         t = benchmark_track(lambda: boris.track(p0.copy()),
                             n_warmup=n_warmup, n_repeats=n_repeats)
-        store_result("BorisSpatial", spp, n_steps_total,
-                     t, ex, epx, ey, epy)
-        print(f"  BorisSpatial      err_x={ex:.4e}  "
-              f"t={t['median_s']:.4f}s")
 
-        # z_axis_vs = np.linspace(0, interval, n_steps_total + 1)
-        # Bz_axis = sf.get_field(
-        #     0 * z_axis_vs, 0 * z_axis_vs, z_axis_vs)[2]
-        # ks = Bz_axis / brho
-        # dz = z_axis_vs[1] - z_axis_vs[0]
-        # line_varsol = xt.Line(elements=[
-        #     xt.VariableSolenoid(
-        #         length=dz, ks_profile=[ks[ii], ks[ii + 1]])
-        #     for ii in range(len(z_axis_vs) - 1)
-        # ])
-        # line_varsol.build_tracker()
-        # p_test = p0.copy()
-        # line_varsol.track(p_test)
-        # ex, epx, ey, epy = compute_errors(p_test)
-        # t = benchmark_track(lambda: line_varsol.track(p0.copy()),
-        #                     n_warmup=n_warmup, n_repeats=n_repeats)
-        # store_result("VariableSolenoid", spp, n_steps_total,
-        #              t, ex, epx, ey, epy)
-        # print(f"  VariableSolenoid  err_x={ex:.4e}  "
-        #       f"t={t['median_s']:.4f}s")
-        print()
+        boris_results["steps_per_point"].append(spp)
+        boris_results["n_steps"].append(n_steps_total)
+        boris_results["median_s"].append(t["median_s"])
+        boris_results["err_x"].append(ex)
+        boris_results["err_px"].append(epx)
+        boris_results["err_y"].append(ey)
+        boris_results["err_py"].append(epy)
+        boris_done_spp.add(spp)
+        print(f"  err_x={ex:.4e}  t={t['median_s']:.4f}s")
 
-    if study1_results_file and spp_to_run:
-        with open(study1_results_file, "w") as f:
-            json.dump(results, f, indent=2)
-        print(f"Saved Study 1 results to {study1_results_file}")
+    for multipole_order in multipole_orders_study1:
+        study1_results_file = (
+            results_dir / f"study1_multipole_order_{multipole_order}.json"
+            if SAVE_RESULTS
+            else None
+        )
+        print("\n" + "=" * 70)
+        print(f"Study 1 with multipole_order = {multipole_order}")
+        print("=" * 70)
 
-    # Sort by spp for consistent ordering (in case of load-then-append)
-    order = np.argsort(results["SplineBoris"]["steps_per_point"])
-    for m in methods:
-        for k in results[m]:
-            results[m][k] = [results[m][k][i] for i in order]
+        n_spline_points = 10001
+        x_axis = np.linspace(
+            -multipole_order * dx / 2, multipole_order * dx / 2,
+            multipole_order + 1)
+        y_axis = np.linspace(
+            -multipole_order * dy / 2, multipole_order * dy / 2,
+            multipole_order + 1)
+        z_axis = np.linspace(0, interval, n_spline_points)
+        x_grid, y_grid, z_grid = np.meshgrid(
+            x_axis, y_axis, z_axis, indexing="ij")
+        bx, by, bz = sf.get_field(
+            x_grid.ravel(), y_grid.ravel(), z_grid.ravel())
+        df_raw = pd.DataFrame(
+            np.column_stack([x_grid.ravel(), y_grid.ravel(), z_grid.ravel(),
+                             bx, by, bz]),
+            columns=["X", "Y", "Z", "Bskew", "Bnorm", "Bs"],
+        ).set_index(["X", "Y", "Z"])
+        fitter = FieldFitter(
+            raw_data=df_raw, xy_point=(0, 0), distance_unit=1,
+            min_region_size=10, deg=multipole_order - 1, field_tol=1e-8,
+        )
+        fitter.fit()
+        df_fit_pars = fitter.df_fit_pars
+        n_spline_intervals = n_spline_points - 1
+        print(f"Spline fit built: {n_spline_intervals} intervals over "
+              f"{interval} m "
+              f"({interval / n_spline_intervals * 1e3:.1f} mm per interval)")
 
-    header = (f"{'spp':>4s} {'n_steps':>8s}  "
-              f"{'SB err_x':>10s} {'SB time':>8s}  "
-              f"{'Boris err_x':>12s} {'Boris time':>10s}")
-    print("=" * len(header))
-    print(header)
-    print("-" * len(header))
-    for i in range(len(results["SplineBoris"]["steps_per_point"])):
-        spp = results["SplineBoris"]["steps_per_point"][i]
-        ns = results["SplineBoris"]["n_steps"][i]
-        row = f"{spp:>4d} {ns:>8d}  "
+        methods = ["SplineBoris", "BorisSpatial"]
+        results = {
+            "SplineBoris": {"n_steps": [], "steps_per_point": [], "median_s": [],
+                            "err_x": [], "err_px": [], "err_y": [], "err_py": []},
+            "BorisSpatial": {k: list(v) for k, v in boris_results.items()},
+        }
+
+        # Load existing results if available
+        existing_spp = []
+        if study1_results_file:
+            try:
+                with open(study1_results_file) as f:
+                    loaded = json.load(f)
+                existing_spp = loaded["SplineBoris"]["steps_per_point"]
+                for k in results["SplineBoris"]:
+                    results["SplineBoris"][k] = loaded["SplineBoris"][k]
+                print(f"Loaded Study 1 results for spp={existing_spp}")
+            except FileNotFoundError:
+                pass
+            except Exception as e:
+                print(f"Could not load {study1_results_file}: {e}")
+
+        spp_to_run = [s for s in steps_per_point_list if s not in existing_spp]
+        if not spp_to_run:
+            print("All spp already in results, skipping computation.")
+
+        def store_result(method, spp, n_steps_total, t, ex, epx, ey, epy):
+            r = results[method]
+            r["steps_per_point"].append(spp)
+            r["n_steps"].append(n_steps_total)
+            r["median_s"].append(t["median_s"])
+            r["err_x"].append(ex)
+            r["err_px"].append(epx)
+            r["err_y"].append(ey)
+            r["err_py"].append(epy)
+
+        for spp in spp_to_run:
+            n_steps_total = n_spline_intervals * spp
+            print(f"steps_per_point = {spp}  "
+                  f"(n_steps_total = {n_steps_total})")
+
+            seq = SplineBorisSequence(
+                df_fit_pars=df_fit_pars,
+                multipole_order=multipole_order,
+                steps_per_point=spp,
+            )
+            line_spline = seq.to_line()
+            line_spline.build_tracker()
+            p_test = p0.copy()
+            line_spline.track(p_test)
+            ex, epx, ey, epy = compute_errors(p_test)
+            t = benchmark_track(lambda: line_spline.track(p0.copy()),
+                                n_warmup=n_warmup, n_repeats=n_repeats)
+            store_result("SplineBoris", spp, n_steps_total,
+                         t, ex, epx, ey, epy)
+            print(f"  SplineBoris       err_x={ex:.4e}  "
+                  f"t={t['median_s']:.4f}s")
+
+            if spp not in boris_done_spp:
+                boris = xt.BorisSpatialIntegrator(
+                    fieldmap_callable=get_field, s_start=0, s_end=interval,
+                    n_steps=n_steps_total)
+                boris.log_trajectories = False
+                p_test = p0.copy()
+                boris.track(p_test)
+                ex, epx, ey, epy = compute_errors(p_test)
+                t = benchmark_track(lambda: boris.track(p0.copy()),
+                                    n_warmup=n_warmup, n_repeats=n_repeats)
+                store_result("BorisSpatial", spp, n_steps_total,
+                             t, ex, epx, ey, epy)
+                boris_done_spp.add(spp)
+
+            # z_axis_vs = np.linspace(0, interval, n_steps_total + 1)
+            # Bz_axis = sf.get_field(
+            #     0 * z_axis_vs, 0 * z_axis_vs, z_axis_vs)[2]
+            # ks = Bz_axis / brho
+            # dz = z_axis_vs[1] - z_axis_vs[0]
+            # line_varsol = xt.Line(elements=[
+            #     xt.VariableSolenoid(
+            #         length=dz, ks_profile=[ks[ii], ks[ii + 1]])
+            #     for ii in range(len(z_axis_vs) - 1)
+            # ])
+            # line_varsol.build_tracker()
+            # p_test = p0.copy()
+            # line_varsol.track(p_test)
+            # ex, epx, ey, epy = compute_errors(p_test)
+            # t = benchmark_track(lambda: line_varsol.track(p0.copy()),
+            #                     n_warmup=n_warmup, n_repeats=n_repeats)
+            # store_result("VariableSolenoid", spp, n_steps_total,
+            #              t, ex, epx, ey, epy)
+            # print(f"  VariableSolenoid  err_x={ex:.4e}  "
+            #       f"t={t['median_s']:.4f}s")
+            print()
+
+        if study1_results_file and spp_to_run:
+            with open(study1_results_file, "w") as f:
+                json.dump(results, f, indent=2)
+            print(f"Saved Study 1 results to {study1_results_file}")
+
+        # Sort by spp for consistent ordering (in case of load-then-append)
+        order = np.argsort(results["SplineBoris"]["steps_per_point"])
         for m in methods:
-            row += (f"{results[m]['err_x'][i]:>10.4e} "
-                    f"{results[m]['median_s'][i]:>8.4f}  ")
-        print(row)
-    print("=" * len(header))
+            for k in results[m]:
+                results[m][k] = [results[m][k][i] for i in order]
+        spline_results_by_order[multipole_order] = {
+            k: list(v) for k, v in results["SplineBoris"].items()
+        }
 
-    # markers = {"SplineBoris": "o", "BorisSpatial": "s",
-    #            "VariableSolenoid": "^"}
-    markers = {"SplineBoris": "o", "BorisSpatial": "s"}
+        header = (f"{'spp':>4s} {'n_steps':>8s}  "
+                  f"{'SB err_x':>10s} {'SB time':>8s}  "
+                  f"{'Boris err_x':>12s} {'Boris time':>10s}")
+        print("=" * len(header))
+        print(header)
+        print("-" * len(header))
+        for i in range(len(results["SplineBoris"]["steps_per_point"])):
+            spp = results["SplineBoris"]["steps_per_point"][i]
+            ns = results["SplineBoris"]["n_steps"][i]
+            row = f"{spp:>4d} {ns:>8d}  "
+            for m in methods:
+                row += (f"{results[m]['err_x'][i]:>10.4e} "
+                        f"{results[m]['median_s'][i]:>8.4f}  ")
+            print(row)
+        print("=" * len(header))
+
+    order_markers = {2: "o", 4: "s", 6: "^"}
 
     fig, axes = plt.subplots(2, 2, figsize=(12, 8), sharex=True)
     for ax, ck, cl in zip(axes.ravel(), coord_keys, coord_labels):
-        for m in methods:
-            ax.loglog(results[m]["n_steps"], results[m][ck],
-                      marker=markers[m], label=m)
+        for mo in multipole_orders_study1:
+            ax.loglog(
+                spline_results_by_order[mo]["n_steps"],
+                spline_results_by_order[mo][ck],
+                marker=order_markers.get(mo, "o"),
+                label=f"SplineBoris m={mo}",
+            )
+        ax.loglog(
+            boris_results["n_steps"],
+            boris_results[ck],
+            marker="D",
+            linestyle="--",
+            label="BorisSpatial (analytic field)",
+        )
         ax.set_xlabel(r"$n_{\mathrm{steps}}$", fontsize=LABEL_FONTSIZE)
         ax.set_ylabel(cl, fontsize=LABEL_FONTSIZE)
         ax.tick_params(axis="x", labelbottom=True, labelsize=TICK_FONTSIZE)
         ax.tick_params(axis="y", labelleft=True, labelsize=TICK_FONTSIZE)
         ax.set_title(f"{cl} vs number of integration steps", fontsize=TITLE_FONTSIZE)
-        ax.legend(fontsize=11)
+        ax.legend(fontsize=10)
         ax.grid(True, which="both", alpha=0.3)
-    fig.suptitle("Study 1: Per-coordinate error vs n_steps", fontsize=TITLE_FONTSIZE)
+    fig.suptitle(
+        "Study 1: Per-coordinate error vs n_steps (all multipole orders)",
+        fontsize=TITLE_FONTSIZE,
+    )
     fig.tight_layout()
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    for m in methods:
-        ax.loglog(results[m]["n_steps"], results[m]["median_s"],
-                  marker=markers[m], label=m)
+    for mo in multipole_orders_study1:
+        ax.loglog(
+            spline_results_by_order[mo]["n_steps"],
+            spline_results_by_order[mo]["median_s"],
+            marker=order_markers.get(mo, "o"),
+            label=f"SplineBoris m={mo}",
+        )
+    ax.loglog(
+        boris_results["n_steps"],
+        boris_results["median_s"],
+        marker="D",
+        linestyle="--",
+        label="BorisSpatial (analytic field)",
+    )
     ax.set_xlabel(r"$n_{\mathrm{steps}}$")
     ax.set_ylabel(r"Median computing time [s]")
-    ax.set_title("Study 1: Computing time vs n_steps")
+    ax.set_title("Study 1: Computing time vs n_steps (all multipole orders)")
     ax.legend()
     ax.grid(True, which="both", alpha=0.3)
     fig.tight_layout()
 
     fig, axes = plt.subplots(2, 2, figsize=(12, 8), sharex=True)
     for ax, ck, cl in zip(axes.ravel(), coord_keys, coord_labels):
-        for m in methods:
-            ax.loglog(results[m]["median_s"], results[m][ck],
-                      marker=markers[m], label=m)
+        for mo in multipole_orders_study1:
+            ax.loglog(
+                spline_results_by_order[mo]["median_s"],
+                spline_results_by_order[mo][ck],
+                marker=order_markers.get(mo, "o"),
+                label=f"SplineBoris m={mo}",
+            )
+        ax.loglog(
+            boris_results["median_s"],
+            boris_results[ck],
+            marker="D",
+            linestyle="--",
+            label="BorisSpatial (analytic field)",
+        )
         ax.set_xlabel(r"Median computing time [s]")
         ax.set_ylabel(cl)
         ax.tick_params(axis="x", labelbottom=True)
@@ -309,7 +398,10 @@ if run_study_1:
         ax.set_title(f"{cl} vs computation time")
         ax.legend(fontsize="small")
         ax.grid(True, which="both", alpha=0.3)
-    fig.suptitle("Study 1: Per-coordinate error vs time", fontsize=13)
+    fig.suptitle(
+        "Study 1: Per-coordinate error vs time (all multipole orders)",
+        fontsize=13,
+    )
     fig.tight_layout()
 
     plt.show()
