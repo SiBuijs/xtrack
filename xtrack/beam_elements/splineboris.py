@@ -311,17 +311,7 @@ class SplineBoris(BeamElement):
         dct.update(kwargs)
         return cls(**dct)
 
-    def get_field(self, x, y, s_local):
-        """Evaluate **B** in the element's local longitudinal coordinate.
-
-        Parameters
-        ----------
-        x, y : float or array-like
-            Transverse positions [m].
-        s_local : float or array-like
-            Local longitudinal coordinate(s) in the range ``[0, length]``.
-            If array-like, it is broadcast together with ``x`` and ``y``.
-        """
+    def _prepare_eval_inputs(self, x, y, s_local):
         x_arr, y_arr, s_loc = np.broadcast_arrays(
             np.asarray(x, dtype=float),
             np.asarray(y, dtype=float),
@@ -337,8 +327,9 @@ class SplineBoris(BeamElement):
                 f"[0, {self.length}] (min={s_min}, max={s_max})"
             )
 
-        from .splineboris_src.spline_B_field_eval_python import evaluate_B
+        return x_arr, y_arr, s_loc
 
+    def _get_hermite_coeff_arrays(self):
         # Build Python-side Hermite arrays from the xobject fields.
         bs = [self.bs[i] for i in range(self._SB_NUM_COEFFS)]
 
@@ -347,6 +338,25 @@ class SplineBoris(BeamElement):
         for order in range(self.multipole_order):
             by.append([self.by[order, j] for j in range(self._SB_NUM_COEFFS)])
             bx.append([self.bx[order, j] for j in range(self._SB_NUM_COEFFS)])
+
+        return bs, by, bx
+
+    def get_field(self, x, y, s_local):
+        """Evaluate **B** in the element's local longitudinal coordinate.
+
+        Parameters
+        ----------
+        x, y : float or array-like
+            Transverse positions [m].
+        s_local : float or array-like
+            Local longitudinal coordinate(s) in the range ``[0, length]``.
+            If array-like, it is broadcast together with ``x`` and ``y``.
+        """
+        x_arr, y_arr, s_loc = self._prepare_eval_inputs(x=x, y=y, s_local=s_local)
+
+        from .splineboris_src.spline_B_field_eval_python import evaluate_B
+
+        bs, by, bx = self._get_hermite_coeff_arrays()
 
         bx_eval, by_eval, bs_eval = evaluate_B(
             x_arr - self.shift_x,
@@ -362,3 +372,30 @@ class SplineBoris(BeamElement):
         if bx_eval.shape == ():
             return float(bx_eval), float(by_eval), float(bs_eval)
         return bx_eval, by_eval, bs_eval
+
+    def get_potential(self, x, y, s_local):
+        """Evaluate scalar magnetic potential ``phi`` in local coordinates."""
+        x_arr, y_arr, s_loc = self._prepare_eval_inputs(x=x, y=y, s_local=s_local)
+
+        from .splineboris_src.spline_phi_field_eval_python import evaluate_phi
+
+        bs, by, bx = self._get_hermite_coeff_arrays()
+
+        phi_eval = evaluate_phi(
+            x_arr - self.shift_x,
+            y_arr - self.shift_y,
+            s_loc,
+            bs,
+            by,
+            bx,
+            self.length,
+            self.multipole_order,
+        )
+
+        if np.shape(phi_eval) == ():
+            return float(phi_eval)
+        return phi_eval
+
+    def get_phi(self, x, y, s_local):
+        """Alias for :meth:`get_potential`."""
+        return self.get_potential(x=x, y=y, s_local=s_local)

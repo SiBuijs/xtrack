@@ -13,6 +13,7 @@ from xtrack._temp.boris_and_solenoid_map.solenoid_field import SolenoidField
 from xtrack._temp.field_fitter import FieldFitter
 from xtrack._temp.splineboris_sequence import SplineBorisSequence
 from xtrack.beam_elements.splineboris_src.spline_B_field_eval_python import evaluate_B
+from xtrack.beam_elements.splineboris_src.spline_phi_field_eval_python import evaluate_phi
 
 FIT_PARS_INDEX_COLS = [
     "field_component",
@@ -230,6 +231,56 @@ def test_splineboris_to_dict_from_dict_roundtrip(test_context):
         xo.assert_allclose(candidate.bs, element_cpu.bs, atol=0, rtol=0)
         xo.assert_allclose(candidate.by, element_cpu.by, atol=0, rtol=0)
         xo.assert_allclose(candidate.bx, element_cpu.bx, atol=0, rtol=0)
+
+
+@for_all_test_contexts
+def test_splineboris_get_phi_matches_generated_python(test_context):
+    splineboris = xt.SplineBoris(
+        length=1.3,
+        n_steps=8,
+        shift_x=1.2e-3,
+        shift_y=-0.9e-3,
+        bs=xt.Spline4(0.12, -0.03, 0.08, 0.01, 0.07),
+        by=(
+            xt.Spline4(0.8, 0.1, -0.4, 0.2, 0.05),
+            xt.Spline4(-0.2, 0.3, 0.1, -0.15, 0.02),
+        ),
+        bx=(
+            xt.Spline4(0.3, -0.2, 0.15, 0.1, -0.01),
+            xt.Spline4(-0.1, 0.05, -0.02, 0.07, 0.03),
+        ),
+        _context=test_context,
+    )
+
+    splineboris_cpu = splineboris.copy(_context=xo.ContextCpu())
+
+    x = np.array([1.0e-3, -2.5e-4, 8.0e-4])
+    y = np.array([3.0e-4, -7.0e-4, 1.2e-3])
+    s_local = np.array([0.1, 0.7, 1.15])
+
+    phi_sb = splineboris_cpu.get_phi(x, y, s_local)
+
+    bs = [splineboris_cpu.bs[i] for i in range(splineboris_cpu._SB_NUM_COEFFS)]
+    by = [
+        [splineboris_cpu.by[order, j] for j in range(splineboris_cpu._SB_NUM_COEFFS)]
+        for order in range(splineboris_cpu.multipole_order)
+    ]
+    bx = [
+        [splineboris_cpu.bx[order, j] for j in range(splineboris_cpu._SB_NUM_COEFFS)]
+        for order in range(splineboris_cpu.multipole_order)
+    ]
+    phi_ref = evaluate_phi(
+        x - splineboris_cpu.shift_x,
+        y - splineboris_cpu.shift_y,
+        s_local,
+        bs,
+        by,
+        bx,
+        splineboris_cpu.length,
+        splineboris_cpu.multipole_order,
+    )
+
+    xo.assert_allclose(phi_sb, phi_ref, rtol=0, atol=1e-14)
 
 # Test some common field angles, as well as some unusual ones
 @pytest.mark.parametrize('field_angle', [0, np.pi/4, np.pi/2, 3*np.pi/4, np.pi, 4*np.pi/9, np.pi/7])

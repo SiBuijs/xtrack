@@ -89,8 +89,9 @@ def generic_field_exprs(curv, multipole_order=multipole_order, poly_order=4):
     )
     symbolic_Bx, symbolic_By, symbolic_Bs = generic_B.get_Bfield(lambdify=False)
     symbolic_Ax, symbolic_Ay, symbolic_As = generic_B.get_A()
+    symbolic_phi = generic_B.get_phi(subs=True)
 
-    return symbolic_Bx, symbolic_By, symbolic_Bs, symbolic_Ax, symbolic_Ay, symbolic_As
+    return symbolic_Bx, symbolic_By, symbolic_Bs, symbolic_Ax, symbolic_Ay, symbolic_As, symbolic_phi
 
 #symbolic_Bx, symbolic_By, symbolic_Bs, symbolic_Ax, symbolic_Ay, symbolic_As = generic_field_exprs(curv='0', multipole_order=multipole_order, poly_order=4)
 
@@ -127,11 +128,13 @@ def _get_reduced_expressions(exprs_list):
 # However, the Boris Integrator does not support curved reference frames yet, so we leave the curvature zero here.
 def start_to_finish(multipole_order=multipole_order, poly_order=4, field='B', curvature='0'):
     param_names = _get_param_names(multipole_order=multipole_order)
-    symbolic_Bx, symbolic_By, symbolic_Bs, symbolic_Ax, symbolic_Ay, symbolic_As = generic_field_exprs(
+    symbolic_Bx, symbolic_By, symbolic_Bs, symbolic_Ax, symbolic_Ay, symbolic_As, symbolic_phi = generic_field_exprs(
         curv=curvature, multipole_order=multipole_order, poly_order=poly_order
     )
     if field == 'B':
         exprs = [symbolic_Bx, symbolic_By, symbolic_Bs]
+    elif field == 'phi':
+        exprs = [symbolic_phi]
     else:
         exprs = [symbolic_Ax, symbolic_Ay, symbolic_As]
     cse_subs, reduced_exprs = _get_reduced_expressions(exprs)
@@ -162,6 +165,8 @@ def write_to_C(max_order=multipole_order, poly_order=4, field='B', curvature='0'
 
     if field == 'A':
         filename = os.path.join(ELEMENTS_SRC_DIR, 'spline_A_field_eval.h')
+    elif field == 'phi':
+        filename = os.path.join(ELEMENTS_SRC_DIR, 'spline_phi_field_eval.h')
     else:
         filename = os.path.join(ELEMENTS_SRC_DIR, 'spline_B_field_eval.h')
 
@@ -228,7 +233,7 @@ def write_to_C(max_order=multipole_order, poly_order=4, field='B', curvature='0'
             f.write(f"#endif // {guard_name}_H\n")
 
         else:
-            # Hermite-based interface for the magnetic field B.
+            # Hermite-based interface for the magnetic field B and scalar potential phi.
             f.write("#include <stddef.h>\n")
             f.write("#include <stdio.h>\n")
             f.write("#include <string.h>\n")
@@ -236,7 +241,7 @@ def write_to_C(max_order=multipole_order, poly_order=4, field='B', curvature='0'
             f.write(f"#ifndef {guard_name}_H\n")
             f.write(f"#define {guard_name}_H\n\n")
 
-            f.write("// Auto-generated symbolic field expressions for B\n")
+            f.write(f"// Auto-generated symbolic field expressions for {field}\n")
             f.write("// NOTE:\n")
             f.write("//   - 's' is the local coordinate within the element: s_local ∈ [0, L].\n")
             f.write("//   - Hermite coefficients are defined on s_local ∈ [0, L] and are converted\n")
@@ -332,17 +337,28 @@ def write_to_C(max_order=multipole_order, poly_order=4, field='B', curvature='0'
             f.write("}\n\n")
 
             f.write("GPUFUN\n")
-            f.write(
-                "void evaluate_B(const double x, const double y, const double s,\n"
-                "                const double *bs,\n"
-                "                const double *const *by,\n"
-                "                const double *const *bx,\n"
-                "                const double L,\n"
-                "                const int multipole_order,\n"
-                "                double *Bx_out, double *By_out, double *Bs_out){\n\n"
-            )
-
-            names = ['Bx_out', 'By_out', 'Bs_out']
+            if field == 'B':
+                f.write(
+                    "void evaluate_B(const double x, const double y, const double s,\n"
+                    "                const double *bs,\n"
+                    "                const double *const *by,\n"
+                    "                const double *const *bx,\n"
+                    "                const double L,\n"
+                    "                const int multipole_order,\n"
+                    "                double *Bx_out, double *By_out, double *Bs_out){\n\n"
+                )
+                names = ['Bx_out', 'By_out', 'Bs_out']
+            else:
+                f.write(
+                    "void evaluate_phi(const double x, const double y, const double s,\n"
+                    "                  const double *bs,\n"
+                    "                  const double *const *by,\n"
+                    "                  const double *const *bx,\n"
+                    "                  const double L,\n"
+                    "                  const int multipole_order,\n"
+                    "                  double *phi_out){\n\n"
+                )
+                names = ['phi_out']
 
             f.write("\tswitch (multipole_order) {\n")
 
@@ -401,7 +417,7 @@ def write_to_C(max_order=multipole_order, poly_order=4, field='B', curvature='0'
             f.write(f"\t\tprintf(\"Supported orders are 1 to {max_order}\\n\");\n")
             f.write("\t\tprintf(\"Setting field values to zero.\\n\");\n")
             f.write("\t\t// Reduced expressions\n")
-            for idx in range(3):
+            for idx in range(len(names)):
                 f.write(f"\t\t*{names[idx]} = 0;\n")
             f.write("\t\treturn;\n")
             f.write("\t}\n")
@@ -424,6 +440,8 @@ def write_to_python(max_order=multipole_order, poly_order=4, field='B', curvatur
 
     if field == 'A':
         filename = os.path.join(ELEMENTS_SRC_DIR, 'spline_A_field_eval_python.py')
+    elif field == 'phi':
+        filename = os.path.join(ELEMENTS_SRC_DIR, 'spline_phi_field_eval_python.py')
     else:
         filename = os.path.join(ELEMENTS_SRC_DIR, 'spline_B_field_eval_python.py')
 
@@ -483,7 +501,7 @@ def write_to_python(max_order=multipole_order, poly_order=4, field='B', curvatur
             )
 
         else:
-            # Hermite-based Python interface for the magnetic field B.
+            # Hermite-based Python interface for the magnetic field B and scalar potential phi.
             f.write("import math\n")
             f.write("import numpy as np\n\n")
 
@@ -514,9 +532,14 @@ def write_to_python(max_order=multipole_order, poly_order=4, field='B', curvatur
             f.write("        poly_s = np.polynomial.Polynomial(coeffs_padded)\n\n")
             f.write("    return poly_s\n\n")
 
-            f.write(
-                "def evaluate_B(x, y, s, bs, by, bx, L, multipole_order):\n"
-            )
+            if field == 'B':
+                f.write(
+                    "def evaluate_B(x, y, s, bs, by, bx, L, multipole_order):\n"
+                )
+            else:
+                f.write(
+                    "def evaluate_phi(x, y, s, bs, by, bx, L, multipole_order):\n"
+                )
             f.write('    """\n')
             f.write("    Auto-generated symbolic field evaluation for B.\n")
             f.write("    Hermite coefficients are provided as:\n")
@@ -571,11 +594,17 @@ def write_to_python(max_order=multipole_order, poly_order=4, field='B', curvatur
                     f.write("\n")
 
                 # Reduced expressions
-                names = ['Bx', 'By', 'Bs']
+                if field == 'B':
+                    names = ['Bx', 'By', 'Bs']
+                else:
+                    names = ['phi']
                 f.write("        # Reduced expressions\n")
                 for idx, expr in enumerate(reduced_exprs):
                     f.write(f"        {names[idx]} = {printer.doprint(expr)}\n")
-                f.write("        return Bx, By, Bs\n\n")
+                if field == 'B':
+                    f.write("        return Bx, By, Bs\n\n")
+                else:
+                    f.write("        return phi\n\n")
 
             f.write(
                 "    raise ValueError("
@@ -592,3 +621,5 @@ field = 'B'
 curvature = '0'
 write_to_C(max_order=multipole_order, poly_order=poly_order, field=field, curvature=curvature)
 write_to_python(max_order=multipole_order, poly_order=poly_order, field=field, curvature=curvature)
+write_to_C(max_order=multipole_order, poly_order=poly_order, field='phi', curvature=curvature)
+write_to_python(max_order=multipole_order, poly_order=poly_order, field='phi', curvature=curvature)
