@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
@@ -39,10 +40,60 @@ fitter = FieldFitter(
     field_tol=1e-3,
 )
 
-for der in range(0, deg + 1):
-    fitter.plot_fields(der=der)
+# for der in range(0, deg + 1):
+#     fitter.plot_fields(der=der)
 
+# Poster-style panel: square figure + zoom on s so B_y oscillations stay readable.
+# Comment out the ``plot_fields`` loop above if you only want this figure.
+_s = np.asarray(fitter.s_full, dtype=float)
+_by_raw = fitter.df_on_axis_raw[("Bnorm", 0)].to_numpy()
+_by_fit = fitter.df_on_axis_fit[("Bnorm", 0)].to_numpy()
+_s_zoom_m = 1.1  # half-width [m]; widen/narrow to taste for your A0 crop
+_m = (_s >= -_s_zoom_m) & (_s <= _s_zoom_m)
+_border_s = np.array([], dtype=float)
+_dfp = fitter.df_fit_pars
+if _dfp is not None and not _dfp.empty:
+    _fc = np.asarray(_dfp.index.get_level_values("field_component"))
+    _dx = np.asarray(_dfp.index.get_level_values("derivative_x")).astype(int)
+    _sel = (_fc == "Bnorm") & (_dx == 0)
+    if np.any(_sel):
+        _ss = np.asarray(_dfp.index.get_level_values("s_start"), dtype=float)[_sel]
+        _se = np.asarray(_dfp.index.get_level_values("s_end"), dtype=float)[_sel]
+        _border_s = np.unique(np.concatenate((_ss, _se)))
+
+_poster_rc = {
+    "axes.titlesize": 18,
+    "axes.labelsize": 16,
+    "xtick.labelsize": 14,
+    "ytick.labelsize": 14,
+    "legend.fontsize": 14,
+}
+with plt.rc_context(_poster_rc):
+    fig_poster, ax_poster = plt.subplots(figsize=(10, 4), layout="constrained")
+    ax_poster.plot(_s[_m], _by_raw[_m], color="#1f77b4", label=r"$B_y$ data")
+    ax_poster.plot(_s[_m], _by_fit[_m], "--", color="#ff7f0e", label=r"$B_y$ fit")
+    for _sb in _border_s:
+        if -_s_zoom_m <= float(_sb) <= _s_zoom_m:
+            ax_poster.axvline(float(_sb), color="0.45", ls="--", lw=0.9, alpha=0.55)
+    ax_poster.set_xlabel(r"Longitudinal position $s$ [m]")
+    ax_poster.set_ylabel(r"Vertical field $B_y$ [T]")
+    ax_poster.set_title(
+        rf"Magnetic field at $(X,Y)=({fitter.xy_point[0]},\,{fitter.xy_point[1]})$ m"
+    )
+    ax_poster.legend(
+        loc="best",
+        frameon=True,
+        facecolor="white",
+        edgecolor="0.75",
+        framealpha=1.0,
+    )
+    ax_poster.grid(True, alpha=0.25)
+    ax_poster.margins(x=0.02, y=0.06)
+    # fig_poster.savefig("by_poster_panel.pdf", dpi=300, bbox_inches="tight")
+    plt.show()
 # fitter.plot_integrated_fields()
+
+exit()
 
 # Build a piecewise sequence of SplineBoris elements from fitted parameters.
 seq = SplineBorisSequence(
