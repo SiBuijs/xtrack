@@ -126,8 +126,8 @@ def _add_correctors_and_match_orbit(env, line, name_prefix, match_orbit=True):
 def _build_lines(df_fit_pars, p_ref):
     env = xt.Environment()
 
-    x_off = 0*1e-3
-    y_off = 1e-3
+    x_off = 1e-3
+    y_off = 0*1e-3
 
     seq = SplineBorisSequence(
         df_fit_pars=df_fit_pars,
@@ -226,6 +226,29 @@ def _plot_spin_components(spline_data, multipole_data):
     plt.show()
 
 
+def _plot_spin_x(spline_data, multipole_data):
+    """Spin x-component only: SplineBoris vs multipole in one figure."""
+    s_sp, sx_sp, _sy_sp, _sz_sp = spline_data
+    s_mp, sx_mp, _sy_mp, _sz_mp = multipole_data
+
+    label_fs, title_fs, tick_fs, legend_fs = 14, 15, 12, 12
+
+    fig, ax = plt.subplots(1, 1, figsize=(10, 4))
+    ax.plot(s_sp, sx_sp, "-", color="C0", lw=1.8, label="SplineBoris")
+    ax.plot(s_mp, sx_mp, "--", color="C1", lw=1.8, label="Multipole")
+    ax.set_xlabel(r"Longitudinal position, $s$ [m]", fontsize=label_fs)
+    ax.set_ylabel(r"Hor. spin component, $s_x$", fontsize=label_fs)
+    ax.set_title(
+        r"$s_x$ through undulator: SB vs MK (1 mm horizontal offset)",
+        fontsize=title_fs,
+    )
+    ax.tick_params(axis="both", which="major", labelsize=tick_fs)
+    ax.grid(True, alpha=0.35)
+    ax.legend(loc="best", fontsize=legend_fs)
+    fig.tight_layout()
+    plt.show()
+
+
 def _plot_orbit_3d(spline_orbit, multipole_orbit):
     s_sp, x_sp, y_sp = spline_orbit
     s_mp, x_mp, y_mp = multipole_orbit
@@ -288,6 +311,7 @@ def main():
     _plot_orbit_3d(spline_orbit, multipole_orbit)
 
     _plot_spin_components(spline_data, multipole_data)
+    _plot_spin_x(spline_data, multipole_data)
 
 if __name__ == "__main__":
     main()
