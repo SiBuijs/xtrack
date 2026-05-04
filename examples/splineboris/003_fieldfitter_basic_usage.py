@@ -3,14 +3,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from xtrack._temp.field_fitter import FieldFitter
-from xtrack._temp.splineboris_sequence import SplineBorisSequence
+from xtrack._temp.splineboris.field_fitter import FieldFitter
+from xtrack._temp.splineboris.splineboris_sequence import SplineBorisSequence
 
 
 '''
 Basic usage of FieldFitter.
 
-This script fits a field map and saves the fit parameters to a file.
+The constructor runs the fit.
 
 It plots the fit results for each derivative order.
 It also plots the integrated field along the longitudinal direction.
@@ -39,10 +39,8 @@ fitter = FieldFitter(
     field_tol=1e-3,
 )
 
-fitter.fit()
-
-# for der in range(0, deg + 1):
-#     fitter.plot_fields(der=der)
+for der in range(0, deg + 1):
+    fitter.plot_fields(der=der)
 
 # fitter.plot_integrated_fields()
 
