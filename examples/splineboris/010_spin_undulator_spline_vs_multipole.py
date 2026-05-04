@@ -126,7 +126,7 @@ def _add_correctors_and_match_orbit(env, line, name_prefix, match_orbit=True):
 def _build_lines(df_fit_pars, p_ref):
     env = xt.Environment()
 
-    x_off = 1e-3
+    x_off = 0*1e-3
     y_off = 0*1e-3
 
     seq = SplineBorisSequence(
@@ -249,6 +249,93 @@ def _plot_spin_x(spline_data, multipole_data):
     plt.show()
 
 
+def _interp_orbit_xy_onto_s(s_src, x_src, y_src, s_tgt):
+    x_tgt = np.interp(s_tgt, s_src, x_src)
+    y_tgt = np.interp(s_tgt, s_src, y_src)
+    return x_tgt, y_tgt
+
+
+def _print_orbit_xy_difference_meters(spline_orbit, multipole_orbit):
+    """Print max (and RMS) transverse orbit difference; multipole is interpolated to spline s."""
+    s_sp, x_sp, y_sp = spline_orbit
+    s_mp, x_mp, y_mp = multipole_orbit
+    x_mp_i, y_mp_i = _interp_orbit_xy_onto_s(s_mp, x_mp, y_mp, s_sp)
+    dx = x_sp - x_mp_i
+    dy = y_sp - y_mp_i
+    dr = np.hypot(dx, dy)
+    print(
+        "Orbit difference (SplineBoris minus Multipole Kick), multipole interpolated to spline s:"
+    )
+    print(f"  max |Δx| = {np.max(np.abs(dx)):.6e} m")
+    print(f"  max |Δy| = {np.max(np.abs(dy)):.6e} m")
+    print(f"  max √(Δx²+Δy²) = {np.max(dr):.6e} m")
+    rms_dx = float(np.sqrt(np.mean(dx * dx)))
+    rms_dy = float(np.sqrt(np.mean(dy * dy)))
+    print(f"  RMS Δx = {rms_dx:.6e} m")
+    print(f"  RMS Δy = {rms_dy:.6e} m")
+
+    # Relative to SplineBoris (same s samples): peak amplitude and RMS orbit amplitude.
+    max_abs_x_sb = float(np.max(np.abs(x_sp)))
+    max_abs_y_sb = float(np.max(np.abs(y_sp)))
+    r_sb = np.hypot(x_sp, y_sp)
+    max_r_sb = float(np.max(r_sb))
+    rms_x_sb = float(np.sqrt(np.mean(x_sp * x_sp)))
+    rms_y_sb = float(np.sqrt(np.mean(y_sp * y_sp)))
+    rms_r_sb = float(np.sqrt(np.mean(r_sb * r_sb)))
+
+    print("Relative to SplineBoris (SB) reference on the same s grid:")
+    eps = 1e-30
+    if max_abs_x_sb > eps:
+        print(f"  max |Δx| / max|x_SB| = {np.max(np.abs(dx)) / max_abs_x_sb:.6e}")
+    else:
+        print("  max |Δx| / max|x_SB| = (n/a, max|x_SB| ~ 0)")
+    if max_abs_y_sb > eps:
+        print(f"  max |Δy| / max|y_SB| = {np.max(np.abs(dy)) / max_abs_y_sb:.6e}")
+    else:
+        print("  max |Δy| / max|y_SB| = (n/a, max|y_SB| ~ 0)")
+    if max_r_sb > eps:
+        print(f"  max √(Δx²+Δy²) / max|√(x²+y²)_SB| = {np.max(dr) / max_r_sb:.6e}")
+    else:
+        print("  max √(Δx²+Δy²) / max|√(x²+y²)_SB| = (n/a, transverse amplitude ~ 0)")
+    if rms_x_sb > eps:
+        print(f"  RMS Δx / RMS|x_SB| = {rms_dx / rms_x_sb:.6e}")
+    else:
+        print("  RMS Δx / RMS|x_SB| = (n/a, RMS|x_SB| ~ 0)")
+    if rms_y_sb > eps:
+        print(f"  RMS Δy / RMS|y_SB| = {rms_dy / rms_y_sb:.6e}")
+    else:
+        print("  RMS Δy / RMS|y_SB| = (n/a, RMS|y_SB| ~ 0)")
+    if rms_r_sb > eps:
+        rms_dr = float(np.sqrt(np.mean(dr * dr)))
+        print(f"  RMS √(Δx²+Δy²) / RMS|√(x²+y²)_SB| = {rms_dr / rms_r_sb:.6e}")
+    else:
+        print("  RMS transverse / RMS|√(x²+y²)_SB| = (n/a, RMS transverse SB ~ 0)")
+
+
+def _plot_orbit_xy(spline_orbit, multipole_orbit):
+    """x(s) and y(s) for SplineBoris vs multipole: one figure, two stacked subplots."""
+    s_sp, x_sp, y_sp = spline_orbit
+    s_mp, x_mp, y_mp = multipole_orbit
+
+    fig, axs = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
+    axs[0].plot(s_sp, x_sp, "-", color="C0", lw=1.8, label="SplineBoris")
+    axs[0].plot(s_mp, x_mp, "--", color="C1", lw=1.8, label="Multipole Kick")
+    axs[0].set_ylabel("x [m]")
+    axs[0].grid(True, alpha=0.35)
+    axs[0].legend(loc="best")
+
+    axs[1].plot(s_sp, y_sp, "-", color="C0", lw=1.8, label="SplineBoris")
+    axs[1].plot(s_mp, y_mp, "--", color="C1", lw=1.8, label="Multipole Kick")
+    axs[1].set_ylabel("y [m]")
+    axs[1].set_xlabel("s [m]")
+    axs[1].grid(True, alpha=0.35)
+    axs[1].legend(loc="best")
+
+    fig.suptitle("Transverse orbit: SplineBoris (solid) vs Multipole Kick (dashed)")
+    fig.tight_layout()
+    plt.show()
+
+
 def _plot_orbit_3d(spline_orbit, multipole_orbit):
     s_sp, x_sp, y_sp = spline_orbit
     s_mp, x_mp, y_mp = multipole_orbit
@@ -308,6 +395,8 @@ def main():
     spline_orbit = _track_orbit_ebe(line_spline, p_init)
     multipole_orbit = _track_orbit_ebe(line_multipole, p_init)
 
+    _print_orbit_xy_difference_meters(spline_orbit, multipole_orbit)
+    _plot_orbit_xy(spline_orbit, multipole_orbit)
     _plot_orbit_3d(spline_orbit, multipole_orbit)
 
     _plot_spin_components(spline_data, multipole_data)
