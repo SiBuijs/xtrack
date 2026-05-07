@@ -14,7 +14,7 @@ from xtrack._temp.splineboris.field_fitter import FieldFitter
 from xtrack._temp.splineboris.splineboris_sequence import SplineBorisSequence
 
 
-multipole_order = 3
+multipole_order = 5
 
 # Particle reference
 p0 = xt.Particles(mass0=xt.ELECTRON_MASS_EV, q0=1, p0c=2.7e9)
@@ -33,7 +33,7 @@ line_sls.particle_ref = p0.copy()
 BASE_DIR = Path(__file__).resolve().parent
 
 # Load the raw field map data from shared test_data
-field_map_path = BASE_DIR.parent.parent / "test_data" / "sls" / "undulator_field_map.txt"
+field_map_path = BASE_DIR.parent.parent / "test_data" / "sls" / "simona_field_map.txt"
 df_raw_data = pd.read_csv(
     field_map_path,
     sep=r"\s+",
@@ -50,6 +50,7 @@ field_fitter = FieldFitter(
     distance_unit=distance_unit,
     min_region_size=10,
     deg=multipole_order-1,
+    field_tol=1e-4,
 )
 
 # Save fit parameters if needed
@@ -127,6 +128,14 @@ opt = piecewise_undulator.match(
 )
 opt.step(2)
 
+tw_undulator_orbit = piecewise_undulator.twiss4d(
+    betx=1, bety=1,
+    only_orbit=True,
+    include_collective=True,
+)
+print(f"Average orbit in undulator: <x> = {np.mean(tw_undulator_orbit.x):.3e} m, "
+      f"<y> = {np.mean(tw_undulator_orbit.y):.3e} m")
+
 
 piecewise_undulator.particle_ref.anomalous_magnetic_moment = 0.00115965218128
 
@@ -141,6 +150,32 @@ tw_undulator_corr_spin.plot('betx bety', 'dx dy')
 tw_undulator_corr_spin.plot('spin_x')
 tw_undulator_corr_spin.plot('spin_y')
 tw_undulator_corr_spin.plot('spin_z')
+
+# 3D orbit through the undulator: longitudinal coordinate s, horizontal x, vertical y
+fig3d = plt.figure(figsize=(9, 6))
+ax3d = fig3d.add_subplot(111, projection='3d')
+ax3d.plot(
+    tw_undulator_corr_spin.s,
+    1e6 * tw_undulator_corr_spin.x,
+    1e6 * tw_undulator_corr_spin.y,
+    lw=1.8,
+    label='orbit (no radiation)',
+)
+ax3d.set_xlabel('s [m]')
+ax3d.set_ylabel('x [um]')
+ax3d.set_zlabel('y [um]')
+ax3d.set_title('3D orbit through the undulator')
+ax3d.legend()
+ax3d.grid(True)
+
+# Keep transverse scales equal (x/y), while leaving s-axis independent.
+x_um = 1e6 * tw_undulator_corr_spin.x
+y_um = 1e6 * tw_undulator_corr_spin.y
+xy_half_span = 0.5 * max(np.ptp(x_um), np.ptp(y_um), 1e-12)
+x_um_mid = 0.5 * (np.max(x_um) + np.min(x_um))
+y_um_mid = 0.5 * (np.max(y_um) + np.min(y_um))
+ax3d.set_ylim(x_um_mid - xy_half_span, x_um_mid + xy_half_span)
+ax3d.set_zlim(y_um_mid - xy_half_span, y_um_mid + xy_half_span)
 
 plt.show()
 
@@ -204,6 +239,39 @@ axs[2].set_ylabel('spin')
 axs[2].set_xlabel('s [m]')
 axs[2].legend()
 axs[2].grid(True)
+
+# Optional: 3D comparison with and without radiation
+fig3d_rad = plt.figure(figsize=(9, 6))
+ax3d_rad = fig3d_rad.add_subplot(111, projection='3d')
+ax3d_rad.plot(
+    tw_undulator_corr_spin.s,
+    1e6 * tw_undulator_corr_spin.x,
+    1e6 * tw_undulator_corr_spin.y,
+    lw=1.8,
+    label='no radiation',
+)
+ax3d_rad.plot(
+    tw_undulator_corr_spin_rad.s,
+    1e6 * tw_undulator_corr_spin_rad.x,
+    1e6 * tw_undulator_corr_spin_rad.y,
+    lw=1.6,
+    linestyle='--',
+    label='with radiation',
+)
+ax3d_rad.set_xlabel('s [m]')
+ax3d_rad.set_ylabel('x [um]')
+ax3d_rad.set_zlabel('y [um]')
+ax3d_rad.set_title('3D orbit comparison in undulator')
+ax3d_rad.legend()
+ax3d_rad.grid(True)
+# Keep transverse scales equal (x/y) also in radiation comparison.
+x_rad_um = 1e6 * np.r_[tw_undulator_corr_spin.x, tw_undulator_corr_spin_rad.x]
+y_rad_um = 1e6 * np.r_[tw_undulator_corr_spin.y, tw_undulator_corr_spin_rad.y]
+xy_half_span_rad = 0.5 * max(np.ptp(x_rad_um), np.ptp(y_rad_um), 1e-12)
+x_rad_um_mid = 0.5 * (np.max(x_rad_um) + np.min(x_rad_um))
+y_rad_um_mid = 0.5 * (np.max(y_rad_um) + np.min(y_rad_um))
+ax3d_rad.set_ylim(x_rad_um_mid - xy_half_span_rad, x_rad_um_mid + xy_half_span_rad)
+ax3d_rad.set_zlim(y_rad_um_mid - xy_half_span_rad, y_rad_um_mid + xy_half_span_rad)
 
 plt.tight_layout()
 plt.show()

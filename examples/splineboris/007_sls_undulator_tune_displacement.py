@@ -28,7 +28,7 @@ line_sls.particle_ref = p0.copy()
 BASE_DIR = Path(__file__).resolve().parent
 
 # Load the raw field map data from shared test_data
-field_map_path = BASE_DIR.parent.parent / "test_data" / "sls" / "undulator_field_map.txt"
+field_map_path = BASE_DIR.parent.parent / "test_data" / "sls" / "simona_field_map.txt"
 df_raw_data = pd.read_csv(
     field_map_path,
     sep=r"\s+",
@@ -45,6 +45,7 @@ field_fitter = FieldFitter(
     distance_unit=distance_unit,
     min_region_size=10,
     deg=multipole_order-1,
+    field_tol=1e-4,
 )
 
 # Build undulator using SplineBorisSequence - automatically creates one SplineBoris
@@ -98,9 +99,9 @@ opt = piecewise_undulator.match(
                       'k0l_corr4', 'k0sl_corr4',
                       ], step=1e-6),
     targets=[
+        xt.Target(lambda tw: np.mean(tw.x), value=0.0, tol=1e-8, tag='avg_orbit'),
+        xt.Target(lambda tw: np.mean(tw.y), value=0.0, tol=1e-8, tag='avg_orbit'),
         xt.TargetSet(x=0, px=0, y=0, py=0., at=xt.END),
-        xt.TargetSet(x=0., y=0, at='corr2'),
-        xt.TargetSet(x=0., y=0, at='corr3')
         ],
 )
 opt.step(2)

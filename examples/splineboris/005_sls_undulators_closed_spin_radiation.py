@@ -104,9 +104,9 @@ opt = piecewise_undulator.match(
                       'k0l_corr4', 'k0sl_corr4',
                       ], step=1e-6),
     targets=[
+        xt.Target(lambda tw: tw.x.mean(), value=0.0, tol=1e-8, tag='avg_orbit'),
+        xt.Target(lambda tw: tw.y.mean(), value=0.0, tol=1e-8, tag='avg_orbit'),
         xt.TargetSet(x=0, px=0, y=0, py=0., at=xt.END),
-        xt.TargetSet(x=0., y=0, at='corr2'),
-        xt.TargetSet(x=0., y=0, at='corr3')
         ],
 )
 opt.step(2)
