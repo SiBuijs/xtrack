@@ -127,7 +127,7 @@ deltaqy_list = []
 
 n_tunes = 30
 
-hor_off_list = np.linspace(-0.05e-3, 0.05e-3, n_tunes)
+hor_off_list = np.linspace(-0.5e-3, 0.5e-3, n_tunes)
 
 spline_names = [
     nn for nn in line_sls.element_names
@@ -143,4 +143,34 @@ for dx in hor_off_list:   # dx in meters
     deltaqx_list.append(tw.qx - qx_0)
     deltaqy_list.append(tw.qy - qy_0)
 
+coef_qx = np.polyfit(hor_off_list, deltaqx_list, 2)
+coef_qy = np.polyfit(hor_off_list, deltaqy_list, 2)
+
+poly_qx = np.poly1d(coef_qx)
+poly_qy = np.poly1d(coef_qy)
+
+print(f"d²B_x/dx² = {coef_qx[0]}")
+print(f"dB_x/dx   = {coef_qx[1]}")
+print(f"B_x(0)    = {coef_qx[2]}")
+print(f"d²B_y/dx² = {coef_qy[0]}")
+print(f"dB_y/dx   = {coef_qy[1]}")
+print(f"B_y(0)    = {coef_qy[2]}")
+
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
+ax1.plot(hor_off_list, deltaqx_list, marker='o', color='tab:blue')
+ax1.plot(hor_off_list, poly_qx(hor_off_list), linestyle='--', color='k', label='Quadratic fit')
+ax1.set_ylabel('Delta Qx')
+ax1.set_title('Tune shift vs undulator horizontal offset')
+ax1.grid(True, alpha=0.3)
+ax1.legend()
+
+ax2.plot(hor_off_list, deltaqy_list, marker='s', color='tab:orange')
+ax2.plot(hor_off_list, poly_qy(hor_off_list), linestyle='--', color='k', label='Quadratic fit')
+ax2.set_xlabel('Horizontal offset [m]')
+ax2.set_ylabel('Delta Qy')
+ax2.grid(True, alpha=0.3)
+ax2.legend()
+
+plt.tight_layout()
+plt.show()
 
