@@ -203,6 +203,12 @@ class SplineBoris(BeamElement):
     radiation_flag : int, optional
         Radiation model flag. ``0`` disables radiation, non-zero values select
         synchrotron radiation models as for other thick elements.
+    use_helical_boris : bool, optional
+        If ``True``, use the symplectic analytic constant-B map kernel
+        (`HelicalBoris`) instead of the default Strang-split Boris kernel.
+        The two kernels share the same field evaluator, particle bookkeeping,
+        and radiation/spin hooks; only the per-step state update differs,
+        which makes them directly comparable. Default is ``False``.
 
     '''
 
@@ -227,6 +233,7 @@ class SplineBoris(BeamElement):
         'shift_x'           : xo.Field(xo.Float64, 0),  # Transverse shift in x [m] - used for field map offset
         'shift_y'           : xo.Field(xo.Float64, 0),  # Transverse shift in y [m] - used for field map offset
         'radiation_flag'    : xo.Int64,
+        'use_helical_boris' : xo.Field(xo.Int64, 0),    # 0: SplineBoris kernel, 1: HelicalBoris kernel
     }
 
     _extra_c_sources = [
@@ -244,6 +251,7 @@ class SplineBoris(BeamElement):
                  n_steps=1,
                  shift_x=0.0,
                  shift_y=0.0,
+                 use_helical_boris=False,
                  **kwargs,
     ):
         """Build the element from ``Spline4`` data and store Hermite boundary data in the xobject."""
@@ -273,6 +281,7 @@ class SplineBoris(BeamElement):
             shift_x=shift_x,
             shift_y=shift_y,
             radiation_flag=radiation_flag,
+            use_helical_boris=int(bool(use_helical_boris)),
             **kwargs,
         )
 
@@ -300,6 +309,9 @@ class SplineBoris(BeamElement):
         out['bx'] = bx
 
         out.pop('multipole_order', None)
+
+        if 'use_helical_boris' in out:
+            out['use_helical_boris'] = bool(out['use_helical_boris'])
 
         return out
 

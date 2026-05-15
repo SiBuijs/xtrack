@@ -8,6 +8,7 @@
 
 #include "xtrack/headers/track.h"
 #include "xtrack/beam_elements/elements_src/track_splineboris.h"
+#include "xtrack/beam_elements/elements_src/track_helicalboris.h"
 
 
 GPUFUN
@@ -19,6 +20,7 @@ void SplineBoris_track_local_particle(SplineBorisData el, LocalParticle* part0){
     const double shift_x = SplineBorisData_get_shift_x(el);
     const double shift_y = SplineBorisData_get_shift_y(el);
     const int64_t radiation_flag = SplineBorisData_get_radiation_flag(el);
+    const int64_t use_helical_boris = SplineBorisData_get_use_helical_boris(el);
     SynchrotronRadiationRecordData radiation_record = 
         (SynchrotronRadiationRecordData) SplineBorisData_getp_internal_record(el, part0);
 
@@ -66,19 +68,35 @@ void SplineBoris_track_local_particle(SplineBorisData el, LocalParticle* part0){
 
     // Process all particles using the same parameter array (shared across particles)
     START_PER_PARTICLE_BLOCK(part0, part);
-        SplineBoris_single_particle(
-            part,
-            bs,
-            by_ptrs,
-            bx_ptrs,
-            multipole_order,
-            length,
-            n_steps,
-            shift_x,
-            shift_y,
-            radiation_flag,
-            radiation_record
-        );
+        if (use_helical_boris) {
+            HelicalBoris_single_particle(
+                part,
+                bs,
+                by_ptrs,
+                bx_ptrs,
+                multipole_order,
+                length,
+                n_steps,
+                shift_x,
+                shift_y,
+                radiation_flag,
+                radiation_record
+            );
+        } else {
+            SplineBoris_single_particle(
+                part,
+                bs,
+                by_ptrs,
+                bx_ptrs,
+                multipole_order,
+                length,
+                n_steps,
+                shift_x,
+                shift_y,
+                radiation_flag,
+                radiation_record
+            );
+        }
     END_PER_PARTICLE_BLOCK;
 
     #ifndef __GNUC__

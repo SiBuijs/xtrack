@@ -54,7 +54,7 @@ fitter = FieldFitter(
     raw_data=df_raw_data,
     xy_point=(0, 0),
     distance_unit=1,
-    min_region_size=10,
+    min_region_size=5,
     deg=multipole_order - 1,
     field_tol=1e-4,
 )
@@ -141,6 +141,15 @@ line_splineboris = seq.to_line()
 line_splineboris.config.XTRACK_MULTIPOLE_NO_SYNRAD = False  # enable spin tracking
 line_splineboris.build_tracker()
 
+# Same fitted field and layout, but analytic constant-B map per substep (HelicalBoris kernel)
+line_helicalboris = line_splineboris.copy()
+for _name in line_helicalboris.element_names:
+    _el = line_helicalboris[_name]
+    if isinstance(_el, xt.SplineBoris):
+        _el.use_helical_boris = True
+line_helicalboris.config.XTRACK_MULTIPOLE_NO_SYNRAD = False
+line_helicalboris.build_tracker()
+
 # --- TRUE REFERENCE: BorisSpatialIntegrator with same analytical field ---
 # This is the gold standard - uses the same full 3D field directly
 boris_integrator = xt.BorisSpatialIntegrator(
@@ -173,6 +182,10 @@ p_splineboris = p0.copy()
 line_splineboris.track(p_splineboris, turn_by_turn_monitor='ONE_TURN_EBE')
 mon_splineboris = line_splineboris.record_last_track
 
+p_helicalboris = p0.copy()
+line_helicalboris.track(p_helicalboris, turn_by_turn_monitor='ONE_TURN_EBE')
+mon_helicalboris = line_helicalboris.record_last_track
+
 boris_integrator.log_trajectories = True
 p_boris = p0.copy()
 boris_integrator.track(p_boris)
@@ -202,6 +215,12 @@ for i in range(n_part):
             mon_splineboris.y[i, :] * 1e3, 
             '-', color=colors[i], linewidth=2, alpha=0.7,
             label=f'SplineBoris p{i}')
+    # HelicalBoris kernel (same element, dashed)
+    ax.plot(mon_helicalboris.s[i, :],
+            mon_helicalboris.x[i, :] * 1e3,
+            mon_helicalboris.y[i, :] * 1e3,
+            '--', color=colors[i], linewidth=1.8, alpha=0.85,
+            label=f'HelicalBoris p{i}')
     # Boris integrator (dotted - this is the TRUE reference)
     ax.plot(z_boris[:, i], 
             x_boris[:, i] * 1e3, 
@@ -218,7 +237,7 @@ for i in range(n_part):
 ax.set_xlabel('s [m]')
 ax.set_ylabel('x [mm]')
 ax.set_zlabel('y [mm]')
-ax.set_title('SplineBoris (solid) vs Boris Analytical Field (dotted)')
+ax.set_title('SplineBoris (solid) / HelicalBoris (dashed) vs Boris analytical (dotted)')
 ax.legend(loc='upper left')
 ax.view_init(elev=20, azim=-60)
 fig.tight_layout()
@@ -231,6 +250,8 @@ for i in range(n_part):
     # x vs s
     axes[0, i].plot(mon_splineboris.s[i, :], mon_splineboris.x[i, :] * 1e3, '-', 
                     label='SplineBoris', linewidth=2, alpha=0.7)
+    axes[0, i].plot(mon_helicalboris.s[i, :], mon_helicalboris.x[i, :] * 1e3, '--',
+                    label='HelicalBoris', linewidth=1.8, alpha=0.85)
     axes[0, i].plot(z_boris[:, i], x_boris[:, i] * 1e3, ':', 
                     label='Boris (ref)', linewidth=2)
     # axes[0, i].plot(mon_ref.s[i, :], mon_ref.x[i, :] * 1e3, '--', 
@@ -244,6 +265,8 @@ for i in range(n_part):
     # y vs s
     axes[1, i].plot(mon_splineboris.s[i, :], mon_splineboris.y[i, :] * 1e3, '-', 
                     label='SplineBoris', linewidth=2, alpha=0.7)
+    axes[1, i].plot(mon_helicalboris.s[i, :], mon_helicalboris.y[i, :] * 1e3, '--',
+                    label='HelicalBoris', linewidth=1.8, alpha=0.85)
     axes[1, i].plot(z_boris[:, i], y_boris[:, i] * 1e3, ':', 
                     label='Boris (ref)', linewidth=2)
     # axes[1, i].plot(mon_ref.s[i, :], mon_ref.y[i, :] * 1e3, '--', 
@@ -260,12 +283,15 @@ plt.show()
 # Plot spin evolution (all three components in one graph).
 i_spin = 0
 fig, ax = plt.subplots(figsize=(10, 5))
-ax.plot(mon_splineboris.s[i_spin, :], mon_splineboris.spin_x[i_spin, :], label=r"$S_x$")
-ax.plot(mon_splineboris.s[i_spin, :], mon_splineboris.spin_y[i_spin, :], label=r"$S_y$")
-ax.plot(mon_splineboris.s[i_spin, :], mon_splineboris.spin_z[i_spin, :], label=r"$S_z$")
+ax.plot(mon_splineboris.s[i_spin, :], mon_splineboris.spin_x[i_spin, :], label=r"$S_x$ (SplineBoris)")
+ax.plot(mon_splineboris.s[i_spin, :], mon_splineboris.spin_y[i_spin, :], label=r"$S_y$ (SplineBoris)")
+ax.plot(mon_splineboris.s[i_spin, :], mon_splineboris.spin_z[i_spin, :], label=r"$S_z$ (SplineBoris)")
+ax.plot(mon_helicalboris.s[i_spin, :], mon_helicalboris.spin_x[i_spin, :], linestyle='--', alpha=0.85, label=r"$S_x$ (HelicalBoris)")
+ax.plot(mon_helicalboris.s[i_spin, :], mon_helicalboris.spin_y[i_spin, :], linestyle='--', alpha=0.85, label=r"$S_y$ (HelicalBoris)")
+ax.plot(mon_helicalboris.s[i_spin, :], mon_helicalboris.spin_z[i_spin, :], linestyle='--', alpha=0.85, label=r"$S_z$ (HelicalBoris)")
 ax.set_xlabel("s [m]")
 ax.set_ylabel("Spin component")
-ax.set_title(f"Spin tracking (SplineBoris)")
+ax.set_title(f"Spin tracking (particle {i_spin}: SplineBoris solid, HelicalBoris dashed)")
 ax.grid(True, alpha=0.3)
 ax.legend()
 fig.tight_layout()

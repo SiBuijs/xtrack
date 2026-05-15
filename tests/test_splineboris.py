@@ -1,4 +1,5 @@
 import numpy as np
+import math as _math
 from scipy.constants import c as clight
 from scipy.constants import e as qe
 from scipy.constants import epsilon_0, hbar
@@ -1273,3 +1274,184 @@ def test_splineboris_spin_quadrupole(case, atol):
     xo.assert_allclose(p.spin_x[0], p_ref.spin_x[0], atol=atol, rtol=0)
     xo.assert_allclose(p.spin_y[0], p_ref.spin_y[0], atol=atol, rtol=0)
     xo.assert_allclose(p.spin_z[0], p_ref.spin_z[0], atol=atol, rtol=0)
+
+
+# --- Field-aligned HelicalBoris: Python mirror vs C (see track_helicalboris.h) ---
+def _helical_fa_try_step_ref(
+    x0, y0, px0, py0, ps0, P, q_coulomb, Bx, By, Bs, dz,
+):
+    B_mag = _math.sqrt(Bx * Bx + By * By + Bs * Bs)
+    if B_mag < 1.0e-30:
+        inv_ps0 = 1.0 / ps0
+        ds_arc = dz * P * inv_ps0
+        return (
+            True,
+            x0 + px0 * inv_ps0 * dz,
+            y0 + py0 * inv_ps0 * dz,
+            px0,
+            py0,
+            ds_arc,
+        )
+    inv_B = 1.0 / B_mag
+    bx, by, bz = Bx * inv_B, By * inv_B, Bs * inv_B
+    P_par = px0 * bx + py0 * by + ps0 * bz
+    px_perp = px0 - P_par * bx
+    py_perp = py0 - P_par * by
+    pz_perp = ps0 - P_par * bz
+    c1x = by * pz_perp - bz * py_perp
+    c1y = bz * px_perp - bx * pz_perp
+    c1z = bx * py_perp - by * px_perp
+    kappa = q_coulomb * B_mag / P
+    inv_qB = 1.0 / (q_coulomb * B_mag)
+    A = (P_par / P) * bz
+    C1 = pz_perp * inv_qB
+    C2 = c1z * inv_qB
+    amp = _math.sqrt(C1 * C1 + C2 * C2)
+    kabs = abs(kappa)
+    if not (A > amp * kabs + 1.0e-14 * (abs(A) if abs(A) > 1.0 else 1.0)):
+        return (False, x0, y0, px0, py0, dz)
+    tol = 1.0e-13 * (abs(dz) if abs(dz) > 0.0 else 1.0)
+    if abs(A) > 1.0e-14 * max(abs(dz), 1.0):
+        s_arc = dz / A
+    else:
+        s_arc = dz * P / max(abs(P_par), 1.0e-30 * P)
+    converged = False
+    for _ in range(20):
+        u = kappa * s_arc
+        ca, sa = _math.cos(u), _math.sin(u)
+        f = A * s_arc + C1 * sa + C2 * (1.0 - ca) - dz
+        if abs(f) < tol:
+            converged = True
+            break
+        fp = A + C1 * kappa * ca + C2 * kappa * sa
+        if abs(fp) < 1.0e-30 * P:
+            break
+        s_arc -= f / fp
+    if not converged:
+        u = kappa * s_arc
+        ca, sa = _math.cos(u), _math.sin(u)
+        f = A * s_arc + C1 * sa + C2 * (1.0 - ca) - dz
+        if abs(f) > 100.0 * tol:
+            return (False, x0, y0, px0, py0, dz)
+    angle = kappa * s_arc
+    c, sn = _math.cos(angle), _math.sin(angle)
+    ppxe = c * px_perp - sn * c1x
+    ppye = c * py_perp - sn * c1y
+    px_e = P_par * bx + ppxe
+    py_e = P_par * by + ppye
+    drpx = inv_qB * (sn * px_perp + (1.0 - c) * c1x)
+    drpy = inv_qB * (sn * py_perp + (1.0 - c) * c1y)
+    fac = (P_par / P) * s_arc
+    return (True, x0 + drpx + fac * bx, y0 + drpy + fac * by, px_e, py_e, s_arc)
+
+
+def _helical_legacy_f_ref(x, y, px, py, ps, inv_ps, q_coulomb, ds, Bx, By, Bs):
+    theta = q_coulomb * Bs * ds * inv_ps
+    if abs(theta) < 1.0e-3:
+        t2 = theta * theta
+        t4 = t2 * t2
+        sinc_th = 1.0 - t2 / 6.0 + t4 / 120.0
+        vers_th = 0.5 - t2 / 24.0 + t4 / 720.0
+        cosc_th = 1.0 / 6.0 - t2 / 120.0 + t4 / 5040.0
+        S = theta * sinc_th
+        C = 1.0 - t2 * vers_th
+    else:
+        S = _math.sin(theta)
+        C = _math.cos(theta)
+        sinc_th = S / theta
+        vers_th = (1.0 - C) / (theta * theta)
+        cosc_th = (theta - S) / (theta ** 3)
+    ds_over_ps = ds * inv_ps
+    ds2_over_ps = ds * ds_over_ps
+    a_xx = ds_over_ps * sinc_th
+    a_xy = ds_over_ps * theta * vers_th
+    pos_kick_v = q_coulomb * ds2_over_ps * vers_th
+    pos_kick_c = q_coulomb * ds2_over_ps * theta * cosc_th
+    mom_kick_S = q_coulomb * ds * sinc_th
+    mom_kick_V = q_coulomb * ds * theta * vers_th
+    x_new = x + a_xx * px + a_xy * py + pos_kick_v * (-By) + pos_kick_c * Bx
+    y_new = y - a_xy * px + a_xx * py + pos_kick_c * By + pos_kick_v * Bx
+    px_new = C * px + S * py + mom_kick_S * (-By) + mom_kick_V * Bx
+    py_new = -S * px + C * py + mom_kick_V * (-By) + mom_kick_S * Bx
+    return x_new, y_new, px_new, py_new
+
+
+def _track_helical_fa_ref(elem, particle, q_coulomb, P0):
+    L = float(elem.length)
+    n_steps = int(elem.n_steps)
+    ds = L / n_steps
+    half_ds = 0.5 * ds
+    delta = float(np.atleast_1d(particle.delta)[0])
+    P_tot = P0 * (1.0 + delta)
+    x = float(np.atleast_1d(particle.x)[0])
+    y = float(np.atleast_1d(particle.y)[0])
+    px = float(np.atleast_1d(particle.px)[0]) * P0
+    py = float(np.atleast_1d(particle.py)[0]) * P0
+    s_local = 0.0
+    for _ in range(n_steps):
+        Pz = _math.sqrt(max(P_tot * P_tot - px * px - py * py, 0.0))
+        if Pz == 0.0:
+            break
+        inv_ps = 1.0 / Pz
+        xh = x + (px / Pz) * half_ds
+        yh = y + (py / Pz) * half_ds
+        sh = s_local + half_ds
+        Bx, By, Bs = elem.get_field(xh, yh, sh)
+        Bx, By, Bs = float(Bx), float(By), float(Bs)
+        ok, xa, ya, pxa, pya, _dsa = _helical_fa_try_step_ref(
+            x, y, px, py, Pz, P_tot, q_coulomb, Bx, By, Bs, ds,
+        )
+        if ok:
+            tmp = P_tot * P_tot - pxa * pxa - pya * pya
+            if _math.sqrt(max(tmp, 0.0)) == 0.0:
+                ok = False
+        if not ok:
+            xa, ya, pxa, pya = _helical_legacy_f_ref(
+                x, y, px, py, Pz, inv_ps, q_coulomb, ds, Bx, By, Bs,
+            )
+        x, y, px, py = xa, ya, pxa, pya
+        s_local += ds
+    return x, y, px / P0, py / P0
+
+
+@for_all_test_contexts
+def test_helical_boris_field_aligned_matches_python_reference(
+    test_context, make_uniform_splineboris,
+):
+    """C FA kernel agrees with an independent Python walk; cyclotron sense."""
+    L = 0.08
+    n_steps = 32
+    Bs = 0.15
+    elem = make_uniform_splineboris(
+        Bx=0.0, By=0.0, Bs=Bs, s_end=L, n_steps=n_steps,
+    )
+    elem = elem.copy(_context=test_context)
+    elem.use_helical_boris = True
+    line = xt.Line(elements=[elem])
+    line.build_tracker()
+
+    p0c = 2.7e9
+    p = xt.Particles(
+        _context=test_context,
+        mass0=xt.ELECTRON_MASS_EV,
+        q0=1,
+        p0c=p0c,
+        x=0.0,
+        y=0.0,
+        px=3.0e-4,
+        py=0.0,
+    )
+    q_coulomb = float(np.atleast_1d(p.q0)[0]) * qe
+    P0 = p0c * qe / clight
+
+    p_c = p.copy()
+    line.track(p_c)
+
+    xr, yr, pxr, pyr = _track_helical_fa_ref(elem, p, q_coulomb, P0)
+
+    xo.assert_allclose(float(p_c.x[0]), xr, atol=1e-9, rtol=1e-10)
+    xo.assert_allclose(float(p_c.y[0]), yr, atol=1e-9, rtol=1e-10)
+    xo.assert_allclose(float(p_c.px[0]), pxr, atol=1e-11, rtol=1e-10)
+    xo.assert_allclose(float(p_c.py[0]), pyr, atol=1e-11, rtol=1e-10)
+
+    assert float(p_c.py[0]) < 0.0, "positive q, Bz>0, px>0 => py should bend negative"
