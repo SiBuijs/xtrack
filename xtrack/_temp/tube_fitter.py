@@ -222,7 +222,7 @@ class TubeFitter:
         if missing:
             raise ValueError(f"raw_data must have columns {_REQUIRED_COLUMNS}, missing {sorted(missing)}")
 
-        self.df_raw_data = raw_data
+        self.df_raw_data = raw_data.copy()
         idx = self.df_raw_data.index
         if list(idx.names) != list(_INDEX_NAMES):
             raise ValueError(f"raw_data index must be {_INDEX_NAMES}, got {idx.names}")
