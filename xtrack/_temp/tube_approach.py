@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 from matplotlib import pyplot as plt
 from scipy.sparse import lil_matrix
@@ -72,7 +74,23 @@ def triangle(chi):
     """
     return np.maximum(1 - np.abs(chi), 0)
 
-file_path = '/home/simonfan/projects/xsuite/xtrack/test_data/sls/undulator_field_map.txt'
+
+def gaussian(chi, sigma=0.5):
+    """
+    Gaussian kernel G(chi) = exp(-chi^2 / (2*sigma^2)), with chi = (z - z_j) / ds.
+    """
+    return np.exp(-0.5 * (chi / sigma) ** 2)
+
+
+KERNELS = {"triangle": triangle, "gaussian": gaussian}
+TUBE_KERNEL = "gaussian"
+KERNEL_CUTOFF = 1e-10
+
+
+def tube_kernel(chi):
+    return KERNELS[TUBE_KERNEL](chi)
+
+file_path = Path(__file__).resolve().parents[2] / "test_data" / "sls" / "undulator_field_map.txt"
 
 mm_to_m = 1e-3
 
@@ -82,7 +100,7 @@ unique_x = unique_x * mm_to_m
 unique_y = unique_y * mm_to_m
 unique_z = unique_z * mm_to_m
 
-n_planes = 400
+n_planes = 1000
 
 # print(f"unique_x: {unique_x}")
 # print(f"unique_y: {unique_y}")
@@ -140,8 +158,8 @@ def build_system_matrix(
                 # Triangle support makes this sparse in z.
                 for j, z_j in enumerate(planes_local):
                     chi = (z - z_j) / ds_local
-                    T = triangle(chi)
-                    if T == 0:
+                    T = tube_kernel(chi)
+                    if T < KERNEL_CUTOFF:
                         continue
 
                     for idx, (p, q) in enumerate(pq_pairs_local):
@@ -184,8 +202,8 @@ def evaluate_field(x, y, z, psi, planes, ds, pq_pairs):
     
     for j, z_j in enumerate(planes):
         chi = (z - z_j) / ds
-        T = triangle(chi)
-        if T == 0:
+        T = tube_kernel(chi)
+        if T < KERNEL_CUTOFF:
             continue
         
         for idx, (p, q) in enumerate(pq_pairs):
@@ -204,11 +222,11 @@ def plot_field_at_xy(x, y, z_pts, psi, planes, pq_pairs, bx_3d, by_3d, z_unique)
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6))
     ax1.plot(z_pts, bx_eval)
-    ax1.plot(z_unique, bx_3d[0, 0, :])
+    ax1.plot(z_unique, bx_3d[1, 1, :])
     ax1.set_ylabel('Bx [T]')
     ax1.grid()
     ax2.plot(z_pts, by_eval)
-    ax2.plot(z_unique, by_3d[0, 0, :])
+    ax2.plot(z_unique, by_3d[1, 1, :])
     ax2.set_ylabel('By [T]')
     ax2.set_xlabel('z [m]')
     ax2.grid()
