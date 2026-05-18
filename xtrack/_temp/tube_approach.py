@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 from matplotlib import pyplot as plt
 from scipy.sparse import lil_matrix
@@ -72,13 +74,23 @@ def triangle(chi):
     """
     return np.maximum(1 - np.abs(chi), 0)
 
-def normal(chi):
-    """
-    Normal function N(chi), nonzero for chi in (-1, 1).
-    """
-    return np.exp(-chi**2 / 2) / np.sqrt(2 * np.pi)
 
-file_path = '/home/simonfan/projects/xsuite/xtrack/test_data/sls/undulator_field_map.txt'
+def gaussian(chi, sigma=0.5):
+    """
+    Gaussian kernel G(chi) = exp(-chi^2 / (2*sigma^2)), with chi = (z - z_j) / ds.
+    """
+    return np.exp(-0.5 * (chi / sigma) ** 2)
+
+
+KERNELS = {"triangle": triangle, "gaussian": gaussian}
+TUBE_KERNEL = "gaussian"
+KERNEL_CUTOFF = 1e-10
+
+
+def tube_kernel(chi):
+    return KERNELS[TUBE_KERNEL](chi)
+
+file_path = Path(__file__).resolve().parents[2] / "test_data" / "sls" / "undulator_field_map.txt"
 
 mm_to_m = 1e-3
 
@@ -88,7 +100,7 @@ unique_x = unique_x * mm_to_m
 unique_y = unique_y * mm_to_m
 unique_z = unique_z * mm_to_m
 
-n_planes = 400
+n_planes = 1000
 
 # print(f"unique_x: {unique_x}")
 # print(f"unique_y: {unique_y}")
@@ -146,8 +158,8 @@ def build_system_matrix(
                 # Triangle support makes this sparse in z.
                 for j, z_j in enumerate(planes_local):
                     chi = (z - z_j) / ds_local
-                    T = normal(chi)
-                    if T == 0:
+                    T = tube_kernel(chi)
+                    if T < KERNEL_CUTOFF:
                         continue
 
                     for idx, (p, q) in enumerate(pq_pairs_local):
@@ -190,8 +202,8 @@ def evaluate_field(x, y, z, psi, planes, ds, pq_pairs):
     
     for j, z_j in enumerate(planes):
         chi = (z - z_j) / ds
-        T = normal(chi)
-        if T == 0:
+        T = tube_kernel(chi)
+        if T < KERNEL_CUTOFF:
             continue
         
         for idx, (p, q) in enumerate(pq_pairs):
@@ -201,67 +213,25 @@ def evaluate_field(x, y, z, psi, planes, ds, pq_pairs):
     return bx, by
 
 
-def plot_field_at_xy(
-    x,
-    y,
-    z_pts,
-    psi,
-    planes,
-    pq_pairs,
-    bx_3d,
-    by_3d,
-    bz_3d,
-    z_unique,
-    x_unique,
-    y_unique,
-):
+def plot_field_at_xy(x, y, z_pts, psi, planes, pq_pairs, bx_3d, by_3d, z_unique):
     ds = planes[1] - planes[0]
     bx_eval = np.zeros_like(z_pts)
     by_eval = np.zeros_like(z_pts)
     for iz, z in enumerate(z_pts):
         bx_eval[iz], by_eval[iz] = evaluate_field(x, y, z, psi, planes, ds, pq_pairs)
 
-    has_data = np.any(np.isclose(x_unique, x)) and np.any(np.isclose(y_unique, y))
-    if has_data:
-        ix = int(np.argmin(np.abs(x_unique - x)))
-        iy = int(np.argmin(np.abs(y_unique - y)))
-
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 8))
-    ax1.plot(z_pts, bx_eval, label="Bx eval")
-    if has_data:
-        ax1.plot(z_unique, bx_3d[ix, iy, :], label="Bx data")
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6))
+    ax1.plot(z_pts, bx_eval)
+    ax1.plot(z_unique, bx_3d[1, 1, :])
     ax1.set_ylabel('Bx [T]')
     ax1.grid()
-    ax1.legend()
-
-    ax2.plot(z_pts, by_eval, label="By eval")
-    if has_data:
-        ax2.plot(z_unique, by_3d[ix, iy, :], label="By data")
+    ax2.plot(z_pts, by_eval)
+    ax2.plot(z_unique, by_3d[1, 1, :])
     ax2.set_ylabel('By [T]')
+    ax2.set_xlabel('z [m]')
     ax2.grid()
-    ax2.legend()
-
-    if has_data:
-        ax3.plot(z_unique, bz_3d[ix, iy, :], label="Bz data")
-    ax3.set_ylabel('Bz [T]')
-    ax3.set_xlabel('z [m]')
-    ax3.grid()
-    ax3.legend()
     plt.show()
 
 psi = coeff_vector.reshape(n_planes, n_coeffs)
 
-plot_field_at_xy(
-    -0.001,
-    -0.001,
-    unique_z,
-    psi,
-    planes,
-    pq_pairs,
-    bx_3d,
-    by_3d,
-    bz_3d,
-    unique_z,
-    unique_x,
-    unique_y,
-)
+plot_field_at_xy(0, 0, unique_z, psi, planes, pq_pairs, bx_3d, by_3d, unique_z)
