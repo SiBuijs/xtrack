@@ -7,7 +7,7 @@ from xtrack._temp.splineboris.field_fitter import FieldFitter
 from xtrack._temp.splineboris.splineboris_sequence import SplineBorisSequence
 
 
-multipole_order = 3
+multipole_order = 5
 
 E0 = 2.7e9
 
@@ -47,6 +47,11 @@ field_fitter = FieldFitter(
     deg=multipole_order-1,
     field_tol=1e-4,
 )
+
+for der in range(0, multipole_order):
+    field_fitter.plot_fields(der=der)
+
+plt.show()
 
 # Build undulator using SplineBorisSequence - automatically creates one SplineBoris
 # element per polynomial piece with n_steps based on the data point count
@@ -110,7 +115,7 @@ piecewise_undulator.discard_tracker()
 
 # Uncomment which undulator you want to insert
 wiggler_places = [
-    #'ars11_uind_0210_1',
+    'ars11_uind_0210_1',
     'ars11_uind_0610_1',
 ]
 

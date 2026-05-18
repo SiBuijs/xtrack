@@ -17,6 +17,8 @@ _POLY_ORDER = 4
 _NUM_COEFFS = _POLY_ORDER + 1
 _MAX_MULTIPOLE_ORDER = 7
 _HERMITE_SUFFIXES = ("val_start", "der_start", "val_end", "der_end", "integral")
+METHOD_BORIS = 0
+METHOD_HELICAL = 1
 
 
 @dataclass
@@ -216,6 +218,8 @@ class SplineBoris(BeamElement):
     _SB_MAX_MULTIPOLE_ORDER = _MAX_MULTIPOLE_ORDER
     # Hermite field names used by FieldFitter/SplineBorisSequence helpers.
     _SB_HERMITE_SUFFIXES = _HERMITE_SUFFIXES
+    METHOD_BORIS = METHOD_BORIS
+    METHOD_HELICAL = METHOD_HELICAL
 
     _xofields = {
         'bs'                : xo.Float64[_SB_NUM_COEFFS],
@@ -227,6 +231,7 @@ class SplineBoris(BeamElement):
         'shift_x'           : xo.Field(xo.Float64, 0),  # Transverse shift in x [m] - used for field map offset
         'shift_y'           : xo.Field(xo.Float64, 0),  # Transverse shift in y [m] - used for field map offset
         'radiation_flag'    : xo.Int64,
+        'tracking_method'   : xo.Field(xo.Int64, METHOD_BORIS),
     }
 
     _extra_c_sources = [
@@ -244,6 +249,7 @@ class SplineBoris(BeamElement):
                  n_steps=1,
                  shift_x=0.0,
                  shift_y=0.0,
+                 tracking_method=METHOD_BORIS,
                  **kwargs,
     ):
         """Build the element from ``Spline4`` data and store Hermite boundary data in the xobject."""
@@ -258,6 +264,11 @@ class SplineBoris(BeamElement):
             raise ValueError(f"n_steps must be > 0, got {n_steps}")
         if not np.isfinite(length) or length <= 0:
             raise ValueError(f"length must be finite and > 0, got {length}")
+        if tracking_method not in (METHOD_BORIS, METHOD_HELICAL):
+            raise ValueError(
+                f"tracking_method must be METHOD_BORIS ({METHOD_BORIS}) or "
+                f"METHOD_HELICAL ({METHOD_HELICAL}), got {tracking_method}"
+            )
 
         length = float(length)
 
@@ -273,6 +284,7 @@ class SplineBoris(BeamElement):
             shift_x=shift_x,
             shift_y=shift_y,
             radiation_flag=radiation_flag,
+            tracking_method=int(tracking_method),
             **kwargs,
         )
 
