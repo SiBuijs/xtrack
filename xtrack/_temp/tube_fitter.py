@@ -721,7 +721,7 @@ if __name__ == "__main__":
         _constant_dipole_sign_check(kernel)
 
     dz = 0.001
-    file_path = Path(__file__).resolve().parents[2] / "test_data" / "sls" / "undulator_field_map.txt"
+    file_path = Path(__file__).resolve().parents[2] / "test_data" / "sls" / "simona_field_map.txt"
     df_raw = pd.read_csv(
         file_path,
         sep=r"\s+",
@@ -730,13 +730,14 @@ if __name__ == "__main__":
     ).set_index(["X", "Y", "Z"])
 
     deg = 2
-    for kernel in ("tent", "quadratic", "cubic"):
+    for kernel in ("tent",):#, "quadratic", "cubic"):
         fitter = TubeFitter(
             raw_data=df_raw,
             n_frames=550,
             distance_unit=dz,
             deg=deg,
             kernel=kernel,
+            tube_radius=0.001,
         )
         print(f"\n=== Fitting with kernel={kernel} ===")
         fitter.fit()

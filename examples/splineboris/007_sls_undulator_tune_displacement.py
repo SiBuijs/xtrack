@@ -1,0 +1,182 @@
+import xtrack as xt
+import numpy as np
+from pathlib import Path
+import pandas as pd
+import matplotlib.pyplot as plt
+from xtrack._temp.splineboris.field_fitter import FieldFitter
+from xtrack._temp.splineboris.splineboris_sequence import SplineBorisSequence
+
+
+multipole_order = 5
+
+E0 = 2.7e9
+
+# Particle reference
+p0 = xt.Particles(mass0=xt.ELECTRON_MASS_EV, q0=1, p0c=E0)
+
+# Load SLS MADX file
+madx_file = Path(__file__).resolve().parent.parent.parent / 'test_data' / 'sls' / 'sls.madx'
+env = xt.load(str(madx_file))
+line_sls = env.ring
+
+# Configure bend model
+line_sls.configure_bend_model(core='mat-kick-mat')
+
+# Set particle reference
+line_sls.particle_ref = p0.copy()
+
+BASE_DIR = Path(__file__).resolve().parent
+
+# Load the raw field map data from shared test_data
+field_map_path = BASE_DIR.parent.parent / "test_data" / "sls" / "simona_field_map.txt"
+df_raw_data = pd.read_csv(
+    field_map_path,
+    sep=r"\s+",
+    header=None,
+    names=["X", "Y", "Z", "Bskew", "Bnorm", "Bs"],
+).set_index(["X", "Y", "Z"])
+
+# Distance unit in meters (the dataset uses mm, so 1 mm = 0.001 m)
+distance_unit = 0.001
+
+field_fitter = FieldFitter(
+    raw_data=df_raw_data,
+    xy_point=(0, 0),
+    distance_unit=distance_unit,
+    min_region_size=10,
+    deg=multipole_order-1,
+    field_tol=1e-4,
+)
+
+for der in range(0, multipole_order):
+    field_fitter.plot_fields(der=der)
+
+plt.show()
+
+# Build undulator using SplineBorisSequence - automatically creates one SplineBoris
+# element per polynomial piece with n_steps based on the data point count
+seq = SplineBorisSequence(
+    df_fit_pars=field_fitter.df_fit_pars,
+    multipole_order=multipole_order,
+    steps_per_point=1,
+)
+
+# Get the Line of SplineBoris elements (pass env for insert support)
+piecewise_undulator = seq.to_line(env=env)
+l_wig = seq.length
+
+piecewise_undulator.build_tracker()
+
+piecewise_undulator.particle_ref = p0.copy()
+
+# Create env variables for corrector strengths (needed for matching)
+env['k0l_corr1'] = 0.
+env['k0l_corr2'] = 0.
+env['k0l_corr3'] = 0.
+env['k0l_corr4'] = 0.
+env['k0sl_corr1'] = 0.
+env['k0sl_corr2'] = 0.
+env['k0sl_corr3'] = 0.
+env['k0sl_corr4'] = 0.
+
+# Create corrector elements with expressions referencing env variables
+env.new('corr1', xt.Multipole, knl=['k0l_corr1'], ksl=['k0sl_corr1'])
+env.new('corr2', xt.Multipole, knl=['k0l_corr2'], ksl=['k0sl_corr2'])
+env.new('corr3', xt.Multipole, knl=['k0l_corr3'], ksl=['k0sl_corr3'])
+env.new('corr4', xt.Multipole, knl=['k0l_corr4'], ksl=['k0sl_corr4'])
+
+# Insert correctors at nearest element boundary (s_tol avoids slicing)
+piecewise_undulator.insert([
+    env.place('corr1', at=0.02),
+    env.place('corr2', at=0.1),
+    env.place('corr3', at=l_wig - 0.1),
+    env.place('corr4', at=l_wig - 0.02),
+], s_tol=5e-3)
+
+opt = piecewise_undulator.match(
+    solve=False,
+    betx=0, bety=0,
+    only_orbit=True,
+    include_collective=True,
+    vary=xt.VaryList(['k0l_corr1', 'k0sl_corr1',
+                      'k0l_corr2', 'k0sl_corr2',
+                      'k0l_corr3', 'k0sl_corr3',
+                      'k0l_corr4', 'k0sl_corr4',
+                      ], step=1e-6),
+    targets=[
+        xt.Target(lambda tw: np.mean(tw.x), value=0.0, tol=1e-8, tag='avg_orbit'),
+        xt.Target(lambda tw: np.mean(tw.y), value=0.0, tol=1e-8, tag='avg_orbit'),
+        xt.TargetSet(x=0, px=0, y=0, py=0., at=xt.END),
+        ],
+)
+opt.step(2)
+
+piecewise_undulator.discard_tracker()
+
+# Uncomment which undulator you want to insert
+wiggler_places = [
+    'ars11_uind_0210_1',
+    'ars11_uind_0610_1',
+]
+
+# Tunes in the case of no undulator.
+qx_0 = line_sls.twiss4d(include_collective=True).qx
+qy_0 = line_sls.twiss4d(include_collective=True).qy
+
+tt = line_sls.get_table()
+for wig_place in wiggler_places:
+    print(f"Inserting piecewise_undulator {wig_place} at {tt['s', wig_place]}")
+    line_sls.insert(piecewise_undulator, anchor='start', at=tt['s', wig_place])
+
+deltaqx_list = []
+deltaqy_list = []
+
+n_tunes = 30
+
+hor_off_list = np.linspace(-0.5e-3, 0.5e-3, n_tunes)
+
+spline_names = [
+    nn for nn in line_sls.element_names
+    if isinstance(line_sls[nn], xt.SplineBoris)
+    ]
+
+for dx in hor_off_list:   # dx in meters
+    # apply horizontal offset to all undulator slices
+    for nn in spline_names:
+        line_sls[nn].shift_x = dx
+    # then compute tune for this offset
+    tw = line_sls.twiss4d(include_collective=True)
+    deltaqx_list.append(tw.qx - qx_0)
+    deltaqy_list.append(tw.qy - qy_0)
+
+coef_qx = np.polyfit(hor_off_list, deltaqx_list, 2)
+coef_qy = np.polyfit(hor_off_list, deltaqy_list, 2)
+
+poly_qx = np.poly1d(coef_qx)
+poly_qy = np.poly1d(coef_qy)
+
+print(f"d²B_x/dx² = {coef_qx[0]}")
+print(f"dB_x/dx   = {coef_qx[1]}")
+print(f"B_x(0)    = {coef_qx[2]}")
+print(f"d²B_y/dx² = {coef_qy[0]}")
+print(f"dB_y/dx   = {coef_qy[1]}")
+print(f"B_y(0)    = {coef_qy[2]}")
+
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
+ax1.plot(hor_off_list, deltaqx_list, marker='o', color='tab:blue')
+ax1.plot(hor_off_list, poly_qx(hor_off_list), linestyle='--', color='k', label='Quadratic fit')
+ax1.set_ylabel('Delta Qx')
+ax1.set_title('Tune shift vs undulator horizontal offset')
+ax1.grid(True, alpha=0.3)
+ax1.legend()
+
+ax2.plot(hor_off_list, deltaqy_list, marker='s', color='tab:orange')
+ax2.plot(hor_off_list, poly_qy(hor_off_list), linestyle='--', color='k', label='Quadratic fit')
+ax2.set_xlabel('Horizontal offset [m]')
+ax2.set_ylabel('Delta Qy')
+ax2.grid(True, alpha=0.3)
+ax2.legend()
+
+plt.tight_layout()
+plt.show()
+
