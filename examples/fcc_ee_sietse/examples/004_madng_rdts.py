@@ -1,11 +1,15 @@
 import xtrack as xt
+import matplotlib.pyplot as plt
+
+from pathlib import Path
+HERE = Path(__file__).resolve().parent
 
 env = xt.Environment()
 
 # Load lattice from python files
 env = xt.Environment()
-env.call('../lattices/z/fccee_z_lattice.py')
-env.call('../lattices/z/fccee_z_strengths.py')
+env.call(str(HERE / '../lattices/z/fccee_z_lattice.py'))
+env.call(str(HERE / '../lattices/z/fccee_z_strengths.py'))
 line = env['fccee_p_ring']
 
 line = env.fccee_p_ring.copy(shallow=True)
@@ -16,3 +20,4 @@ tw = line.twiss4d()
 tw_ng = line.madng_twiss(rdts=['f1200', 'f2100', 'f3000'])
 
 tw_ng.plot('abs(f1200) abs(f2100) abs(f3000)')
+plt.show()

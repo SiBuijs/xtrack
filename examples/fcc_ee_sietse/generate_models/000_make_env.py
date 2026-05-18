@@ -1,7 +1,6 @@
 import os
 import argparse
 import xtrack as xt
-import xobjects as xo
 
 parser = argparse.ArgumentParser(description='Generate split dipoles for given configuration.')
 parser.add_argument('-c', '--configuration', type=str, default='z',
@@ -139,15 +138,13 @@ for ll in env.lines.values():
 
 env.vars.update(additional_settings[configuration])
 
-xo.assert_allclose(env['twopi'], 2 * 3.141592653589793, rtol=0, atol=1e-15)
-
 env['circumference'] = env['fccee_p_ring'].get_length()
 env['rf400'].frequency = '299792458 / circumference * rf_harmon_400'
 env['rf400'].voltage = 'rf_v_400 * 1e6'
-env['rf400'].phase= 'rf_lag_400 * twopi'
+env['rf400'].lag = 'rf_lag_400 * 360.'
 if configuration == 't':
     env['rf800'].frequency = '299792458 / circumference * rf_harmon_800'
     env['rf800'].voltage = 'rf_v_800 * 1e6'
-    env['rf800'].phase = 'rf_lag_800 * twopi'
+    env['rf800'].lag = 'rf_lag_800 * 360.'
 
 env.to_json(temp_folder + '/env_no_bpms.json')

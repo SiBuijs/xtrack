@@ -1,0 +1,34 @@
+                                   value          unit
+mode                                   w              
+beam energy                         80.0       GeV/c^2
+circumference               90644.836076             m
+revolution frequency         3307.330798            Hz
+energy loss per turn            0.329999           GeV
+SR power beam                         50            MW
+number of bunches                   2110              
+bunch population               13.551286          1E10
+horizontal emittance            2.090414            nm
+vertical emittance              2.158153            pm
+ey/ex                           0.001032              
+momentum compaction factor     28.620982        1.0E-6
+horizontal beta*                0.220763             m
+vertical beta*                  0.001003             m
+horizontal tune               194.178755              
+vertical tune                 170.242008              
+longitudinal tune               0.081603              
+horizontal chromaticity         0.086058              
+vertical chromaticity           2.974244              
+RF voltage 400 MHz                1000.0            MV
+RF voltage 800 MHz                   0.0            MV
+RF frequency 400 MHz          400.848493           MHz
+RF frequency 800 MHz                 0.0           MHz
+bunch length                    5.392759            mm
+bunch length SR                  3.50571            mm
+energy spread                   0.105304             %
+energy spread SR                0.068456             %
+longitudinal damping time     242.424953         turns
+horizontal BB parameter         0.012233              
+vertical BB parameter                0.1              
+4xi_x/Qs                        0.606894              
+SpinTuneSpread/Qs                1.54144              
+inst. luminosity               26.184691  1E34 Hz/cm^2

@@ -41,7 +41,7 @@ def test_twiss_z_lattice(ftype):
 
     tt = line.get_table(attr=True)
     tt_cav = tt.rows[tt.element_type=='Cavity']
-    xo.assert_allclose(tt_cav.phase, np.pi, atol=1e-10, rtol=0)
+    xo.assert_allclose(tt_cav.lag, 180, atol=1e-10, rtol=0)
     xo.assert_allclose(tt_cav.rows['.*400.*'].frequency, 400.0e6, rtol=0.01)
     xo.assert_allclose(tt_cav.rows['.*800.*'].frequency, 800.0e6, rtol=0.01)
 
@@ -126,7 +126,7 @@ def test_twiss_t_lattice(ftype):
     tw6d = line.twiss()
     tt = line.get_table(attr=True)
     tt_cav = tt.rows[tt.element_type=='Cavity']
-    xo.assert_allclose(tt_cav.phase, np.pi, atol=1e-10, rtol=0)
+    xo.assert_allclose(tt_cav.lag, 180, atol=1e-10, rtol=0)
     xo.assert_allclose(tt_cav.rows['.*400.*'].frequency, 400.0e6, rtol=0.01)
     xo.assert_allclose(tt_cav.rows['.*800.*'].frequency, 800.0e6, rtol=0.01)
 
@@ -215,7 +215,7 @@ def test_twiss_w_lattice(ftype):
 
     tt = line.get_table(attr=True)
     tt_cav = tt.rows[tt.element_type=='Cavity']
-    xo.assert_allclose(tt_cav.phase, np.pi, atol=1e-10, rtol=0)
+    xo.assert_allclose(tt_cav.lag, 180, atol=1e-10, rtol=0)
     xo.assert_allclose(tt_cav.rows['.*400.*'].frequency, 400.0e6, rtol=0.01)
     xo.assert_allclose(tt_cav.rows['.*800.*'].frequency, 800.0e6, rtol=0.01)
 

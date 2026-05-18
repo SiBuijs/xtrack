@@ -10,7 +10,7 @@ configuration = args.configuration
 
 temp_folder = f'../lattices/{configuration}/_temp'
 
-env = xt.load(f'{temp_folder}/env_no_bpms.json')
+env = xt.load(f'{temp_folder}/env_no_bpms_moved_multipoles.json')
 
 for nn in list(env.lines.keys()):
     if nn != 'fccee_p_ring':
@@ -55,6 +55,54 @@ for ii in range(len(tt_no_markers)-1):
                 env[nn1].length = lvalue * 2
             env[nn1].prototype = None
             to_delete.append(nn2)
+# Identify consecutive couples of sextupoles. The first option covers a quartet of sextupoles     
+for ii in range(len(tt_no_markers)-1):
+    if (tt_no_markers.element_type[ii] == 'Sextupole'
+        and tt_no_markers.element_type[ii+3] == 'Sextupole'):
+
+        nn1 = tt_no_markers.name[ii]
+        nn2 = tt_no_markers.name[ii+3]
+
+        nn12 = tt_no_markers.name[ii+1]
+        nn13 = tt_no_markers.name[ii+2]
+        
+        if ((env.ref[nn1].k2._value == env.ref[nn2].k2._value)
+            and (env.ref[nn1].length._value == env.ref[nn2].length._value)
+            and (env.ref[nn1].k2._expr == env.ref[nn2].k2._expr)
+            and (env.ref[nn1].length._expr == env.ref[nn2].length._expr)):
+            # print("joining sext quartet.")
+            lexpr = env.ref[nn2].length._expr
+            lvalue = env.ref[nn2].length._value
+
+            if lexpr is not None:
+                env[nn1].length = env.ref[nn1].length._expr * 4
+            else:
+                env[nn1].length = lvalue * 4
+            env[nn1].prototype = None
+            to_delete.append(nn2)
+            to_delete.append(nn12)
+            to_delete.append(nn13)
+            
+    elif (tt_no_markers.element_type[ii] == 'Sextupole'
+        and tt_no_markers.element_type[ii+1] == 'Sextupole'):
+
+        nn1 = tt_no_markers.name[ii]
+        nn2 = tt_no_markers.name[ii+1]
+
+        if ((env.ref[nn1].k2._value == env.ref[nn2].k2._value)
+            and (env.ref[nn1].length._value == env.ref[nn2].length._value)
+            and (env.ref[nn1].k2._expr == env.ref[nn2].k2._expr)
+            and (env.ref[nn1].length._expr == env.ref[nn2].length._expr)):
+            # print("joining sext doublet.")
+            lexpr = env.ref[nn2].length._expr
+            lvalue = env.ref[nn2].length._value
+
+            if lexpr is not None:
+                env[nn1].length = env.ref[nn1].length._expr * 2
+            else:
+                env[nn1].length = lvalue * 2
+            env[nn1].prototype = None
+            to_delete.append(nn2)  
 
 new_line = env.new_line(length=circumference, compose=True)
 

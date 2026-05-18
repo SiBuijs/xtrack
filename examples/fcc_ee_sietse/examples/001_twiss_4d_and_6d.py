@@ -2,6 +2,8 @@ import xtrack as xt
 import numpy as np
 import matplotlib.pyplot as plt
 
+from pathlib import Path
+HERE = Path(__file__).resolve().parent
 
 # Load lattice from python files
 # env = xt.Environment()
@@ -10,7 +12,7 @@ import matplotlib.pyplot as plt
 # line = env['fccee_p_ring']
 
 # Alternatively load from json
-line = xt.load('../lattices/t/fccee_t.json').fccee_p_ring
+line = xt.load(str(HERE / '../lattices/z/fccee_z.json')).fccee_p_ring
 
 # Twiss 4d
 tw4d = line.twiss4d()

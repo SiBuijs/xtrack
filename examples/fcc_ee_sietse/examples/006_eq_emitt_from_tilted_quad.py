@@ -2,14 +2,17 @@ import xtrack as xt
 import xobjects as xo
 import numpy as np
 
+from pathlib import Path
+HERE = Path(__file__).resolve().parent
+
 env = xt.Environment()
 
-env.call('../lattices/z/fccee_z_lattice.py')
-env.call('../lattices/z/fccee_z_strengths.py')
+env.call(str(HERE / '../lattices/z/fccee_z_lattice.py'))
+env.call(str(HERE / '../lattices/z/fccee_z_strengths.py'))
 n_turns_track_test = 6000
 
-# env.call('../lattices/t/fccee_t_lattice.py')
-# env.call('../lattices/t/fccee_t_strengths.py')
+# env.call(str(HERE / '../lattices/t/fccee_t_lattice.py'))
+# env.call(str(HERE / '../lattices/t/fccee_t_strengths.py'))
 # n_turns_track_test = 500
 
 line = env.fccee_p_ring
@@ -18,13 +21,13 @@ num_particles_test = 150
 line.replace_all_repeated_elements()
 
 # Tilt some of the quadrupoles to introduce coupling and vertical dispersion
-line['qc1r1.2'].rot_s_rad = 0.1e-5
-line['qc1l1.1'].rot_s_rad = 0.1e-5
+#line['qc1r1.2'].rot_s_rad = 0.1e-5
+#line['qc1l1.1'].rot_s_rad = 0.1e-5
 tw0 = line.twiss4d()
 
 line.configure_radiation(model='mean')
 line.compensate_radiation_energy_loss()
-tw = line.twiss(radiation_analysis=True, radiation_method='full')
+tw = line.twiss(eneloss_and_damping=True, radiation_method='full')
 
 bsize = tw.get_beam_covariance(
     gemitt_x=tw.eq_gemitt_x,
@@ -41,7 +44,7 @@ bsize_disp_only = tw.get_beam_covariance(
     gemitt_y=0.,
     gemitt_zeta=tw.eq_gemitt_zeta)
 
-print('Vertical beam size:           ', bsize['sigma_y', 'ip.1'])
+print('Vertical beam size:             ', bsize['sigma_y', 'ip.1'])
 print('Vertical beam size (emit only): ', bsize_v_emit_only['sigma_y', 'ip.1'])
 
 line.configure_radiation(model='quantum')
@@ -84,7 +87,7 @@ spz.plot(np.std(1e3*mon.zeta, axis=0))
 spz.axhline(1e3*bsize['sigma_zeta', 'ip.1'], color='red', label='twiss')
 spz.set_ylabel(r'$\sigma_{z}$ [mm]')
 spz.set_ylim(bottom=0)
-spz.set_xlabel('s [m]')
+spz.set_xlabel('Turns')
 plt.subplots_adjust(left=.2, top=.95, hspace=.2)
 
 plt.show()
