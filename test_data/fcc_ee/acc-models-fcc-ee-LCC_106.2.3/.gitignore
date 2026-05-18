@@ -1,0 +1,11 @@
+# Specification of directories/files to ignore while versioning files
+*.tmp
+*.log
+*.png
+*.jpg
+*.pyc
+.pytest_cache
+*pycache*
+public/
+codes/
+

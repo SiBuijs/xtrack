@@ -4,17 +4,20 @@ import xdeps as xd
 
 from cpymad.madx import Madx
 
+from pathlib import Path
+HERE = Path(__file__).resolve().parent
+
 fname = 'fccee_z'; pc_gev = 45.6
 fname = 'fccee_w'; pc_gev = 80.
 fname = 'fccee_h'; pc_gev = 120.
 fname = 'fccee_t'; pc_gev = 182.5
 
 mad = Madx()
-mad.call(fname + '.seq')
+mad.call(str(HERE / (fname + '.seq')))
 mad.beam(particle='positron', pc=pc_gev)
 mad.use('fccee_p_ring')
 
-mad.call('install_wigglers.madx')
+mad.call(str(HERE / 'install_wigglers.madx'))
 mad.input("exec, define_wigglers_as_multipoles()")
 mad.input("exec, install_wigglers()")
 mad.use('fccee_p_ring')
@@ -38,7 +41,7 @@ line_thick.particle_ref = xt.Particles(mass0=xt.ELECTRON_MASS_EV,
 line_thick.build_tracker()
 tw_thick_no_rad = line_thick.twiss(method='4d')
 
-line_thick.to_json(fname + '_thick.json')
+line_thick.to_json(str(HERE / (fname + '_thick.json')))
 
 line = line_thick.copy()
 Strategy = xt.slicing.Strategy

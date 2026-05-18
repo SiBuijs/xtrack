@@ -1,0 +1,6 @@
+# Specification of directories/files to ignore when exporting
+.gitlab-ci.yml     export-ignore
+.zenodo.json     export-ignore
+
+
+
