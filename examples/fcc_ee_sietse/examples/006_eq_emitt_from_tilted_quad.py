@@ -21,13 +21,15 @@ num_particles_test = 150
 line.replace_all_repeated_elements()
 
 # Tilt some of the quadrupoles to introduce coupling and vertical dispersion
-#line['qc1r1.2'].rot_s_rad = 0.1e-5
-#line['qc1l1.1'].rot_s_rad = 0.1e-5
+# NOTE: The previous names were qc1r1.2 and qc1l1.1, but they were not found in the lattice.
+# NOTE: We use the new names qd0al.0 and qd0ar.1.
+line['qd0al.0'].rot_s_rad = 0.1e-5
+line['qd0ar.1'].rot_s_rad = 0.1e-5
 tw0 = line.twiss4d()
 
 line.configure_radiation(model='mean')
 line.compensate_radiation_energy_loss()
-tw = line.twiss(eneloss_and_damping=True, radiation_method='full')
+tw = line.twiss(radiation_analysis=True, radiation_method='full')
 
 bsize = tw.get_beam_covariance(
     gemitt_x=tw.eq_gemitt_x,

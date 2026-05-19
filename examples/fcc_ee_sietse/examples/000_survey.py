@@ -1,5 +1,4 @@
 import xtrack as xt
-import numpy as np
 import matplotlib.pyplot as plt
 
 from pathlib import Path
@@ -19,4 +18,3 @@ line = env['fccee_p_ring']
 # Survey
 sv = line.survey()
 sv.plot()
-plt.show()
