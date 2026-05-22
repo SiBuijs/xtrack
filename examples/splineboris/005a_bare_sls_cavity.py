@@ -17,13 +17,12 @@ E0 = 2.7e9  # eV
 # Main 500 MHz: 4 × 445 kV → 1.78 MV total, split over X02 and X08 (890 kV each)
 V_RF_MAIN_STRAIGHT = 890e3  # V per short straight (2 cavities × 445 kV)
 F_RF_MAIN = 499.6537e6  # Hz
-# TDR φ_s ≈ 57°; xtrack Cavity.lag is offset by +180° from that convention
-LAG_RF_MAIN = 57.0 + 180.0  # deg
+LAG_RF_MAIN = 237.0 # deg, synchronous phase at zeta=0 (TDR balance, φ_s ≈ 57°)
 
 # Third-harmonic (Super-3HC): passive cavity, design-point effective voltage
 V_RF_3HC = 540e3  # V
 F_RF_3HC = 1498.95e6  # Hz (= 3 × f_main)
-LAG_RF_3HC = 90.0 + 180.0  # deg (TDR φ_3HC,s ≈ π/2 + 180° for xtrack)
+LAG_RF_3HC = 270 # deg, flat-potential design (φ_3HC,s ≈ π/2)
 
 # Lattice markers for cavity placement (original SLS in sls.madx)
 MAIN_RF_ANCHORS = ('ars02_gsrc_0500', 'ars08_gsrc_0500')  # short straights X02, X08
