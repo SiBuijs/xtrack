@@ -2701,6 +2701,122 @@ class VariableSolenoid(_HasKnlKsl, _HasIntegrator, BeamElement):
 
         _HasKnlKsl.__init__(self, **kwargs)
 
+class BorisSolenoid(BeamElement):
+    '''
+    Thick element integrating the Lorentz force with a Boris stepper in the
+    analytical magnetic field of a finite-length circular solenoid.
+
+    The field uses closed-form expressions with elliptic integrals (Hampton
+    et al.). Longitudinal position during stepping is ``z = s_entry + s_local``,
+    where ``s_entry`` is the particle ``s`` at element entry.
+
+    Parameters
+    ----------
+    L_coil : float
+        Physical length of the solenoid coil [m].
+    a : float
+        Coil radius [m].
+    B0 : float
+        On-axis peak magnetic field at the solenoid center [T].
+    z0 : float
+        Global longitudinal position of the solenoid center [m].
+    length : float
+        Element length / Boris integration extent [m].
+    n_steps : int
+        Number of Boris substeps (must be ``>= 1``).
+    shift_x : float, optional
+        Horizontal offset of the solenoid axis [m]. Default is ``0``.
+    shift_y : float, optional
+        Vertical offset of the solenoid axis [m]. Default is ``0``.
+    '''
+
+    isthick = True
+    allow_rot_and_shift = False
+    has_backtrack = False
+
+    _xofields = {
+        'L_coil': xo.Float64,
+        'a': xo.Float64,
+        'B0': xo.Float64,
+        'z0': xo.Float64,
+        'length': xo.Float64,
+        'n_steps': xo.Int64,
+        'shift_x': xo.Field(xo.Float64, 0),
+        'shift_y': xo.Field(xo.Float64, 0),
+    }
+
+    _extra_c_sources = [
+        '#include "xtrack/beam_elements/elements_src/borissolenoid.h"',
+    ]
+
+    def __init__(self, L_coil=1.0, a=0.1, B0=1.0, z0=0.0, length=1.0,
+                 n_steps=100, shift_x=0.0, shift_y=0.0, **kwargs):
+        if '_xobject' in kwargs and kwargs['_xobject'] is not None:
+            super().__init__(**kwargs)
+            return
+
+        if n_steps < 1:
+            raise ValueError(f"n_steps must be >= 1, got {n_steps}")
+        if not np.isfinite(length) or length <= 0:
+            raise ValueError(f"length must be finite and > 0, got {length}")
+        if not np.isfinite(L_coil) or L_coil <= 0:
+            raise ValueError(f"L_coil must be finite and > 0, got {L_coil}")
+        if not np.isfinite(a) or a <= 0:
+            raise ValueError(f"a must be finite and > 0, got {a}")
+
+        super().__init__(
+            L_coil=float(L_coil),
+            a=float(a),
+            B0=float(B0),
+            z0=float(z0),
+            length=float(length),
+            n_steps=int(n_steps),
+            shift_x=float(shift_x),
+            shift_y=float(shift_y),
+            **kwargs,
+        )
+
+    def get_field(self, x, y, s_local, s_at_element=0.0):
+        """Evaluate **B** at local longitudinal coordinate(s).
+
+        Parameters
+        ----------
+        x, y : float or array-like
+            Transverse positions [m], relative to the solenoid axis (before shift).
+        s_local : float or array-like
+            Local longitudinal coordinate in ``[0, length]`` [m].
+        s_at_element : float, optional
+            Global ``s`` position of the element start. Default is ``0``.
+        """
+        from .borissolenoid_src.solenoid_B_field_eval_python import evaluate_solenoid_B
+
+        x_arr, y_arr, s_loc = np.broadcast_arrays(
+            np.asarray(x, dtype=float),
+            np.asarray(y, dtype=float),
+            np.asarray(s_local, dtype=float),
+        )
+
+        outside = (s_loc < 0) | (s_loc > self.length)
+        if np.any(outside):
+            raise ValueError(
+                f"s_local contains values outside [0, {self.length}]"
+            )
+
+        z = s_at_element + s_loc
+        bx, by, bz = evaluate_solenoid_B(
+            x_arr - self.shift_x,
+            y_arr - self.shift_y,
+            z,
+            self.L_coil,
+            self.a,
+            self.B0,
+            self.z0,
+        )
+
+        if bx.shape == ():
+            return float(bx), float(by), float(bz)
+        return bx, by, bz
+
 class TempRF(_HasKnlKsl, _HasModelRF, _HasIntegrator, BeamElement):
 
     isthick = True

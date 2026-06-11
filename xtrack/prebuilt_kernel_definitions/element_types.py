@@ -41,6 +41,7 @@ ONLY_XTRACK_ELEMENTS = [
     DriftExact,
     Misalignment,
     SplineBoris,
+    BorisSolenoid,
     # Drift Slices
     DriftSlice,
     DriftExactSlice,
