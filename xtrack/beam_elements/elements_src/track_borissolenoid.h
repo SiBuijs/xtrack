@@ -8,6 +8,7 @@
 
 #include "xtrack/headers/track.h"
 #include "xtrack/beam_elements/borissolenoid_src/solenoid_B_field_eval.h"
+#include "xtrack/beam_elements/borissolenoid_src/helical_map.h"
 
 GPUFUN
 void BorisSolenoid_single_particle(
@@ -76,12 +77,10 @@ void BorisSolenoid_single_particle(
 
         const double inv_ps = 1.0 / ps;
 
+        // Half-drift predictor for field evaluation only.
         const double xh = x + (px * inv_ps) * half_ds;
         const double yh = y + (py * inv_ps) * half_ds;
-        const double s_local_h = s_local + half_ds;
-        const double z_eval = s_entry + s_local_h;
-
-        double dt = half_ds * inv_ps * gamma * mass_kg;
+        const double s_eval = s_entry + s_local + half_ds;
 
         double Bx;
         double By;
@@ -90,7 +89,7 @@ void BorisSolenoid_single_particle(
         evaluate_solenoid_B(
             xh - shift_x,
             yh - shift_y,
-            z_eval,
+            s_eval,
             L_coil,
             a,
             B0,
@@ -100,49 +99,93 @@ void BorisSolenoid_single_particle(
             &Bz
         );
 
-        const double half_qds = q_coulomb * half_ds;
+        const double B_mag = sqrt(Bx * Bx + By * By + Bz * Bz);
+        const double B_perp = sqrt(Bx * Bx + By * By);
 
-        double pxm = px - half_qds * By;
-        double pym = py + half_qds * Bx;
+        if (B_mag < BORISSOLENOID_HELICAL_EPS) {
+            x += (px * inv_ps) * ds;
+            y += (py * inv_ps) * ds;
+            s_local += ds;
+            const double dt = ds * inv_ps * gamma * mass_kg;
+            zeta += ds - dt * c * beta0;
+            continue;
+        }
 
-        tmp = P * P - pxm * pxm - pym * pym;
-        if (tmp < 0.0) tmp = 0.0;
-        double ps_mid = sqrt(tmp);
-        if (ps_mid == 0.0) {
+        if (fabs(Bz) < BORISSOLENOID_HELICAL_EPS) {
             break;
         }
 
-        double t = q_coulomb * Bz * half_ds / ps_mid;
-        double t2 = t * t;
-        double inv_den = 1.0 / (1.0 + t2);
-
-        double sR = 2.0 * t * inv_den;
-        double c0 = (1.0 - t2) * inv_den;
-
-        double pxp = c0 * pxm + sR * pym;
-        double pyp = -sR * pxm + c0 * pym;
-
-        double px1 = pxp - half_qds * By;
-        double py1 = pyp + half_qds * Bx;
-
-        tmp = P * P - px1 * px1 - py1 * py1;
-        if (tmp < 0.0) tmp = 0.0;
-        double ps1 = sqrt(tmp);
-        if (ps1 == 0.0) {
+        const double P_z = (Bx * px + By * py + Bz * ps) / B_mag;
+        if (fabs(P_z) < BORISSOLENOID_HELICAL_EPS) {
             break;
         }
-        double inv_ps1 = 1.0 / ps1;
 
-        x = xh + (px1 * inv_ps1) * half_ds;
-        y = yh + (py1 * inv_ps1) * half_ds;
+        const double h = ds * B_mag / fabs(Bz);
+
+        double x_z;
+        double y_z;
+        double z_z;
+        double px_z;
+        double py_z;
+        double pz_z;
+
+        borissolenoid_vec_to_zeta(
+            Bx, By, Bz, B_mag, B_perp,
+            x, y, 0.0,
+            &x_z, &y_z, &z_z
+        );
+        borissolenoid_vec_to_zeta(
+            Bx, By, Bz, B_mag, B_perp,
+            px, py, ps,
+            &px_z, &py_z, &pz_z
+        );
+
+        // Pure helical map in zeta frame (B_x = B_y = 0, K = 0).
+        borissolenoid_helical_F_step(
+            &x_z,
+            &y_z,
+            &px_z,
+            &py_z,
+            B_mag,
+            P_z,
+            q_coulomb,
+            h
+        );
+
+        double x_new;
+        double y_new;
+        double z_unused;
+        double px_new;
+        double py_new;
+        double ps_new;
+
+        borissolenoid_vec_to_lab(
+            Bx, By, Bz, B_mag, B_perp,
+            x_z, y_z, z_z,
+            &x_new, &y_new, &z_unused
+        );
+        borissolenoid_vec_to_lab(
+            Bx, By, Bz, B_mag, B_perp,
+            px_z, py_z, P_z,
+            &px_new, &py_new, &ps_new
+        );
+
+        x = x_new;
+        y = y_new;
+        px = px_new;
+        py = py_new;
+
+        tmp = P * P - px * px - py * py;
+        if (tmp < 0.0) tmp = 0.0;
+        ps = sqrt(tmp);
+        if (ps == 0.0) {
+            break;
+        }
+
         s_local += ds;
 
-        dt += half_ds * inv_ps1 * gamma * mass_kg;
-
-        px = px1;
-        py = py1;
-
-        zeta += (ds - dt * c * beta0);
+        const double dt = ds / ps * gamma * mass_kg;
+        zeta += ds - dt * c * beta0;
     }
 
     LocalParticle_set_x(part, x);

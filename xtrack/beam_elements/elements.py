@@ -2703,8 +2703,9 @@ class VariableSolenoid(_HasKnlKsl, _HasIntegrator, BeamElement):
 
 class BorisSolenoid(BeamElement):
     '''
-    Thick element integrating the Lorentz force with a Boris stepper in the
-    analytical magnetic field of a finite-length circular solenoid.
+    Thick element integrating the Lorentz force with a field-aligned helical
+    exponential map in the analytical magnetic field of a finite-length circular
+    solenoid.
 
     The field uses closed-form expressions with elliptic integrals (Hampton
     et al.). Longitudinal position during stepping is ``z = s_entry + s_local``,

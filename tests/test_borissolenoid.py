@@ -22,6 +22,83 @@ INTERVAL = 30.0
 N_STEPS = 5000
 
 
+def _rotation_lab_to_zeta(Bx, By, Bz, vx, vy, vz):
+    B_mag = np.sqrt(Bx**2 + By**2 + Bz**2)
+    B_perp = np.sqrt(Bx**2 + By**2)
+    if B_mag < 1e-30 or B_perp < 1e-30:
+        return vx, vy, (Bx * vx + By * vy + Bz * vz) / max(B_mag, 1e-30)
+    inv_B_mag = 1.0 / B_mag
+    inv_B_perp = 1.0 / B_perp
+    Bz_over_B_perp = Bz * inv_B_mag * inv_B_perp
+    ox = -By * inv_B_perp * vx + Bx * inv_B_perp * vy
+    oy = (
+        -Bx * Bz_over_B_perp * vx
+        - By * Bz_over_B_perp * vy
+        + B_perp * inv_B_mag * vz
+    )
+    oz = Bx * inv_B_mag * vx + By * inv_B_mag * vy + Bz * inv_B_mag * vz
+    return ox, oy, oz
+
+
+def _rotation_zeta_to_lab(Bx, By, Bz, vx, vy, vz):
+    B_mag = np.sqrt(Bx**2 + By**2 + Bz**2)
+    B_perp = np.sqrt(Bx**2 + By**2)
+    if B_mag < 1e-30 or B_perp < 1e-30:
+        return vx, vy, Bz * vz / max(B_mag, 1e-30)
+    inv_B_mag = 1.0 / B_mag
+    inv_B_perp = 1.0 / B_perp
+    Bz_over_B_perp = Bz * inv_B_mag * inv_B_perp
+    ox = -By * inv_B_perp * vx - Bx * Bz_over_B_perp * vy + Bx * inv_B_mag * vz
+    oy = Bx * inv_B_perp * vx - By * Bz_over_B_perp * vy + By * inv_B_mag * vz
+    oz = B_perp * inv_B_mag * vy + Bz * inv_B_mag * vz
+    return ox, oy, oz
+
+
+def _sinc(theta):
+    if abs(theta) < 1e-14:
+        return 1.0
+    return np.sin(theta) / theta
+
+
+def _vers_over_theta(theta):
+    if abs(theta) < 1e-14:
+        return 0.0
+    return (1.0 - np.cos(theta)) / theta
+
+
+def _cos_minus_one_over_theta(theta):
+    if abs(theta) < 1e-14:
+        return 0.0
+    return (np.cos(theta) - 1.0) / theta
+
+
+def _helical_F_step_py(x, y, px, py, B_mag, P_z, q_coulomb, h):
+    """Pure helical map in the B-aligned frame (B_x = B_y = 0)."""
+    theta = q_coulomb * B_mag * h / P_z
+    st = np.sin(theta)
+    ct = np.cos(theta)
+    h_over_Pz = h / P_z
+    x_out = x + h_over_Pz * _sinc(theta) * px + h_over_Pz * _vers_over_theta(theta) * py
+    y_out = y + h_over_Pz * _cos_minus_one_over_theta(theta) * px + h_over_Pz * _sinc(theta) * py
+    px_out = ct * px + st * py
+    py_out = -st * px + ct * py
+    return x_out, y_out, px_out, py_out
+
+
+def _helical_step_lab_py(x, y, px, py, ps, Bx, By, Bz, q_coulomb, h):
+    B_mag = np.sqrt(Bx**2 + By**2 + Bz**2)
+    P_z = (Bx * px + By * py + Bz * ps) / B_mag
+    x_z, y_z, _ = _rotation_lab_to_zeta(Bx, By, Bz, x, y, 0.0)
+    px_z, py_z, _ = _rotation_lab_to_zeta(Bx, By, Bz, px, py, ps)
+    x_z, y_z, px_z, py_z = _helical_F_step_py(
+        x_z, y_z, px_z, py_z, B_mag, P_z, q_coulomb, h
+    )
+    _, _, z_z = _rotation_lab_to_zeta(Bx, By, Bz, x, y, 0.0)
+    x_out, y_out, _ = _rotation_zeta_to_lab(Bx, By, Bz, x_z, y_z, z_z)
+    px_out, py_out, _ = _rotation_zeta_to_lab(Bx, By, Bz, px_z, py_z, P_z)
+    return x_out, y_out, px_out, py_out
+
+
 def _add_borissolenoid_test_kernels(ctx):
     elliptic_knl = xo.Kernel(
         c_name='borissolenoid_test_elliptic',
@@ -48,10 +125,30 @@ def _add_borissolenoid_test_kernels(ctx):
             xo.Arg(xo.Float64, name='bz_out', pointer=True),
         ],
     )
+    helical_knl = xo.Kernel(
+        c_name='borissolenoid_test_helical_step',
+        args=[
+            xo.Arg(xo.Float64, name='x'),
+            xo.Arg(xo.Float64, name='y'),
+            xo.Arg(xo.Float64, name='px'),
+            xo.Arg(xo.Float64, name='py'),
+            xo.Arg(xo.Float64, name='ps'),
+            xo.Arg(xo.Float64, name='Bx'),
+            xo.Arg(xo.Float64, name='By'),
+            xo.Arg(xo.Float64, name='Bz'),
+            xo.Arg(xo.Float64, name='q_coulomb'),
+            xo.Arg(xo.Float64, name='h'),
+            xo.Arg(xo.Float64, name='x_out', pointer=True),
+            xo.Arg(xo.Float64, name='y_out', pointer=True),
+            xo.Arg(xo.Float64, name='px_out', pointer=True),
+            xo.Arg(xo.Float64, name='py_out', pointer=True),
+        ],
+    )
     ctx.add_kernels(
         kernels={
             'borissolenoid_test_elliptic': elliptic_knl,
             'borissolenoid_test_field': field_knl,
+            'borissolenoid_test_helical_step': helical_knl,
         },
         sources=[pkg_root / 'beam_elements/borissolenoid_src/test_kernels.h'],
     )
@@ -166,6 +263,59 @@ def test_borissolenoid_get_field_vs_solenoid_field(test_context):
 
 
 @for_all_test_contexts
+def test_helical_map_uniform_B(test_context):
+    skip_if_forbid_compile()
+    ctx = test_context
+    _add_borissolenoid_test_kernels(ctx)
+
+    B_cases = [
+        (0.0, 0.0, 1.5),
+        (0.2, 0.1, 1.4),
+    ]
+    q_coulomb = qe
+    h = 0.01
+    P = 1.0e-19 * 1e4
+
+    for Bx, By, Bz in B_cases:
+        B_mag = np.sqrt(Bx**2 + By**2 + Bz**2)
+        B_perp = np.sqrt(Bx**2 + By**2)
+        for px, py in [(P * 0.01, P * 0.005), (P * 0.02, -P * 0.01)]:
+            ps = np.sqrt(max(P**2 - px**2 - py**2, 0.0))
+            for x, y in [(1e-3, 2e-3), (-5e-4, 1e-3)]:
+                x_ref, y_ref, px_ref, py_ref = _helical_step_lab_py(
+                    x, y, px, py, ps, Bx, By, Bz, q_coulomb, h
+                )
+                x_out = np.array([0.0])
+                y_out = np.array([0.0])
+                px_out = np.array([0.0])
+                py_out = np.array([0.0])
+                ctx.kernels.borissolenoid_test_helical_step(
+                    x=float(x), y=float(y),
+                    px=float(px), py=float(py), ps=float(ps),
+                    Bx=float(Bx), By=float(By), Bz=float(Bz),
+                    q_coulomb=float(q_coulomb), h=float(h),
+                    x_out=x_out, y_out=y_out, px_out=px_out, py_out=py_out,
+                )
+                xo.assert_allclose(x_out[0], x_ref, rtol=1e-12, atol=1e-15)
+                xo.assert_allclose(y_out[0], y_ref, rtol=1e-12, atol=1e-15)
+                xo.assert_allclose(px_out[0], px_ref, rtol=1e-12, atol=1e-15)
+                xo.assert_allclose(py_out[0], py_ref, rtol=1e-12, atol=1e-15)
+
+        if B_perp > 1e-30:
+            v = np.array([0.3, -0.2, 0.5])
+            R = np.array([
+                [-By / B_perp, Bx / B_perp, 0.0],
+                [-Bx * Bz / (B_mag * B_perp), -By * Bz / (B_mag * B_perp), B_perp / B_mag],
+                [Bx / B_mag, By / B_mag, Bz / B_mag],
+            ])
+            xo.assert_allclose(R @ R.T, np.eye(3), rtol=1e-12, atol=1e-12)
+            xo.assert_allclose(np.linalg.det(R), 1.0, rtol=1e-12, atol=1e-12)
+            ox, oy, oz = _rotation_lab_to_zeta(Bx, By, Bz, v[0], v[1], v[2])
+            vx, vy, vz = _rotation_zeta_to_lab(Bx, By, Bz, ox, oy, oz)
+            xo.assert_allclose([vx, vy, vz], v, rtol=1e-12, atol=1e-12)
+
+
+@for_all_test_contexts
 def test_borissolenoid_tracking_vs_boris_spatial(test_context):
     skip_if_forbid_compile()
 
@@ -210,8 +360,9 @@ def test_borissolenoid_tracking_vs_boris_spatial(test_context):
     p_boris = p0.copy()
     integrator.track(p_boris)
 
-    xo.assert_allclose(p_elem.x, p_boris.x, rtol=1e-9, atol=1e-10)
-    xo.assert_allclose(p_elem.y, p_boris.y, rtol=1e-9, atol=1e-10)
-    xo.assert_allclose(p_elem.px, p_boris.px, rtol=1e-9, atol=1e-10)
-    xo.assert_allclose(p_elem.py, p_boris.py, rtol=1e-9, atol=1e-10)
-    xo.assert_allclose(p_elem.zeta, p_boris.zeta, rtol=1e-9, atol=1e-9)
+    # Helical exponential map vs split Boris — benchmark, not bitwise equality.
+    xo.assert_allclose(p_elem.x, p_boris.x, rtol=5e-3, atol=1e-6)
+    xo.assert_allclose(p_elem.y, p_boris.y, rtol=5e-3, atol=1e-6)
+    xo.assert_allclose(p_elem.px, p_boris.px, rtol=5e-3, atol=1e-6)
+    xo.assert_allclose(p_elem.py, p_boris.py, rtol=5e-3, atol=1e-6)
+    xo.assert_allclose(p_elem.zeta, p_boris.zeta, rtol=5e-3, atol=1e-6)
