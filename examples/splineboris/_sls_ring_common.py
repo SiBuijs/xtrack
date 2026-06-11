@@ -27,11 +27,27 @@ MAIN_RF_ANCHORS = ("ars02_gsrc_0500", "ars08_gsrc_0500")
 HC3_ANCHOR = "ars07_gsrc_0390"
 
 WIGGLER_PLACE = "ars11_uind_0210_1"
+WIGGLER_PLACE_SPIN = "ars11_uind_0610_1"
+WIGGLER_PLACES_SPIN = (WIGGLER_PLACE_SPIN,)
+WIGGLER_PLACES_11 = (
+    "ars02_uind_0500_1",
+    "ars03_uind_0380_1",
+    "ars04_uind_0500_1",
+    "ars05_uind_0650_1",
+    "ars06_uind_0500_1",
+    "ars07_uind_0200_1",
+    "ars08_uind_0500_1",
+    "ars09_uind_0790_1",
+    "ars11_uind_0210_1",
+    "ars11_uind_0610_1",
+    "ars12_uind_0500_1",
+)
 DEFAULT_MULTIPOLE_ORDER = 3
+DEFAULT_UNDULATOR_SHIFT_X = 1e-3  # 1 mm horizontal field offset
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 MADX_FILE = _REPO_ROOT / "test_data" / "sls" / "sls.madx"
-FIELD_MAP_FILE = _REPO_ROOT / "test_data" / "sls" / "simona_field_map.txt"
+FIELD_MAP_FILE = _REPO_ROOT / "test_data" / "sls" / "undulator_field_map.txt"
 
 
 def default_particle_ref():
@@ -109,33 +125,32 @@ def new_ring(p0=None):
     return env, line
 
 
-def _setup_corrector_env(env):
-    for key in (
-        "k0l_corr1",
-        "k0l_corr2",
-        "k0l_corr3",
-        "k0l_corr4",
-        "k0sl_corr1",
-        "k0sl_corr2",
-        "k0sl_corr3",
-        "k0sl_corr4",
-    ):
-        env[key] = 0.0
-
-    env.new("corr1", xt.Multipole, knl=["k0l_corr1"], ksl=["k0sl_corr1"])
-    env.new("corr2", xt.Multipole, knl=["k0l_corr2"], ksl=["k0sl_corr2"])
-    env.new("corr3", xt.Multipole, knl=["k0l_corr3"], ksl=["k0sl_corr3"])
-    env.new("corr4", xt.Multipole, knl=["k0l_corr4"], ksl=["k0sl_corr4"])
+def _corr_tag(corr_prefix):
+    return f"_{corr_prefix}" if corr_prefix else ""
 
 
-def _match_orbit_correctors(undulator_line, env, l_wig):
-    _setup_corrector_env(env)
+def _setup_corrector_env(env, corr_prefix=None):
+    tag = _corr_tag(corr_prefix)
+    for i in range(1, 5):
+        env[f"k0l_corr{i}{tag}"] = 0.0
+        env[f"k0sl_corr{i}{tag}"] = 0.0
+        env.new(
+            f"corr{i}{tag}",
+            xt.Multipole,
+            knl=[f"k0l_corr{i}{tag}"],
+            ksl=[f"k0sl_corr{i}{tag}"],
+        )
+
+
+def _match_orbit_correctors(undulator_line, env, l_wig, corr_prefix=None):
+    tag = _corr_tag(corr_prefix)
+    _setup_corrector_env(env, corr_prefix=corr_prefix)
     undulator_line.insert(
         [
-            env.place("corr1", at=0.02),
-            env.place("corr2", at=0.1),
-            env.place("corr3", at=l_wig - 0.1),
-            env.place("corr4", at=l_wig - 0.02),
+            env.place(f"corr1{tag}", at=0.02),
+            env.place(f"corr2{tag}", at=0.1),
+            env.place(f"corr3{tag}", at=l_wig - 0.1),
+            env.place(f"corr4{tag}", at=l_wig - 0.02),
         ],
         s_tol=5e-3,
     )
@@ -149,14 +164,9 @@ def _match_orbit_correctors(undulator_line, env, l_wig):
         include_collective=True,
         vary=xt.VaryList(
             [
-                "k0l_corr1",
-                "k0sl_corr1",
-                "k0l_corr2",
-                "k0sl_corr2",
-                "k0l_corr3",
-                "k0sl_corr3",
-                "k0l_corr4",
-                "k0sl_corr4",
+                f"{kn}{i}{tag}"
+                for i in range(1, 5)
+                for kn in ("k0l_corr", "k0sl_corr")
             ],
             step=1e-6,
         ),
@@ -170,12 +180,19 @@ def _match_orbit_correctors(undulator_line, env, l_wig):
     undulator_line.discard_tracker()
 
 
-def build_splineboris_undulator(env, p0, field_fitter, multipole_order=DEFAULT_MULTIPOLE_ORDER):
+def build_splineboris_undulator(
+    env,
+    p0,
+    field_fitter,
+    multipole_order=DEFAULT_MULTIPOLE_ORDER,
+    shift_x=0.0,
+):
     """SplineBorisSequence line with orbit correctors (007 pattern)."""
     seq = SplineBorisSequence(
         df_fit_pars=field_fitter.df_fit_pars,
         multipole_order=multipole_order,
         steps_per_point=1,
+        shift_x=shift_x,
     )
     undulator_line = seq.to_line(env=env)
     undulator_line.particle_ref = p0.copy()
@@ -189,6 +206,8 @@ def build_multipole_undulator(
     field_fitter,
     multipole_order=DEFAULT_MULTIPOLE_ORDER,
     name_prefix="und_kick",
+    shift_x=0.0,
+    corr_prefix=None,
 ):
     """Thin MultipoleKick undulator with orbit correctors."""
     undulator_line, l_wig = build_multipole_kick_undulator(
@@ -197,8 +216,11 @@ def build_multipole_undulator(
         df_fit_pars=field_fitter.df_fit_pars,
         multipole_order=multipole_order,
         name_prefix=name_prefix,
+        shift_x=shift_x,
     )
-    _match_orbit_correctors(undulator_line, env, l_wig)
+    _match_orbit_correctors(
+        undulator_line, env, l_wig, corr_prefix=corr_prefix or name_prefix
+    )
     return undulator_line, l_wig
 
 
@@ -216,7 +238,7 @@ def configure_tracking_spin(ring):
 def make_offset_bunch(
     ring,
     tw,
-    num_particles=100,
+    num_particles=30,
     seed=0,
     sigma_x=1e-4,
     sigma_px=1e-4,
@@ -224,8 +246,12 @@ def make_offset_bunch(
     sigma_py=1e-4,
     sigma_zeta=1e-4,
     sigma_delta=1e-4,
+    spin_pol_y=1.0,
+    spin_seed=None,
 ):
-    """Particles on CO + Gaussian offsets; common spin along y."""
+    """Particles on CO + Gaussian offsets; spin with fixed s_y and uniform s_x, s_z."""
+    if not 0.0 <= spin_pol_y <= 1.0:
+        raise ValueError(f"spin_pol_y must be in [0, 1], got {spin_pol_y}")
     rng = np.random.default_rng(seed)
     n = num_particles
 
@@ -244,9 +270,18 @@ def make_offset_bunch(
         zeta=draws(sigma_zeta),
         delta=draws(sigma_delta),
     )
-    particles.spin_x = 0.0
-    particles.spin_y = 1.0
-    particles.spin_z = 0.0
+    spin_pol_y = float(spin_pol_y)
+    rho_xz = np.sqrt(max(0.0, 1.0 - spin_pol_y**2))
+    if rho_xz == 0.0:
+        particles.spin_x = 0.0
+        particles.spin_y = spin_pol_y
+        particles.spin_z = 0.0
+    else:
+        spin_rng = np.random.default_rng(spin_seed if spin_seed is not None else seed + 1)
+        phi = spin_rng.uniform(0.0, 2.0 * np.pi, n)
+        particles.spin_x = rho_xz * np.cos(phi)
+        particles.spin_y = spin_pol_y
+        particles.spin_z = rho_xz * np.sin(phi)
     return particles
 
 
