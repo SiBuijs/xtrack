@@ -754,3 +754,93 @@ def test_borissolenoid_variable_solenoid_radiation():
             0.5 * (this_dE_ds[:-1] + this_dE_ds[1:]) * this_dy_ds * np.diff(mon.s[i_part, :]) / p0.p0c[0],
             rtol=0, atol=5e-2 * (np.max(this_emitted_dpy) - np.min(this_emitted_dpy)),
         )
+
+
+def test_borissolenoid_split_into_segments():
+    sol = xt.BorisSolenoid(
+        **SOLENOID_MODEL_PARAMS,
+        length=INTERVAL,
+        n_steps=N_STEPS,
+    )
+    segments = sol.split_into_segments([0.25, 0.25, 0.25, 0.25])
+    assert len(segments) == 4
+    assert np.isclose(sum(seg.length for seg in segments), INTERVAL)
+    assert sum(seg.n_steps for seg in segments) == N_STEPS
+    for seg in segments:
+        assert seg.L_coil == SOLENOID_MODEL_PARAMS["L_coil"]
+        assert seg.a == SOLENOID_MODEL_PARAMS["a"]
+        assert seg.B0 == SOLENOID_MODEL_PARAMS["B0"]
+        assert seg.z0 == SOLENOID_MODEL_PARAMS["z0"]
+
+
+@fix_random_seed(645284)
+def test_borissolenoid_slicing_tracking_equivalence():
+    skip_if_forbid_compile()
+
+    delta = np.array([0, 4])
+    p0 = xt.Particles(
+        mass0=xt.ELECTRON_MASS_EV,
+        q0=1,
+        energy0=45.6e9 / 1000,
+        x=[-1e-3, -1e-3],
+        px=-1e-3 * (1 + delta),
+        y=1e-3,
+        delta=delta,
+    )
+
+    sol = xt.BorisSolenoid(
+        **SOLENOID_MODEL_PARAMS,
+        length=INTERVAL,
+        n_steps=N_STEPS,
+    )
+    line = xt.Line(elements=[sol])
+    line.build_tracker()
+
+    p_unsliced = p0.copy()
+    line.track(p_unsliced)
+
+    line_sliced = line.copy()
+    line_sliced.slice_thick_elements([
+        xt.Strategy(
+            slicing=xt.Uniform(8, mode='thick'),
+            element_type=xt.BorisSolenoid,
+        ),
+    ])
+    line_sliced.build_tracker()
+
+    p_sliced = p0.copy()
+    line_sliced.track(p_sliced)
+
+    for name in ('x', 'y', 'px', 'py', 'zeta'):
+        xo.assert_allclose(
+            getattr(p_unsliced, name),
+            getattr(p_sliced, name),
+            rtol=0.0,
+            atol=1e-5,
+        )
+
+
+def test_borissolenoid_slicing_line_structure():
+    sol = xt.BorisSolenoid(
+        **SOLENOID_MODEL_PARAMS,
+        length=INTERVAL,
+        n_steps=N_STEPS,
+    )
+    line = xt.Line(elements=[sol], element_names=['sol'])
+    length_before = line.get_length()
+
+    line.slice_thick_elements([
+        xt.Strategy(
+            slicing=xt.Uniform(5, mode='thick'),
+            element_type=xt.BorisSolenoid,
+        ),
+    ])
+
+    assert line.get_length() == length_before
+    for ii in range(5):
+        assert f'sol..{ii}' in line.element_names
+        assert isinstance(line[f'sol..{ii}'], xt.BorisSolenoid)
+
+    tt = line.get_table()
+    slice_mask = np.array([name.startswith('sol..') for name in tt.name])
+    assert np.all(tt.element_type[slice_mask] == 'BorisSolenoid')

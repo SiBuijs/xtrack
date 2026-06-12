@@ -2828,6 +2828,58 @@ class BorisSolenoid(BeamElement):
             return float(bx), float(by), float(bz)
         return bx, by, bz
 
+    def split_into_segments(self, weights, _buffer=None):
+        """Return a list of BorisSolenoid segments covering the integration interval."""
+        weights = list(weights)
+        if len(weights) == 0:
+            raise ValueError("weights must contain at least one segment")
+
+        total_length = self.length
+        total_n_steps = self.n_steps
+        n_seg = len(weights)
+
+        lengths = []
+        n_steps_list = []
+        length_sum = 0.0
+        steps_sum = 0
+
+        for i, w in enumerate(weights):
+            if i < n_seg - 1:
+                length_i = total_length * w
+                n_steps_i = max(1, int(round(total_n_steps * w)))
+                lengths.append(length_i)
+                n_steps_list.append(n_steps_i)
+                length_sum += length_i
+                steps_sum += n_steps_i
+            else:
+                lengths.append(total_length - length_sum)
+                n_steps_list.append(total_n_steps - steps_sum)
+
+        common = dict(
+            L_coil=self.L_coil,
+            a=self.a,
+            B0=self.B0,
+            z0=self.z0,
+            shift_x=self.shift_x,
+            shift_y=self.shift_y,
+            radiation_flag=self.radiation_flag,
+        )
+        if _buffer is not None:
+            common['_buffer'] = _buffer
+
+        segments = []
+        for length_i, n_steps_i in zip(lengths, n_steps_list):
+            if n_steps_i < 1:
+                raise ValueError(
+                    f"Cannot split n_steps={total_n_steps} into {n_seg} segments"
+                )
+            segments.append(BorisSolenoid(
+                length=length_i,
+                n_steps=n_steps_i,
+                **common,
+            ))
+        return segments
+
 class TempRF(_HasKnlKsl, _HasModelRF, _HasIntegrator, BeamElement):
 
     isthick = True
