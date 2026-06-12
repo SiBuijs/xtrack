@@ -52,7 +52,7 @@ void BorisSolenoid_single_particle(
     double px = px_r * P0;
     double py = py_r * P0;
 
-    const double q_coulomb = q0 * qe;
+    const double q_coulomb = q0 * charge_ratio * qe;
 
     const double L = length;
     const double ds = L / (double)n_steps;
@@ -193,7 +193,8 @@ void BorisSolenoid_single_particle(
 
         s_local += ds;
 
-        const double dt = ds / ps * gamma * mass_kg;
+        // Exact time along the frozen-field helix (P_z conserved over the step).
+        const double dt = h * gamma * mass_kg / P_z;
         zeta += ds - dt * c * beta0;
     }
 

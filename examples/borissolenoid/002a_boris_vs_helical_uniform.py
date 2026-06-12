@@ -181,6 +181,7 @@ def track_helical_uniform(p, n_steps, length, Bx_f, By_f, Bz_f):
     beta0 = _scalar(p.beta0)
     energy0 = _scalar(p.energy0)
     q0 = _scalar(p.q0)
+    charge_ratio = _scalar(p.charge_ratio)
     delta = _scalar(p.delta)
 
     P0 = p0c * qe / clight
@@ -190,7 +191,7 @@ def track_helical_uniform(p, n_steps, length, Bx_f, By_f, Bz_f):
     y = _scalar(p.y)
     zeta = _scalar(p.zeta)
 
-    q_coulomb = q0 * qe
+    q_coulomb = q0 * charge_ratio * qe
     mass_kg = mass0 * qe / clight**2
     P = P0 * (1.0 + delta)
     gamma = energy0 * (1.0 + delta) / mass0
@@ -212,6 +213,7 @@ def track_helical_uniform(p, n_steps, length, Bx_f, By_f, Bz_f):
         if B_mag < 1e-30 or abs(Bz_f) < 1e-30:
             x += px * inv_ps * ds
             y += py * inv_ps * ds
+            dt = ds / ps * gamma * mass_kg
         else:
             P_z = (Bx_f * px + By_f * py + Bz_f * ps) / B_mag
             if abs(P_z) < 1e-30:
@@ -238,12 +240,12 @@ def track_helical_uniform(p, n_steps, length, Bx_f, By_f, Bz_f):
             px, py, _ = _vec_to_lab(
                 Bx_f, By_f, Bz_f, B_mag, B_perp, px_z, py_z, P_z
             )
+            dt = h * gamma * mass_kg / P_z
 
         ps = np.sqrt(max(P**2 - px**2 - py**2, 0.0))
         if ps == 0.0:
             break
         s_local += ds
-        dt = ds / ps * gamma * mass_kg
         zeta += ds - dt * clight * beta0
 
     return {

@@ -184,7 +184,7 @@ def _track_borissolenoid_py(p, L_coil, a, B0, z0, length, n_steps, shift_x=0.0, 
         x = _pval("x", ip)
         y = _pval("y", ip)
         zeta = _pval("zeta", ip)
-        q_coulomb = q0 * qe_c
+        q_coulomb = q0 * charge_ratio * qe_c
         mass_kg = mass0 * mass_ratio * qe_c / c**2
         s_entry = _pval("s", ip)
         s_local = 0.0
@@ -252,7 +252,7 @@ def _track_borissolenoid_py(p, L_coil, a, B0, z0, length, n_steps, shift_x=0.0, 
                 break
 
             s_local += ds
-            dt = ds / ps * gamma * mass_kg
+            dt = h * gamma * mass_kg / P_z
             zeta += ds - dt * c * beta0
 
         p.x[ip] = x
