@@ -56,6 +56,7 @@ static void borissolenoid_test_helical_step(
         &x_z, &y_z, &px_z, &py_z,
         B_mag, P_z, q_coulomb, h
     );
+    z_z += h;
 
     double x_lab;
     double y_lab;

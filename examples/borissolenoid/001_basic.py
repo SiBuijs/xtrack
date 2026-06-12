@@ -12,8 +12,7 @@ This example:
 - builds a ``BorisSolenoid`` and checks ``get_field`` against the Python
   reference ``SolenoidField``,
 - tracks particles through a single-element line,
-- benchmarks the result against the slow Python ``BorisSpatialIntegrator``,
-- plots the angle between **B** and the s-axis along the BorisSpatial trajectory.
+- benchmarks the result against the slow Python ``BorisSpatialIntegrator``.
 """
 
 import time
@@ -94,7 +93,7 @@ p0 = xt.Particles(
 line = xt.Line(elements=[solenoid])
 
 t0 = time.perf_counter()
-line.build_tracker()
+line.build_tracker(use_prebuilt_kernels=False)
 t_build = time.perf_counter() - t0
 
 p_xt = p0.copy()
@@ -224,31 +223,4 @@ for i in range(n_part):
 
 fig.tight_layout()
 plt.savefig("borissolenoid_trajectory_comparison.png", dpi=150)
-plt.show()
-
-# ---------------------------------------------------------------
-# Magnetic field tilt along BorisSpatial trajectory
-# ---------------------------------------------------------------
-# Angle between B and the s-axis: arctan(|B_transverse| / B_s)
-
-bx_path, by_path, bz_path = sf.get_field(x_boris, y_boris, s_boris)
-b_perp = np.sqrt(bx_path**2 + by_path**2)
-angle_deg = np.degrees(np.arctan2(b_perp, bz_path))
-
-fig, axes = plt.subplots(n_part, 1, figsize=(10, 3.5 * n_part), squeeze=False)
-
-for i in range(n_part):
-    ax = axes[i, 0]
-    ax.plot(s_boris[:, i], angle_deg[:, i], color=colors[i], linewidth=1.5)
-    ax.axvline(z0 - L_coil / 2, color="k", ls=":", alpha=0.4)
-    ax.axvline(z0 + L_coil / 2, color="k", ls=":", alpha=0.4)
-    ax.set_xlabel("s [m]")
-    ax.set_ylabel(r"$\angle(\mathbf{B}, \hat{s})$ [deg]")
-    ax.set_title(
-        f"Particle {i} (delta={delta[i]}): field tilt along BorisSpatial trajectory"
-    )
-    ax.grid(True, alpha=0.3)
-
-fig.tight_layout()
-plt.savefig("borissolenoid_field_angle.png", dpi=150)
 plt.show()

@@ -151,6 +151,7 @@ void BorisSolenoid_single_particle(
             q_coulomb,
             h
         );
+        z_z += h;
 
         double x_new;
         double y_new;

@@ -153,6 +153,7 @@ int borissolenoid_vec_to_lab(
 // Pure helical exponential map in the B-aligned (zeta) frame: B_x = B_y = 0,
 // B_z = B_mag constant, P_z conserved. Arc-length step h along B.
 // Uses kappa = q B / P_z and stable sin(theta)/(qB) = (h/P_z) sinc(theta).
+// Caller must advance the B-parallel position coordinate by h after this step.
 GPUFUN
 void borissolenoid_helical_F_step(
     double* x,
