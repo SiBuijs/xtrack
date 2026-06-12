@@ -34,7 +34,7 @@ a = 0.3           # coil radius [m]
 B0 = 1.5          # on-axis peak field at coil centre [T]
 z0 = 20.0         # coil centre in global s [m]
 length = 30.0     # Boris integration extent [m]
-n_steps = 20000
+n_steps = 40000
 
 solenoid = xt.BorisSolenoid(
     L_coil=L_coil,

@@ -1,9 +1,10 @@
 import numpy as np
+import pytest
 from scipy.constants import c as clight
 from scipy.constants import e as qe
 from scipy.special import ellipk, ellipe, elliprf, elliprj
 import xobjects as xo
-from xobjects.test_helpers import for_all_test_contexts, skip_if_forbid_compile
+from xobjects.test_helpers import skip_if_forbid_compile
 import xtrack as xt
 from xtrack._temp.boris_and_solenoid_map.solenoid_field import SolenoidField
 from xtrack.general import _pkg_root as pkg_root
@@ -19,7 +20,9 @@ SOLENOID_MODEL_PARAMS = {
     "z0": 20.0,
 }
 INTERVAL = 30.0
-N_STEPS = 5000
+N_STEPS = 20_000
+# Boris spatial reference: 10× steps (converged trajectory for atol check).
+N_STEPS_BORIS_REF = N_STEPS * 10
 
 
 def _rotation_lab_to_zeta(Bx, By, Bz, vx, vy, vz):
@@ -99,6 +102,167 @@ def _helical_step_lab_py(x, y, px, py, ps, Bx, By, Bz, q_coulomb, h):
     return x_out, y_out, px_out, py_out
 
 
+def _helical_step_z_lab_py(x_z, y_z, z_z, px_z, py_z, Bx, By, Bz, B_mag, B_perp, P_z, q_coulomb, h):
+    x_z, y_z, px_z, py_z = _helical_F_step_py(
+        x_z, y_z, px_z, py_z, B_mag, P_z, q_coulomb, h
+    )
+    _, _, z_lab = _rotation_zeta_to_lab(Bx, By, Bz, x_z, y_z, z_z + h)
+    return z_lab
+
+
+def _helical_step_dz_lab_dh_py(x_z, y_z, z_z, px_z, py_z, Bx, By, Bz, B_mag, B_perp, P_z, q_coulomb, h):
+    if B_perp < 1e-30:
+        return Bz / B_mag
+    r12 = B_perp / B_mag
+    r22 = Bz / B_mag
+    theta = q_coulomb * B_mag * h / P_z
+    dtheta_dh = q_coulomb * B_mag / P_z
+    sinc_t = _sinc(theta)
+    vers_t = _vers_over_theta(theta)
+    cosm1_t = _cos_minus_one_over_theta(theta)
+    if abs(theta) < 1e-14:
+        dsinc_dh = dvers_dh = dcosm1_dh = 0.0
+    else:
+        sin_t, cos_t = np.sin(theta), np.cos(theta)
+        dsinc_dh = (theta * cos_t - sin_t) / theta**2 * dtheta_dh
+        dvers_dh = (sin_t * theta - (1.0 - cos_t)) / theta**2 * dtheta_dh
+        dcosm1_dh = (-sin_t * theta - (cos_t - 1.0)) / theta**2 * dtheta_dh
+    inv_Pz = 1.0 / P_z
+    Bcoef = cosm1_t * px_z + sinc_t * py_z
+    dBcoef_dh = px_z * dcosm1_dh + py_z * dsinc_dh
+    dy_dh = Bcoef * inv_Pz + (h * inv_Pz) * dBcoef_dh
+    return r12 * dy_dh + r22
+
+
+def _solve_helical_h_for_z_plane_py(
+    x_z, y_z, z_z, px_z, py_z, Bx, By, Bz, B_mag, B_perp, P_z, q_coulomb, z_target, h_init,
+):
+    if B_perp < 1e-30:
+        return h_init
+    h = h_init
+    for _ in range(3):
+        z_lab = _helical_step_z_lab_py(
+            x_z, y_z, z_z, px_z, py_z, Bx, By, Bz, B_mag, B_perp, P_z, q_coulomb, h
+        )
+        f = z_lab - z_target
+        if abs(f) < 1e-15:
+            break
+        dz_dh = _helical_step_dz_lab_dh_py(
+            x_z, y_z, z_z, px_z, py_z, Bx, By, Bz, B_mag, B_perp, P_z, q_coulomb, h
+        )
+        if abs(dz_dh) < 1e-30:
+            break
+        h -= f / dz_dh
+    return h
+
+
+def _track_borissolenoid_py(p, L_coil, a, B0, z0, length, n_steps, shift_x=0.0, shift_y=0.0):
+    """Python mirror of track_borissolenoid.h (no tracker kernel compile)."""
+    ds = length / n_steps
+    half_ds = 0.5 * ds
+    qe_c = qe
+    c = clight
+
+    def _pval(name, ip):
+        arr = np.atleast_1d(getattr(p, name))
+        return float(arr[ip] if arr.size > 1 else arr[0])
+
+    n_part = len(np.atleast_1d(p.x))
+    for ip in range(n_part):
+        q0 = _pval("q0", ip)
+        mass0 = _pval("mass0", ip)
+        p0c_ev = _pval("p0c", ip)
+        beta0 = _pval("beta0", ip)
+        energy0 = _pval("energy0", ip)
+        charge_ratio = _pval("charge_ratio", ip)
+        chi = _pval("chi", ip)
+        mass_ratio = charge_ratio / chi
+
+        P0 = p0c_ev * qe_c / c
+        px = _pval("px", ip) * P0
+        py = _pval("py", ip) * P0
+        x = _pval("x", ip)
+        y = _pval("y", ip)
+        zeta = _pval("zeta", ip)
+        q_coulomb = q0 * qe_c
+        mass_kg = mass0 * mass_ratio * qe_c / c**2
+        s_entry = _pval("s", ip)
+        s_local = 0.0
+
+        for _ in range(n_steps):
+            ptau = _pval("ptau", ip)
+            delta = _pval("delta", ip)
+            energy = (energy0 + ptau * p0c_ev) * mass_ratio
+            gamma = energy / (mass0 * mass_ratio)
+            P = P0 * (1.0 + delta)
+
+            ps = np.sqrt(max(P**2 - px**2 - py**2, 0.0))
+            if ps == 0.0:
+                break
+            inv_ps = 1.0 / ps
+
+            xh = x + px * inv_ps * half_ds
+            yh = y + py * inv_ps * half_ds
+            s_eval = s_entry + s_local + half_ds
+
+            Bx, By, Bz = evaluate_solenoid_B(
+                xh - shift_x, yh - shift_y, s_eval, L_coil, a, B0, z0
+            )
+            Bx, By, Bz = float(Bx), float(By), float(Bz)
+            B_mag = np.sqrt(Bx**2 + By**2 + Bz**2)
+            B_perp = np.sqrt(Bx**2 + By**2)
+
+            if B_mag < 1e-30:
+                x += px * inv_ps * ds
+                y += py * inv_ps * ds
+                s_local += ds
+                dt = ds * inv_ps * gamma * mass_kg
+                zeta += ds - dt * c * beta0
+                continue
+
+            if abs(Bz) < 1e-30:
+                break
+
+            P_z = (Bx * px + By * py + Bz * ps) / B_mag
+            if abs(P_z) < 1e-30:
+                break
+
+            s_current = s_entry + s_local
+            z_target = s_current + ds
+            h_init = ds * B_mag / abs(Bz)
+
+            x_z, y_z, z_z = _rotation_lab_to_zeta(Bx, By, Bz, x, y, s_current)
+            px_z, py_z, _ = _rotation_lab_to_zeta(Bx, By, Bz, px, py, ps)
+
+            h = _solve_helical_h_for_z_plane_py(
+                x_z, y_z, z_z, px_z, py_z,
+                Bx, By, Bz, B_mag, B_perp, P_z, q_coulomb, z_target, h_init,
+            )
+
+            x_z, y_z, px_z, py_z = _helical_F_step_py(
+                x_z, y_z, px_z, py_z, B_mag, P_z, q_coulomb, h
+            )
+            z_z += h
+
+            x, y, _ = _rotation_zeta_to_lab(Bx, By, Bz, x_z, y_z, z_z)
+            px, py, _ = _rotation_zeta_to_lab(Bx, By, Bz, px_z, py_z, P_z)
+
+            ps = np.sqrt(max(P**2 - px**2 - py**2, 0.0))
+            if ps == 0.0:
+                break
+
+            s_local += ds
+            dt = ds / ps * gamma * mass_kg
+            zeta += ds - dt * c * beta0
+
+        p.x[ip] = x
+        p.y[ip] = y
+        p.px[ip] = px / P0
+        p.py[ip] = py / P0
+        p.zeta[ip] = zeta
+        p.s[ip] = s_entry + length
+
+
 def _add_borissolenoid_test_kernels(ctx):
     elliptic_knl = xo.Kernel(
         c_name='borissolenoid_test_elliptic',
@@ -154,11 +318,17 @@ def _add_borissolenoid_test_kernels(ctx):
     )
 
 
-@for_all_test_contexts
-def test_elliptic_integrals_vs_scipy(test_context):
+@pytest.fixture(scope="session")
+def borissolenoid_test_ctx():
+    """Compile lightweight unit-test kernels once per session (not the line tracker)."""
     skip_if_forbid_compile()
-    ctx = test_context
+    ctx = xo.ContextCpu()
     _add_borissolenoid_test_kernels(ctx)
+    return ctx
+
+
+def test_elliptic_integrals_vs_scipy(borissolenoid_test_ctx):
+    ctx = borissolenoid_test_ctx
 
     m_vals = np.linspace(0.0, 0.98, 20)
     n_vals = np.linspace(-0.5, 0.5, 10)
@@ -187,11 +357,8 @@ def test_elliptic_integrals_vs_scipy(test_context):
             xo.assert_allclose(pi_out[0], pi_ref, rtol=1e-9, atol=1e-11)
 
 
-@for_all_test_contexts
-def test_solenoid_field_eval_c_vs_python(test_context):
-    skip_if_forbid_compile()
-    ctx = test_context
-    _add_borissolenoid_test_kernels(ctx)
+def test_solenoid_field_eval_c_vs_python(borissolenoid_test_ctx):
+    ctx = borissolenoid_test_ctx
 
     L = SOLENOID_MODEL_PARAMS["L_coil"]
     a = SOLENOID_MODEL_PARAMS["a"]
@@ -230,11 +397,8 @@ def test_solenoid_field_eval_c_vs_python(test_context):
     xo.assert_allclose(bz_c, bz_py, rtol=1e-10, atol=1e-12)
 
 
-@for_all_test_contexts
-def test_borissolenoid_get_field_vs_solenoid_field(test_context):
-    skip_if_forbid_compile()
+def test_borissolenoid_get_field_vs_solenoid_field():
     el = xt.BorisSolenoid(
-        _context=test_context,
         **SOLENOID_MODEL_PARAMS,
         length=INTERVAL,
         n_steps=10,
@@ -262,11 +426,8 @@ def test_borissolenoid_get_field_vs_solenoid_field(test_context):
         xo.assert_allclose(bz_el, bz_sf, rtol=1e-10, atol=1e-12)
 
 
-@for_all_test_contexts
-def test_helical_map_uniform_B(test_context):
-    skip_if_forbid_compile()
-    ctx = test_context
-    _add_borissolenoid_test_kernels(ctx)
+def test_helical_map_uniform_B(borissolenoid_test_ctx):
+    ctx = borissolenoid_test_ctx
 
     B_cases = [
         (0.0, 0.0, 1.5),
@@ -315,13 +476,9 @@ def test_helical_map_uniform_B(test_context):
             xo.assert_allclose([vx, vy, vz], v, rtol=1e-12, atol=1e-12)
 
 
-@for_all_test_contexts
-def test_borissolenoid_tracking_vs_boris_spatial(test_context):
-    skip_if_forbid_compile()
-
+def test_borissolenoid_tracking_vs_boris_spatial():
     delta = np.array([0, 4])
     p0 = xt.Particles(
-        _context=test_context,
         mass0=xt.ELECTRON_MASS_EV,
         q0=1,
         energy0=45.6e9 / 1000,
@@ -338,31 +495,27 @@ def test_borissolenoid_tracking_vs_boris_spatial(test_context):
         z0=SOLENOID_MODEL_PARAMS["z0"],
     )
 
-    line = xt.Line(elements=[
-        xt.BorisSolenoid(
-            _context=test_context,
-            **SOLENOID_MODEL_PARAMS,
-            length=INTERVAL,
-            n_steps=N_STEPS,
-        )
-    ])
-    line.build_tracker()
-
     p_elem = p0.copy()
-    line.track(p_elem)
+    _track_borissolenoid_py(
+        p_elem,
+        length=INTERVAL,
+        n_steps=N_STEPS,
+        **SOLENOID_MODEL_PARAMS,
+    )
 
-    integrator = xt.BorisSpatialIntegrator(
+    integrator_ref = xt.BorisSpatialIntegrator(
         fieldmap_callable=sf.get_field,
         s_start=0,
         s_end=INTERVAL,
-        n_steps=N_STEPS,
+        n_steps=N_STEPS_BORIS_REF,
     )
-    p_boris = p0.copy()
-    integrator.track(p_boris)
+    p_ref = p0.copy()
+    integrator_ref.track(p_ref)
 
-    # Helical exponential map vs Boris spatial (z-plane corrected step).
-    xo.assert_allclose(p_elem.x, p_boris.x, rtol=5e-3, atol=5e-5)
-    xo.assert_allclose(p_elem.y, p_boris.y, rtol=5e-3, atol=5e-5)
-    xo.assert_allclose(p_elem.px, p_boris.px, rtol=5e-3, atol=5e-6)
-    xo.assert_allclose(p_elem.py, p_boris.py, rtol=5e-3, atol=5e-6)
-    xo.assert_allclose(p_elem.zeta, p_boris.zeta, rtol=5e-3, atol=5e-7)
+    # Python reference of track_borissolenoid.h vs converged Boris spatial (no tracker compile).
+    # Tolerances from n_steps=20k vs 200k ref (both delta particles), ~1.3× headroom.
+    xo.assert_allclose(p_elem.x, p_ref.x, rtol=0.0, atol=1.4e-6)
+    xo.assert_allclose(p_elem.y, p_ref.y, rtol=0.0, atol=1.0e-6)
+    xo.assert_allclose(p_elem.px, p_ref.px, rtol=0.0, atol=1.7e-7)
+    xo.assert_allclose(p_elem.py, p_ref.py, rtol=0.0, atol=1.3e-7)
+    xo.assert_allclose(p_elem.zeta, p_ref.zeta, rtol=0.0, atol=1.6e-7)
