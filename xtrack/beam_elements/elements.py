@@ -2729,6 +2729,9 @@ class BorisSolenoid(BeamElement):
         Horizontal offset of the solenoid axis [m]. Default is ``0``.
     shift_y : float, optional
         Vertical offset of the solenoid axis [m]. Default is ``0``.
+    radiation_flag : int, optional
+        Radiation model flag. ``0`` disables radiation, non-zero values select
+        synchrotron radiation models as for other thick elements.
     '''
 
     isthick = True
@@ -2744,7 +2747,11 @@ class BorisSolenoid(BeamElement):
         'n_steps': xo.Int64,
         'shift_x': xo.Field(xo.Float64, 0),
         'shift_y': xo.Field(xo.Float64, 0),
+        'radiation_flag': xo.Int64,
     }
+
+    _depends_on = [RandomUniformAccurate, RandomExponential]
+    _internal_record_class = SynchrotronRadiationRecord
 
     _extra_c_sources = [
         '#include "xtrack/beam_elements/elements_src/borissolenoid.h"',
@@ -2765,6 +2772,8 @@ class BorisSolenoid(BeamElement):
         if not np.isfinite(a) or a <= 0:
             raise ValueError(f"a must be finite and > 0, got {a}")
 
+        radiation_flag = kwargs.pop('radiation_flag', 0)
+
         super().__init__(
             L_coil=float(L_coil),
             a=float(a),
@@ -2774,6 +2783,7 @@ class BorisSolenoid(BeamElement):
             n_steps=int(n_steps),
             shift_x=float(shift_x),
             shift_y=float(shift_y),
+            radiation_flag=radiation_flag,
             **kwargs,
         )
 

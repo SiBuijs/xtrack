@@ -4,13 +4,28 @@ from scipy.constants import c as clight
 from scipy.constants import e as qe
 from scipy.special import ellipk, ellipe, elliprf, elliprj
 import xobjects as xo
-from xobjects.test_helpers import skip_if_forbid_compile
+from xobjects.test_helpers import skip_if_forbid_compile, fix_random_seed
 import xtrack as xt
 from xtrack._temp.boris_and_solenoid_map.solenoid_field import SolenoidField
 from xtrack.general import _pkg_root as pkg_root
 from xtrack.beam_elements.borissolenoid_src.solenoid_B_field_eval_python import (
     evaluate_solenoid_B,
 )
+
+# Same spin cases as test_splineboris / test_spin.py (inlined to avoid cross-test imports).
+SPIN_TEST_CASES = [
+    {'case': {'x': 0.001, 'px': 1e-05, 'y': 0.002, 'py': 2e-05, 'delta': 0.001, 'spin_x': 0.1, 'spin_z': 0.2}, 'id': 'base'},
+    {'case': {'x': 0.001, 'px': 1e-05, 'y': 0.002, 'py': 2e-05, 'delta': -0.01, 'spin_x': 0.1, 'spin_z': 0.2}, 'id': 'delta=-0.01'},
+    {'case': {'x': 0.001, 'px': 1e-05, 'y': 0.002, 'py': 2e-05, 'delta': -0.005, 'spin_x': 0.1, 'spin_z': 0.2}, 'id': 'delta=-0.005'},
+    {'case': {'x': 0.001, 'px': 1e-05, 'y': 0.002, 'py': 2e-05, 'delta': 0, 'spin_x': 0.1, 'spin_z': 0.2}, 'id': 'delta=0'},
+    {'case': {'x': 0.001, 'px': 1e-05, 'y': 0.002, 'py': 2e-05, 'delta': 0.005, 'spin_x': 0.1, 'spin_z': 0.2}, 'id': 'delta=0.005'},
+    {'case': {'x': 0.001, 'px': 1e-05, 'y': 0.002, 'py': 2e-05, 'delta': 0.01, 'spin_x': 0.1, 'spin_z': 0.2}, 'id': 'delta=0.01'},
+    {'case': {'x': 0.001, 'px': -0.03, 'y': 0.002, 'py': -0.02, 'delta': 0.001, 'spin_x': 0.1, 'spin_z': 0.2}, 'id': 'px=-0.03, py=-0.02'},
+    {'case': {'x': 0.001, 'px': -0.015, 'y': 0.002, 'py': -0.01, 'delta': 0.001, 'spin_x': 0.1, 'spin_z': 0.2}, 'id': 'px=-0.015, py=-0.01'},
+    {'case': {'x': 0.001, 'px': 0, 'y': 0.002, 'py': 0, 'delta': 0.001, 'spin_x': 0.1, 'spin_z': 0.2}, 'id': 'px=0, py=0'},
+    {'case': {'x': 0.001, 'px': 0.015, 'y': 0.002, 'py': 0.01, 'delta': 0.001, 'spin_x': 0.1, 'spin_z': 0.2}, 'id': 'px=0.015, py=0.01'},
+    {'case': {'x': 0.001, 'px': 0.03, 'y': 0.002, 'py': 0.02, 'delta': 0.001, 'spin_x': 0.1, 'spin_z': 0.2}, 'id': 'px=0.03, py=0.02'},
+]
 
 
 SOLENOID_MODEL_PARAMS = {
@@ -23,6 +38,9 @@ INTERVAL = 30.0
 N_STEPS = 20_000
 # Boris spatial reference: 10× steps (converged trajectory for atol check).
 N_STEPS_BORIS_REF = N_STEPS * 10
+# Radiation comparison: match VariableSolenoid z-axis discretisation in test_splineboris.
+RADIATION_N_STEPS = 5000
+RADIATION_Z_POINT_COUNT = RADIATION_N_STEPS + 1
 
 
 def _rotation_lab_to_zeta(Bx, By, Bz, vx, vy, vz):
@@ -519,3 +537,220 @@ def test_borissolenoid_tracking_vs_boris_spatial():
     xo.assert_allclose(p_elem.px, p_ref.px, rtol=0.0, atol=1.7e-7)
     xo.assert_allclose(p_elem.py, p_ref.py, rtol=0.0, atol=1.3e-7)
     xo.assert_allclose(p_elem.zeta, p_ref.zeta, rtol=0.0, atol=1.6e-7)
+
+
+@pytest.mark.parametrize(
+    'case,atol',
+    zip(
+        [case['case'].copy() for case in SPIN_TEST_CASES],
+        [5e-8, 5e-8, 5e-8, 5e-8, 5e-8, 5e-8, 3e-5, 2e-5, 5e-8, 2e-5, 3e-5],
+    ),
+    ids=[case['id'] for case in SPIN_TEST_CASES],
+)
+def test_borissolenoid_spin_uniform_solenoid(case, atol):
+    """Spin precession vs UniformSolenoid in the solenoid body (on-axis uniform B)."""
+    case['spin_y'] = np.sqrt(1 - case['spin_x']**2 - case['spin_z']**2)
+
+    p = xt.Particles(
+        p0c=700e9, mass0=xt.ELECTRON_MASS_EV,
+        anomalous_magnetic_moment=0.00115965218128,
+        **case,
+    )
+    p_ref = p.copy()
+
+    Bz_T = 0.05
+    ks = Bz_T / (p.p0c[0] / clight / p.q0)
+
+    length = 0.02
+    n_steps = 1000
+
+    env = xt.Environment()
+    line_ref = env.new_line(
+        components=[
+            env.new('mysolenoid', xt.UniformSolenoid, length=length, ks=ks),
+            env.new('mymarker', xt.Marker),
+        ]
+    )
+    line_ref.configure_spin(spin_model='auto')
+    line_ref.track(p_ref)
+
+    # Long solenoid centred on the element so B ≈ B0 on axis over the interval.
+    borissolenoid = xt.BorisSolenoid(
+        L_coil=10.0,
+        a=0.3,
+        B0=Bz_T,
+        z0=length / 2,
+        length=length,
+        n_steps=n_steps,
+    )
+
+    line_boris = xt.Line(elements=[borissolenoid])
+    line_boris.particle_ref = p.copy()
+    line_boris.build_tracker()
+    line_boris.configure_spin(spin_model='auto')
+    line_boris.track(p)
+
+    xo.assert_allclose(p.spin_x[0], p_ref.spin_x[0], atol=atol, rtol=0)
+    xo.assert_allclose(p.spin_y[0], p_ref.spin_y[0], atol=atol, rtol=0)
+    xo.assert_allclose(p.spin_z[0], p_ref.spin_z[0], atol=atol, rtol=0)
+
+
+@fix_random_seed(645284)
+def test_borissolenoid_variable_solenoid_radiation():
+    """Mean synchrotron radiation vs VariableSolenoid through a solenoid fringe."""
+    delta = np.array([0, 4])
+    p0 = xt.Particles(
+        mass0=xt.ELECTRON_MASS_EV,
+        q0=1,
+        energy0=45.6e9,
+        x=[-5e-3, -5e-3],
+        px=-1e-3 * (1 + delta),
+        y=5e-3,
+        delta=delta,
+    )
+
+    sf = SolenoidField(
+        L=SOLENOID_MODEL_PARAMS["L_coil"],
+        a=SOLENOID_MODEL_PARAMS["a"],
+        B0=SOLENOID_MODEL_PARAMS["B0"],
+        z0=SOLENOID_MODEL_PARAMS["z0"],
+    )
+
+    borissolenoid = xt.BorisSolenoid(
+        **SOLENOID_MODEL_PARAMS,
+        length=INTERVAL,
+        n_steps=RADIATION_N_STEPS,
+    )
+    line_boris = xt.Line(elements=[borissolenoid])
+    line_boris.build_tracker()
+    line_boris.configure_radiation(model='mean')
+
+    p_boris = p0.copy()
+    line_boris.track(p_boris, turn_by_turn_monitor='ONE_TURN_EBE')
+    mon_boris = line_boris.record_last_track
+
+    dE_ds_boris = 0 * mon_boris.ptau
+    dE_ds_boris[:, 1:-1] = -(
+        (mon_boris.ptau[:, 2:] - mon_boris.ptau[:, :-2])
+        / (mon_boris.s[:, 2:] - mon_boris.s[:, :-2])
+        * p_boris.energy0[0]
+    )
+
+    z_axis = np.linspace(0, INTERVAL, RADIATION_Z_POINT_COUNT)
+    Bz_axis = sf.get_field(0 * z_axis, 0 * z_axis, z_axis)[2]
+
+    P0_J = p0.p0c[0] * qe / clight
+    ks = Bz_axis / (P0_J / qe / p0.q0)
+    ks_entry = ks[:-1]
+    ks_exit = ks[1:]
+    dz = z_axis[1] - z_axis[0]
+
+    line_varsol = xt.Line(
+        elements=[
+            xt.VariableSolenoid(length=dz, ks_profile=[ks_entry[ii], ks_exit[ii]])
+            for ii in range(len(z_axis) - 1)
+        ]
+    )
+    line_varsol.build_tracker()
+    line_varsol.configure_radiation(model='mean')
+
+    p_xt = p0.copy()
+    line_varsol.track(p_xt, turn_by_turn_monitor='ONE_TURN_EBE')
+    mon = line_varsol.record_last_track
+
+    p_xt_no_rad = p0.copy()
+    line_varsol.configure_radiation(model=None)
+    line_varsol.track(p_xt_no_rad, turn_by_turn_monitor='ONE_TURN_EBE')
+    mon_no_rad = line_varsol.record_last_track
+
+    Bz_mid = 0.5 * (Bz_axis[:-1] + Bz_axis[1:])
+    Bz_mon = 0 * Bz_axis
+    Bz_mon[1:] = Bz_mid
+
+    Ax = -0.5 * Bz_mon * mon.y
+    Ay = 0.5 * Bz_mon * mon.x
+    ax_ref = Ax * p0.q0 * qe / P0_J
+    ay_ref = Ay * p0.q0 * qe / P0_J
+
+    dx_ds = np.diff(mon.x, axis=1) / np.diff(mon.s, axis=1)
+    dy_ds = np.diff(mon.y, axis=1) / np.diff(mon.s, axis=1)
+
+    dE_ds = 0 * mon.ptau
+    dE_ds[:, 1:-1] = -(
+        (mon.ptau[:, 2:] - mon.ptau[:, :-2])
+        / (mon.s[:, 2:] - mon.s[:, :-2])
+        * p_xt.energy0[0]
+    )
+
+    emitted_dpx = -(np.diff(mon.kin_px, axis=1) - np.diff(mon_no_rad.kin_px, axis=1))
+    emitted_dpy = -(np.diff(mon.kin_py, axis=1) - np.diff(mon_no_rad.kin_py, axis=1))
+
+    z_check = sf.z0 + sf.L * np.linspace(-2, 2, 1001)
+
+    for i_part in range(len(delta)):
+        dE_boris = (p_boris.ptau[i_part] - p0.ptau[i_part]) * p_boris.p0c[i_part]
+        dE_varsol = (p_xt.ptau[i_part] - p0.ptau[i_part]) * p_xt.p0c[i_part]
+        xo.assert_allclose(dE_boris, dE_varsol, rtol=5e-3, atol=0)
+
+        s_boris_mid = 0.5 * (mon_boris.s[i_part, :-1] + mon_boris.s[i_part, 1:])
+        dx_ds_boris = np.diff(mon_boris.x[i_part, :]) / np.diff(mon_boris.s[i_part, :])
+        dy_ds_boris = np.diff(mon_boris.y[i_part, :]) / np.diff(mon_boris.s[i_part, :])
+
+        s_xsuite = 0.5 * (mon.s[i_part, :-1] + mon.s[i_part, 1:])
+        dx_ds_xsuite = np.diff(mon.x[i_part, :]) / np.diff(mon.s[i_part, :])
+        dy_ds_xsuite = np.diff(mon.y[i_part, :]) / np.diff(mon.s[i_part, :])
+        dE_ds_xsuite = dE_ds[i_part, :]
+
+        dx_ds_xsuite_check = np.interp(z_check, s_xsuite, dx_ds_xsuite)
+        dy_ds_xsuite_check = np.interp(z_check, s_xsuite, dy_ds_xsuite)
+
+        dx_ds_boris_check = np.interp(z_check, s_boris_mid, dx_ds_boris)
+        dy_ds_boris_check = np.interp(z_check, s_boris_mid, dy_ds_boris)
+
+        this_emitted_dpx = emitted_dpx[i_part, :]
+        this_emitted_dpy = emitted_dpy[i_part, :]
+        this_dE_ds = dE_ds[i_part, :]
+        this_dx_ds = dx_ds[i_part, :]
+        this_dy_ds = dy_ds[i_part, :]
+
+        dx_range = np.max(dx_ds_boris_check) - np.min(dx_ds_boris_check)
+        dy_range = np.max(dy_ds_boris_check) - np.min(dy_ds_boris_check)
+        dx_scale = max(
+            np.max(np.abs(dx_ds_boris_check)),
+            np.max(np.abs(dx_ds_xsuite_check)),
+            1e-6,
+        )
+        dy_scale = max(
+            np.max(np.abs(dy_ds_boris_check)),
+            np.max(np.abs(dy_ds_xsuite_check)),
+            1e-6,
+        )
+
+        xo.assert_allclose(
+            dx_ds_xsuite_check, dx_ds_boris_check, rtol=0,
+            atol=max(2.8e-2 * dx_range, 0.15 * dx_scale, 1.5e-4),
+        )
+        xo.assert_allclose(
+            dy_ds_xsuite_check, dy_ds_boris_check, rtol=0,
+            atol=max(2.8e-2 * dy_range, 0.15 * dy_scale, 1.5e-4),
+        )
+
+        xo.assert_allclose(
+            ax_ref[i_part, :], mon.ax[i_part, :],
+            rtol=0, atol=np.max(np.abs(ax_ref) * 3e-2),
+        )
+        xo.assert_allclose(
+            ay_ref[i_part, :], mon.ay[i_part, :],
+            rtol=0, atol=np.max(np.abs(ay_ref) * 3e-2),
+        )
+
+        xo.assert_allclose(
+            this_emitted_dpx,
+            0.5 * (this_dE_ds[:-1] + this_dE_ds[1:]) * this_dx_ds * np.diff(mon.s[i_part, :]) / p0.p0c[0],
+            rtol=0, atol=2e-2 * (np.max(this_emitted_dpx) - np.min(this_emitted_dpx)),
+        )
+        xo.assert_allclose(
+            this_emitted_dpy,
+            0.5 * (this_dE_ds[:-1] + this_dE_ds[1:]) * this_dy_ds * np.diff(mon.s[i_part, :]) / p0.p0c[0],
+            rtol=0, atol=5e-2 * (np.max(this_emitted_dpy) - np.min(this_emitted_dpy)),
+        )
