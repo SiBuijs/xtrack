@@ -9,6 +9,7 @@ See also ``002a_boris_vs_helical_uniform.py`` for a uniform longitudinal field.
 
 import numpy as np
 import matplotlib.pyplot as plt
+import time
 
 import xtrack as xt
 from xtrack._temp.boris_and_solenoid_map.solenoid_field import SolenoidField
@@ -54,7 +55,7 @@ boris_end = {name: np.zeros(n_steps_list.size) for name in plot_coords}
 
 print("Helical (BorisSolenoid) vs BorisSpatialIntegrator, solenoid field, delta = 0")
 print(f"{'n_steps':>8s}  {'ds [mm]':>8s}  {'|dx| [um]':>10s}  {'|dy| [um]':>10s}  "
-      f"{'|dpx|':>10s}  {'|dpy|':>10s}")
+      f"{'|dpx|':>10s}  {'|dpy|':>10s}  {'t_helic [ms]':>12s}  {'t_boris [ms]':>12s}")
 
 for i, n_steps in enumerate(n_steps_list):
     ds = length / n_steps
@@ -71,7 +72,9 @@ for i, n_steps in enumerate(n_steps_list):
     line.build_tracker()
 
     p_helical = p0.copy()
+    t0 = time.perf_counter()
     line.track(p_helical)
+    t_helic = time.perf_counter() - t0
 
     boris = xt.BorisSpatialIntegrator(
         fieldmap_callable=sf.get_field,
@@ -80,7 +83,9 @@ for i, n_steps in enumerate(n_steps_list):
         n_steps=n_steps,
     )
     p_boris = p0.copy()
+    t0 = time.perf_counter()
     boris.track(p_boris)
+    t_boris = time.perf_counter() - t0
 
     for name in plot_coords:
         helical_end[name][i] = _scalar(getattr(p_helical, name))
@@ -88,7 +93,8 @@ for i, n_steps in enumerate(n_steps_list):
         diffs[name][i] = abs(helical_end[name][i] - boris_end[name][i])
 
     print(f"{n_steps:8d}  {ds * 1e3:8.3f}  {diffs['x'][i] * 1e6:10.2f}  "
-          f"{diffs['y'][i] * 1e6:10.2f}  {diffs['px'][i]:10.3e}  {diffs['py'][i]:10.3e}")
+          f"{diffs['y'][i] * 1e6:10.2f}  {diffs['px'][i]:10.3e}  {diffs['py'][i]:10.3e}  "
+          f"{t_helic * 1e3:12.2f}  {t_boris * 1e3:12.2f}")
 
 # ---------------------------------------------------------------
 # Difference vs n_steps
