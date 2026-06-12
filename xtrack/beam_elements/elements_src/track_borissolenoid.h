@@ -120,7 +120,9 @@ void BorisSolenoid_single_particle(
             break;
         }
 
-        const double h = ds * B_mag / fabs(Bz);
+        const double s_current = s_entry + s_local;
+        const double z_target = s_current + ds;
+        const double h_init = ds * B_mag / fabs(Bz);
 
         double x_z;
         double y_z;
@@ -131,13 +133,19 @@ void BorisSolenoid_single_particle(
 
         borissolenoid_vec_to_zeta(
             Bx, By, Bz, B_mag, B_perp,
-            x, y, 0.0,
+            x, y, s_current,
             &x_z, &y_z, &z_z
         );
         borissolenoid_vec_to_zeta(
             Bx, By, Bz, B_mag, B_perp,
             px, py, ps,
             &px_z, &py_z, &pz_z
+        );
+
+        const double h = borissolenoid_solve_helical_h_for_z_plane(
+            x_z, y_z, z_z, px_z, py_z,
+            Bx, By, Bz, B_mag, B_perp,
+            P_z, q_coulomb, z_target, h_init
         );
 
         // Pure helical map in zeta frame (B_x = B_y = 0, K = 0).

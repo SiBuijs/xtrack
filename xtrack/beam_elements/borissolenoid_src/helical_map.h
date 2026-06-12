@@ -191,4 +191,177 @@ void borissolenoid_helical_F_step(
     *py = -st * px_in + ct * py_in;
 }
 
+// d/dtheta of borissolenoid_sinc(theta)
+GPUFUN
+double borissolenoid_dsinc_dtheta(const double theta) {
+    if (fabs(theta) < BORISSOLENOID_HELICAL_SINC_EPS) {
+        return 0.0;
+    }
+    const double sin_th = sin(theta);
+    const double cos_th = cos(theta);
+    return (theta * cos_th - sin_th) / (theta * theta);
+}
+
+// d/dtheta of borissolenoid_vers_over_theta(theta)
+GPUFUN
+double borissolenoid_dvers_dtheta(const double theta) {
+    if (fabs(theta) < BORISSOLENOID_HELICAL_SINC_EPS) {
+        return 0.0;
+    }
+    const double sin_th = sin(theta);
+    const double cos_th = cos(theta);
+    return (sin_th * theta - (1.0 - cos_th)) / (theta * theta);
+}
+
+// d/dtheta of borissolenoid_cos_minus_one_over_theta(theta)
+GPUFUN
+double borissolenoid_dcosm1_dtheta(const double theta) {
+    if (fabs(theta) < BORISSOLENOID_HELICAL_SINC_EPS) {
+        return 0.0;
+    }
+    const double sin_th = sin(theta);
+    const double cos_th = cos(theta);
+    return (-sin_th * theta - (cos_th - 1.0)) / (theta * theta);
+}
+
+// Lab-z after a helical step of arc length h (zeta-frame inputs, non-mutating).
+GPUFUN
+double borissolenoid_helical_step_z_lab(
+    const double x_z0,
+    const double y_z0,
+    const double z_z0,
+    const double px_z0,
+    const double py_z0,
+    const double Bx,
+    const double By,
+    const double Bz,
+    const double B_mag,
+    const double B_perp,
+    const double P_z,
+    const double q_coulomb,
+    const double h
+) {
+    double x_z = x_z0;
+    double y_z = y_z0;
+    double px_z = px_z0;
+    double py_z = py_z0;
+
+    borissolenoid_helical_F_step(
+        &x_z, &y_z, &px_z, &py_z, B_mag, P_z, q_coulomb, h
+    );
+
+    const double z_z = z_z0 + h;
+    double x_lab;
+    double y_lab;
+    double z_lab;
+
+    borissolenoid_vec_to_lab(
+        Bx, By, Bz, B_mag, B_perp,
+        x_z, y_z, z_z,
+        &x_lab, &y_lab, &z_lab
+    );
+    return z_lab;
+}
+
+// dz_lab/dh for borissolenoid_helical_step_z_lab.
+GPUFUN
+double borissolenoid_helical_step_dz_lab_dh(
+    const double x_z0,
+    const double y_z0,
+    const double z_z0,
+    const double px_z0,
+    const double py_z0,
+    const double Bx,
+    const double By,
+    const double Bz,
+    const double B_mag,
+    const double B_perp,
+    const double P_z,
+    const double q_coulomb,
+    const double h
+) {
+    (void)x_z0;
+    (void)z_z0;
+
+    if (B_perp < BORISSOLENOID_HELICAL_EPS) {
+        return Bz / B_mag;
+    }
+
+    const double inv_B_mag = 1.0 / B_mag;
+    const double r12 = B_perp * inv_B_mag;
+    const double r22 = Bz * inv_B_mag;
+
+    const double theta = q_coulomb * B_mag * h / P_z;
+    const double dtheta_dh = q_coulomb * B_mag / P_z;
+
+    const double sinc_t = borissolenoid_sinc(theta);
+    const double vers_t = borissolenoid_vers_over_theta(theta);
+    const double cosm1_t = borissolenoid_cos_minus_one_over_theta(theta);
+
+    const double dsinc_dh = borissolenoid_dsinc_dtheta(theta) * dtheta_dh;
+    const double dvers_dh = borissolenoid_dvers_dtheta(theta) * dtheta_dh;
+    const double dcosm1_dh = borissolenoid_dcosm1_dtheta(theta) * dtheta_dh;
+
+    const double inv_Pz = 1.0 / P_z;
+    const double A = sinc_t * px_z0 + vers_t * py_z0;
+    const double Bcoef = cosm1_t * px_z0 + sinc_t * py_z0;
+
+    const double dA_dh = px_z0 * dsinc_dh + py_z0 * dvers_dh;
+    const double dBcoef_dh = px_z0 * dcosm1_dh + py_z0 * dsinc_dh;
+
+    const double dy_dh = Bcoef * inv_Pz + (h * inv_Pz) * dBcoef_dh;
+    (void)A;
+    (void)dA_dh;
+
+    return r12 * dy_dh + r22;
+}
+
+// Find h so the particle lands on lab-z = z_target after the helical step.
+// Uses Newton iterations (typically 1-2) with initial guess h_init.
+GPUFUN
+double borissolenoid_solve_helical_h_for_z_plane(
+    const double x_z0,
+    const double y_z0,
+    const double z_z0,
+    const double px_z0,
+    const double py_z0,
+    const double Bx,
+    const double By,
+    const double Bz,
+    const double B_mag,
+    const double B_perp,
+    const double P_z,
+    const double q_coulomb,
+    const double z_target,
+    const double h_init
+) {
+    if (B_perp < BORISSOLENOID_HELICAL_EPS) {
+        return h_init;
+    }
+
+    const double tol = 1e-15;
+    const int max_iter = 3;
+
+    double h = h_init;
+    for (int iter = 0; iter < max_iter; ++iter) {
+        const double z_lab = borissolenoid_helical_step_z_lab(
+            x_z0, y_z0, z_z0, px_z0, py_z0,
+            Bx, By, Bz, B_mag, B_perp, P_z, q_coulomb, h
+        );
+        const double f = z_lab - z_target;
+        if (fabs(f) < tol) {
+            break;
+        }
+        const double dz_dh = borissolenoid_helical_step_dz_lab_dh(
+            x_z0, y_z0, z_z0, px_z0, py_z0,
+            Bx, By, Bz, B_mag, B_perp, P_z, q_coulomb, h
+        );
+        if (fabs(dz_dh) < BORISSOLENOID_HELICAL_EPS) {
+            break;
+        }
+        h -= f / dz_dh;
+    }
+    return h;
+}
+
 #endif // XTRACK_BORISSOLENOID_HELICAL_MAP_H

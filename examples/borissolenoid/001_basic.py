@@ -34,7 +34,7 @@ a = 0.3           # coil radius [m]
 B0 = 1.5          # on-axis peak field at coil centre [T]
 z0 = 20.0         # coil centre in global s [m]
 length = 30.0     # Boris integration extent [m]
-n_steps = 5000
+n_steps = 20000
 
 solenoid = xt.BorisSolenoid(
     L_coil=L_coil,
@@ -93,7 +93,7 @@ p0 = xt.Particles(
 line = xt.Line(elements=[solenoid])
 
 t0 = time.perf_counter()
-line.build_tracker(use_prebuilt_kernels=False)
+line.build_tracker()
 t_build = time.perf_counter() - t0
 
 p_xt = p0.copy()

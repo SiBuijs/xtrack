@@ -346,7 +346,7 @@ def test_borissolenoid_tracking_vs_boris_spatial(test_context):
             n_steps=N_STEPS,
         )
     ])
-    line.build_tracker(use_prebuilt_kernels=False)
+    line.build_tracker()
 
     p_elem = p0.copy()
     line.track(p_elem)
@@ -360,9 +360,9 @@ def test_borissolenoid_tracking_vs_boris_spatial(test_context):
     p_boris = p0.copy()
     integrator.track(p_boris)
 
-    # Helical exponential map vs split Boris — close but not identical splitting.
-    xo.assert_allclose(p_elem.x, p_boris.x, rtol=3e-2, atol=2e-3)
-    xo.assert_allclose(p_elem.y, p_boris.y, rtol=3e-2, atol=2e-3)
-    xo.assert_allclose(p_elem.px, p_boris.px, rtol=3e-2, atol=3e-4)
-    xo.assert_allclose(p_elem.py, p_boris.py, rtol=3e-2, atol=2e-4)
-    xo.assert_allclose(p_elem.zeta, p_boris.zeta, rtol=3e-2, atol=2e-5)
+    # Helical exponential map vs Boris spatial (z-plane corrected step).
+    xo.assert_allclose(p_elem.x, p_boris.x, rtol=5e-3, atol=5e-5)
+    xo.assert_allclose(p_elem.y, p_boris.y, rtol=5e-3, atol=5e-5)
+    xo.assert_allclose(p_elem.px, p_boris.px, rtol=5e-3, atol=5e-6)
+    xo.assert_allclose(p_elem.py, p_boris.py, rtol=5e-3, atol=5e-6)
+    xo.assert_allclose(p_elem.zeta, p_boris.zeta, rtol=5e-3, atol=5e-7)
