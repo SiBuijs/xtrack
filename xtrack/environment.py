@@ -19,10 +19,12 @@ import xobjects as xo
 import xtrack as xt
 
 from .functions import Functions
+from .api_categorization import GroupedAPICollector, doc_group, property_with_doc_group
 from .match import Action
 from .multiline_legacy.multiline_legacy import MultilineLegacy
 from .progress_indicator import progress
 from .view import View
+from .general import DEPRECATION_INFO_PREP_1_0
 
 ReferType = Literal['start', 'center', 'centre', 'end']
 
@@ -33,6 +35,18 @@ DEFAULT_REF_STRENGTH_NAME = {
     'Sextupole': 'k2',
     'Octupole': 'k3',
 }
+
+ENVIRONMENT_DOC_GROUP_ORDER = (
+    "Editing, Inspection, Variables and Configuration",
+    "Reference Particle and Particle Generation",
+    "Analysis and Matching",
+    "Tracker Setup",
+    "Constructors and Serialization",
+    "Deprecated",
+    "Upcoming deprecations",
+)
+
+_ENVIRONMENT_DOC_GROUP_COLLECTOR = GroupedAPICollector(ENVIRONMENT_DOC_GROUP_ORDER)
 
 
 
@@ -98,11 +112,13 @@ class Environment:
 
         self.lines = EnvLines(self)
         self._lines_weakrefs = WeakSet()
-        self._line_builders = WeakKeyDictionary()
+        self._line_composers = WeakKeyDictionary()
         self._drift_counter = 0
         self.ref = EnvRef(self)
         self._elements = EnvElements(self)
         self._particles_container = EnvParticles(self)
+        self._xfields = EnvXfields(self)
+        self._xcoll = None
         self._enable_name_clash_check = True
         self._last_context = None
         self._drift_cache = {}
@@ -165,15 +181,59 @@ class Environment:
     def __getstate__(self):
         out = self.__dict__.copy()
         out.pop('_lines_weakrefs')
-        out.pop('_line_builders', None)
+        out.pop('_line_composers', None)
         out.pop('_xdeps_eval_obj', None)
         return out
 
     def __setstate__(self, state):
         self.__dict__.update(state)
         self._lines_weakrefs = WeakSet()
-        self._line_builders = WeakKeyDictionary()
+        self._line_composers = WeakKeyDictionary()
 
+    @classmethod
+    def _generate_doc_rst(
+        cls,
+        *,
+        include_properties=True,
+        include_summary_table=True,
+    ):
+        """Generate grouped API documentation in RST format."""
+        from .api_docs import generate_grouped_class_rst
+
+        return generate_grouped_class_rst(
+            cls,
+            include_properties=include_properties,
+            include_summary_table=include_summary_table,
+        )
+
+    @property_with_doc_group("Editing, Inspection, Variables and Configuration")
+    def lines(self):
+        """Container of named lines registered in this environment."""
+        return self._lines
+
+    @lines.setter
+    def lines(self, value):
+        self._lines = value
+
+    @property_with_doc_group("Editing, Inspection, Variables and Configuration")
+    def ref(self):
+        """xdeps reference container for variables, elements and particles."""
+        return self._ref
+
+    @ref.setter
+    def ref(self, value):
+        self._ref = value
+
+    @property_with_doc_group("Editing, Inspection, Variables and Configuration")
+    def metadata(self):
+        """User metadata associated with the environment."""
+        return self._metadata
+
+    @metadata.setter
+    def metadata(self, value):
+        self._metadata = value
+
+    @doc_group("Editing, Inspection, Variables and Configuration")
     def new(self, name, parent, mode=None, at=None, from_=None,
             anchor=None, from_anchor=None,
             extra=None,
@@ -322,6 +382,7 @@ class Environment:
 
         return name
 
+    @doc_group("Reference Particle and Particle Generation")
     def new_particle(self, name, parent=None, force=False, **kwargs):
 
         '''
@@ -427,6 +488,7 @@ class Environment:
         return name
 
 
+    @doc_group("Editing, Inspection, Variables and Configuration")
     def new_line(self, components=None, name=None, refer: ReferType = 'center',
                  length=None, mirror=False, s_tol=1e-6, compose=False) -> xt.Line:
         """
@@ -444,7 +506,7 @@ class Environment:
             to. Allowed values are ``start``, ``center`` (default; also allowed
             is ``centre```), and ``end``.
         length : float | str, optional
-            Length of the line to be built by the builder. Can be an expression.
+            Length of the line to be built by the composer. Can be an expression.
             If not specified, the length will be the minimum length that can
             fit all the components.
         mirror : bool, optional
@@ -505,6 +567,7 @@ class Environment:
 
         return out
 
+    @doc_group("Editing, Inspection, Variables and Configuration")
     def place(self, name, obj=None, at=None, from_=None, anchor=None, from_anchor=None):
         '''
         Create a place object.
@@ -542,40 +605,49 @@ class Environment:
             else:
                 name = name.copy(shallow=True)
 
-        return xt.Place(name, at=at, from_=from_, anchor=anchor, from_anchor=from_anchor)
+        return xt.Place(name, at=at, from_=from_, anchor=anchor, from_anchor=from_anchor,
+                        env=self)
 
+    @doc_group("Deprecated")
     def new_builder(self, components=None, name=None, refer: ReferType = 'center',
                     length=None, s_tol=1e-6):
         '''
-        Create a new builder.
+        Deprecated. Create a new composer.
+
+        .. warning:: The `new_builder` method is deprecated and will be removed in
+           a future version. Use `new_line` with `compose=True` instead.
 
         Parameters
         ----------
         components : list, optional
-            List of components to be added to the builder. It can include strings,
+            List of components to be added to the composer. It can include strings,
             place objects, and lines.
         name : str, optional
-            Name of the line that will be built by the builder.
+            Name of the line that will be built by the composer.
         refer : str, optional
             Specifies which part of the component the ``at`` position will refer
             to. Allowed values are ``start``, ``center`` (default; also allowed
             is ``centre```), and ``end``.
         length : float | str, optional
-            Length of the line to be built by the builder. Can be an expression.
+            Length of the line to be built by the composer. Can be an expression.
             If not specified, the length will be the minimum length that can
             fit all the components.
 
         Returns
         -------
-        Builder
-            The new builder.
+        Composer
+            The new composer.
         '''
 
-        out = xt.Builder(env=self, components=components, name=name, refer=refer,
+        warn('The `new_builder` method is deprecated and will be removed in a future version. '
+             'Use `new_line` with `compose=True` instead.', FutureWarning)
+
+        out = xt.Composer(env=self, components=components, name=name, refer=refer,
                        length=length, s_tol=s_tol)
 
         return out
 
+    @doc_group("Constructors and Serialization")
     def call(self, filename):
         '''
         Call a file with xtrack commands.
@@ -594,10 +666,20 @@ class Environment:
             raise ee
         xtrack._passed_env = None
 
+    @doc_group("Constructors and Serialization")
     def copy(self):
+        """
+        Create a deep copy of the environment.
+
+        Returns
+        -------
+        Environment
+            Independent copy of the environment, including elements, lines,
+            particles, variables, expressions and metadata.
+        """
         return self.__class__.from_dict(self.to_dict())
 
-    def copy_element_from(self, name, source, new_name=None):
+    def _copy_element_from(self, name, source, new_name=None):
         """Copy an element from another environment.
 
         Parameters
@@ -646,9 +728,24 @@ class Environment:
 
         return new_name
 
+    @doc_group("Editing, Inspection, Variables and Configuration")
     def replace_replica(self, name):
+        """
+        Replace a replica element with a clone of its parent element.
+        Expressions on element attributes are preserved.
+
+        Parameters
+        ----------
+        name : str
+            Name of the replica element to replace.
+
+        Returns
+        -------
+        None
+            This method modifies the environment in place.
+        """
         name_parent = self._element_dict[name].resolve(self, get_name=True)
-        self.copy_element_from(name_parent, self, new_name=name)
+        self._copy_element_from(name_parent, self, new_name=name)
 
     def _import_element(self, line, name, rename_elements, suffix_for_common_elements,
                         already_imported):
@@ -663,7 +760,7 @@ class Environment:
                     isinstance(self._element_dict.get(name), xt.Marker))):
             new_name += suffix_for_common_elements
 
-        self.copy_element_from(name, line, new_name=new_name)
+        self._copy_element_from(name, line, new_name=new_name)
         already_imported[name] = new_name
         if hasattr(line._element_dict[name], 'parent_name'):
             parent_name = line._element_dict[name].parent_name
@@ -674,6 +771,7 @@ class Environment:
 
         return new_name
 
+    @doc_group("Editing, Inspection, Variables and Configuration")
     def import_line(
             self,
             line,
@@ -743,6 +841,7 @@ class Environment:
             if ln._has_valid_tracker() and ln._buffer is not buffer:
                 ln.discard_tracker()
 
+    @doc_group("Tracker Setup")
     def discard_trackers(self):
         '''Discard all trackers in all lines of the environment.'''
         for ln in self._lines_weakrefs:
@@ -778,7 +877,25 @@ class Environment:
         else:
             raise ValueError('Only lines, scalars or references are allowed')
 
+    @doc_group("Constructors and Serialization")
     def to_dict(self, include_var_management=True, include_version=True):
+        """
+        Serialize the environment to a JSON-compatible dictionary.
+
+        Parameters
+        ----------
+        include_var_management : bool, optional
+            If True, include deferred-expression data and variable manager
+            state. Default is ``True``.
+        include_version : bool, optional
+            If True, include the xtrack version that generated the dictionary.
+            Default is ``True``.
+
+        Returns
+        -------
+        dict
+            Serialized environment data.
+        """
 
         out = {}
         out['__class__'] = self.__class__.__name__
@@ -834,8 +951,28 @@ class Environment:
 
         return out
 
+    @doc_group("Constructors and Serialization")
     @classmethod
     def from_dict(cls, dct, _context=None, _buffer=None, classes=()):
+        """
+        Rebuild an environment from a serialized dictionary.
+
+        Parameters
+        ----------
+        dct : dict
+            Dictionary produced by :meth:`to_dict`.
+        _context : xobjects.Context, optional
+            Context used to rebuild xobjects-backed data.
+        _buffer : xobjects.Buffer, optional
+            Buffer used to rebuild xobjects-backed data.
+        classes : tuple, optional
+            Extra element classes accepted during element deserialization.
+
+        Returns
+        -------
+        Environment
+            Reconstructed environment.
+        """
         cls = xt.Environment
 
         if "xtrack_version" in dct:
@@ -897,6 +1034,7 @@ class Environment:
 
         return out
 
+    @doc_group("Constructors and Serialization")
     @classmethod
     def from_json(cls, file, **kwargs):
         """Constructs an environment from a JSON file.
@@ -919,6 +1057,7 @@ class Environment:
         return cls.from_dict(dct, **kwargs)
 
 
+    @doc_group("Constructors and Serialization")
     def to_json(self, file, indent=1, **kwargs):
         '''Save the environment to a json file.
 
@@ -937,16 +1076,24 @@ class Environment:
 
         xt.json.dump(self.to_dict(**kwargs), file, indent=indent)
 
+    @doc_group("Deprecated")
     @classmethod
     def from_madx(cls, filename=None, madx=None, stdout=None, return_lines=False, **kwargs):
         '''
         Load a multiline from a MAD-X file.
 
+        .. warning:: This function is deprecated and will be removed in a future
+           version. Please use xtrack.load(...), which uses the xsuite native MAD-X
+           parser, without requiring Cpymad. In case you need to use cpymad for
+           specific features, please load the individual lines using
+           `Line.from_madx_sequence(...)` and add them to the environment
+           using `Environment.import_line(...)`.
+
         Parameters
         ----------
         file: str
             The MAD-X file to load from.
-        **kwargs: dict
+        **kwargs
             Additional keyword arguments are passed to the `Line.from_madx_sequence`
             method.
 
@@ -955,18 +1102,45 @@ class Environment:
         new_multiline: Multiline
             The multiline object.
         '''
+        warn('The function `Environment.from_madx` is deprecated and will be removed '
+             'in a future version. Please use `xtrack.load(...)`, which uses the xsuite native '
+             'MAD-X parser, without requiring Cpymad. In case you need to use cpymad '
+             'for specific features, please load the individual lines using '
+             '`Line.from_madx_sequence(...)` and add them to the environment '
+             'using `Environment.import_line(...)`.'
+             + DEPRECATION_INFO_PREP_1_0,
+             FutureWarning)
+
         return xt.multiline_legacy._multiline_from_madx(cls, filename=filename, madx=madx, stdout=stdout,
                              return_lines=return_lines, **kwargs)
 
-    @property
+    @property_with_doc_group("Editing, Inspection, Variables and Configuration")
     def elements(self):
+        """Container of environment elements; item access returns ``View`` objects."""
         return self._elements
 
-    @property
+    @property_with_doc_group("Reference Particle and Particle Generation")
     def particles(self):
+        """Container of named particles; item access returns ``View`` objects."""
         return self._particles_container
 
+    @doc_group("Reference Particle and Particle Generation")
     def set_particle_ref(self, *args, lines=True, **kwargs):
+        """
+        Set the environment reference particle and optionally propagate it to lines.
+
+        Parameters
+        ----------
+        *args
+            Either a single :class:`xtrack.Particles`, a particle name, or
+            arguments passed to ``xtrack.Particles``.
+        lines : bool, str, iterable of str, optional
+            Which lines receive the same reference particle.
+            ``True`` updates all lines, ``False``/``None`` updates none.
+        **kwargs
+            Extra keyword arguments forwarded to ``xtrack.Particles`` when
+            constructing a new particle reference.
+        """
 
         if lines is True:
             lines = self.lines.keys()
@@ -998,8 +1172,9 @@ class Environment:
             for ln in lines:
                 self.lines[ln].particle_ref = self.particle_ref.copy()
 
-    @property
+    @property_with_doc_group("Reference Particle and Particle Generation")
     def particle_ref(self):
+        """Reference particle accessor, or ``None`` if not configured."""
         if self._particle_ref is None:
             return None
         return EnvParticleRef(self)
@@ -1008,13 +1183,38 @@ class Environment:
     def particle_ref(self, particle_ref):
         self._particle_ref = particle_ref
 
-    @property
+    @property_with_doc_group("Editing, Inspection, Variables and Configuration")
     def line_names(self):
+        """List of names of all lines currently in the environment."""
         return list(self.lines.keys())
 
-    @property
+    @property_with_doc_group("Editing, Inspection, Variables and Configuration")
     def functions(self):
+        """
+        xdeps function container used in expressions.
+
+        Returns
+        -------
+        functions : object
+            Dictionary-like container of functions available in expressions.
+        """
         return self._xdeps_fref
+
+    @property_with_doc_group("Editing, Inspection, Variables and Configuration")
+    def xfields(self):
+        """Xfields-specific helpers associated with this environment."""
+        return self._xfields
+
+    @property_with_doc_group("Editing, Inspection, Variables and Configuration")
+    def xcoll(self):
+        """Xcoll-specific helpers associated with this environment."""
+        if self._xcoll is None:
+            try:
+                from xcoll.environment_tools import XcollEnvironmentAPI
+                self._xcoll = XcollEnvironmentAPI(self)
+            except ImportError as error:
+                raise ImportError("Please install Xcoll to use this feature.") from error
+        return self._xcoll
 
     def _remove_element(self, name):
 
@@ -1033,17 +1233,18 @@ class Environment:
         self._element_dict.pop(name)
 
     def __getattr__(self, key):
-        if key == 'lines':
-            return object.__getattribute__(self, 'lines')
-        if key in self.lines:
-            return self.lines[key]
+        if key == '_lines':
+            return object.__getattribute__(self, '_lines')
+        if key in self._lines:
+            return self._lines[key]
         else:
             raise AttributeError(f"Environment object has no attribute `{key}`.")
 
     def __dir__(self):
-        return [nn for nn  in list(self.lines.keys()) if '.' not in nn
+        return [nn for nn  in list(self._lines.keys()) if '.' not in nn
                     ] + object.__dir__(self)
 
+    @doc_group("Deprecated")
     def set_multipolar_errors(env, errors):
         """Deprecated: set multipolar errors for specified elements of the environment.
 
@@ -1089,7 +1290,8 @@ class Environment:
         """
         warn('The function `set_multipolar_errors` is deprecated and will be removed '
              'in a future version. Please use the attributes `knl_rel` and `ksl_rel` '
-             'of the elements to set relative multipolar errors directly on the elements.',
+             'of the elements to set relative multipolar errors directly on the elements.'
+             + DEPRECATION_INFO_PREP_1_0,
              FutureWarning)
 
         for ele_name in progress(errors.keys(), desc='Setting multipolar errors'):
@@ -1129,8 +1331,9 @@ class Environment:
                         env.ref[ele_name].ksl[ii]._expr._get_dependencies()):
                     env[ele_name].ksl[ii] += env.ref[err_vname] * ref_str_ref * length_ref
 
-    @property
+    @property_with_doc_group("Editing, Inspection, Variables and Configuration")
     def element_dict(self):
+        """Dictionary-like container of elements in the environment."""
         return self._element_dict
 
     @element_dict.setter
@@ -1188,18 +1391,71 @@ class Environment:
 
         return eva_obj
 
-    @property
+    @property_with_doc_group("Editing, Inspection, Variables and Configuration")
     def vars(self):
+        """
+        Variables container associated with the environment.
+
+        The container provides variable-management utilities such as
+        ``keys()``, ``get_table()``, ``load()`` (JSON and MAD-X files),
+        ``remove()``, ``rename()``, and ``update()``.
+
+        Returns
+        -------
+        vars : object
+            Dictionary-like container of variables.
+        """
         return self._line_vars
 
-    @property
+    @property_with_doc_group("Deprecated")
     def varval(self):
+        """
+        Convenience accessor to variable values.
+
+        .. warning: `Environment.varval[...]` is deprecated and will be removed
+           in a future version. To access the value of a variable you can simply use 
+           Environment[...]."
+
+        Equivalent to ``environment.vars.val``.
+
+        Returns
+        -------
+        values : object
+            Mapping-like view exposing variable values.
+        """
+
+        warn("`Environment.varval[...]` is deprecated and will be removed in a future version. "
+             "To access the value of a variable you can simply use Environment[...]. "
+             "Environment.vars.val[...] is also available."
+             + DEPRECATION_INFO_PREP_1_0, FutureWarning)
+
         return self.vars.val
 
-    @property
+    @property_with_doc_group("Deprecated")
     def vv(self): # Shorter alias
+        """
+        Short alias for variable values.
+
+        .. warning: `Environment.vv[...]` is deprecated and will be removed
+           in a future version. To access the value of a variable you can simply use
+           Environment[...]."
+
+        Equivalent to ``environment.varval`` (or ``environment.vars.val``).
+
+        Returns
+        -------
+        values : object
+            Mapping-like view exposing variable values.
+        """
+
+        warn("`Environment.vv[...]` is deprecated and will be removed in a future version. "
+             "To access the value of a variable you can simply use Environment[...]. "
+             "Environment.vars.val[...] is also available."
+             + DEPRECATION_INFO_PREP_1_0, FutureWarning)
+
         return self.vars.val
 
+    @doc_group("Editing, Inspection, Variables and Configuration")
     def eval(self, expr):
         '''
         Get the value of an expression
@@ -1218,8 +1474,9 @@ class Environment:
         return self.vars.eval(expr)
 
 
-    @property
+    @property_with_doc_group("Editing, Inspection, Variables and Configuration")
     def element_refs(self):
+        """Dictionary-like container of xdeps element references."""
         if self._var_management is not None:
             return self._var_management['lref']
 
@@ -1241,7 +1498,7 @@ class Environment:
             return View(self.particles[key], self._xdeps_pref[key],
                         evaluator=self._xdeps_eval.eval)
         elif self.ref_manager is not None and key in self.vars:
-            return self.vv[key]
+            return self.vars.val[key]
         elif key in self.lines: # Want to reuse the method for the env
             return self.lines[key]
         else:
@@ -1254,7 +1511,16 @@ class Environment:
                 (self.ref_manager is not None and key in self.vars)
                 )
 
+    @doc_group("Editing, Inspection, Variables and Configuration")
     def remove(self, key):
+        """
+        Remove an element, particle, line, or variable by name.
+
+        Parameters
+        ----------
+        key : str
+            Name of the object to remove.
+        """
 
         if key in self._element_dict:
             self.elements.remove(key)
@@ -1270,14 +1536,16 @@ class Environment:
     def __delitem__(self, key):
         self.remove(key)
 
+    @doc_group("Editing, Inspection, Variables and Configuration")
     def set(self, name, *args, **kwargs):
         '''
         Set the values or expressions of variables or element properties.
+        A single call can set one or multiple variables or elements.
 
         Parameters
         ----------
-        name : str
-            Name(s) of the variable or element.
+        name : str or iterable of str
+            Name or names of the variable(s) or element(s).
         value: float or str
             Value or expression of the variable to set. Can be provided only
             if the name is associated to a variable.
@@ -1342,6 +1610,7 @@ class Environment:
             else:
                 self.vars[name] = value
 
+    @doc_group("Editing, Inspection, Variables and Configuration")
     def get(self, key):
         '''
         Get an element or the value of a variable.
@@ -1367,19 +1636,33 @@ class Environment:
         else:
             raise KeyError(f'Element or variable {key} not found')
 
+    @doc_group("Editing, Inspection, Variables and Configuration")
     def info(self, key, limit=30):
-        """
-            Get information about an element or a variable.
-        """
+        '''
+        Get information about an element or a variable.
+
+        Parameters
+        ----------
+        key : str
+            Name of the element or variable.
+        limit : int, optional
+            Maximum number of expression terms shown for variable info.
+
+        Returns
+        -------
+        None
+            This method displays information and does not return a value.
+        '''
 
         if key in self.elements:
-            return self[key].get_info()
+            self[key]._get_info()
         elif key in self.vars:
-            return self.vars.info(key, limit=limit)
+            self.vars.info(key, limit=limit)
         else:
             raise KeyError(f'Element or variable {key} not found')
 
 
+    @doc_group("Editing, Inspection, Variables and Configuration")
     def get_expr(self, var):
         '''
         Get expression associated to a variable
@@ -1397,6 +1680,7 @@ class Environment:
 
         return self.vars.get_expr(var)
 
+    @doc_group("Editing, Inspection, Variables and Configuration")
     def new_expr(self, expr):
         '''
         Create a new expression
@@ -1452,6 +1736,7 @@ class Environment:
             # Need to bypass the check on element redefinition
             self._xdeps_eref._owner[nn] = new_ee
 
+    @doc_group("Editing, Inspection, Variables and Configuration")
     def extend_knl_ksl(self, order, element_names=None):
         """
         Extend the order of the knl and ksl attributes of the elements.
@@ -1468,6 +1753,7 @@ class Environment:
         self._extend_knl_ksl_abs_rel(order, element_names=element_names,
                                     absolute=True, relative=False)
 
+    @doc_group("Editing, Inspection, Variables and Configuration")
     def extend_knl_rel_ksl_rel(self, order, element_names=None):
         """
         Extend the order of the rel_knl and rel_ksl attributes of the elements.
@@ -1484,8 +1770,16 @@ class Environment:
         self._extend_knl_ksl_abs_rel(order, element_names=element_names,
                                     absolute=False, relative=True)
 
-    @property
+    @property_with_doc_group("Editing, Inspection, Variables and Configuration")
     def ref_manager(self):
+        """
+        xdeps dependency manager for variables, element references, and expressions.
+
+        Returns
+        -------
+        ref_manager : object
+            Dependency manager used to register and update expression tasks.
+        """
         return self._xdeps_manager
 
     def _var_management_to_dict(self):
@@ -1579,13 +1873,74 @@ class Environment:
                 else:
                     setattr(container[name], kk, value_kwargs[kk])
 
-    twiss = MultilineLegacy.twiss
-    build_trackers = MultilineLegacy.build_trackers
-    match = MultilineLegacy.match
-    match_knob = MultilineLegacy.match_knob
-    install_beambeam_interactions = MultilineLegacy.install_beambeam_interactions
-    configure_beambeam_interactions =  MultilineLegacy.configure_beambeam_interactions
-    apply_filling_pattern = MultilineLegacy.apply_filling_pattern
+    twiss = doc_group("Analysis and Matching")(MultilineLegacy.twiss)
+    build_trackers = doc_group("Tracker Setup")(MultilineLegacy.build_trackers)
+    match = doc_group("Analysis and Matching")(MultilineLegacy.match)
+    match_knob = doc_group("Analysis and Matching")(MultilineLegacy.match_knob)
+
+    @doc_group("Upcoming deprecations")
+    def install_beambeam_interactions(self, clockwise_line, anticlockwise_line,
+                                      ip_names,
+                                      num_long_range_encounters_per_side,
+                                      num_slices_head_on,
+                                      harmonic_number, bunch_spacing_buckets,
+                                      sigmaz,
+                                      delay_at_ips_slots=None):
+        """Deprecated alias for ``env.xfields.install_beambeam_interactions(...)``."""
+        warn('`Environment.install_beambeam_interactions(...)` is deprecated and will be removed '
+             'in a future version. Please use '
+             '`Environment.xfields.install_beambeam_interactions(...)` instead.',
+             FutureWarning, stacklevel=2)
+        return self.xfields.install_beambeam_interactions(
+            clockwise_line=clockwise_line,
+            anticlockwise_line=anticlockwise_line,
+            ip_names=ip_names,
+            num_long_range_encounters_per_side=num_long_range_encounters_per_side,
+            num_slices_head_on=num_slices_head_on,
+            harmonic_number=harmonic_number,
+            bunch_spacing_buckets=bunch_spacing_buckets,
+            sigmaz=sigmaz,
+            delay_at_ips_slots=delay_at_ips_slots)
+
+    @doc_group("Upcoming deprecations")
+    def configure_beambeam_interactions(self, num_particles,
+                                        nemitt_x, nemitt_y,
+                                        crab_strong_beam=True,
+                                        use_antisymmetry=False,
+                                        separation_bumps=None):
+        """Deprecated alias for ``env.xfields.configure_beambeam_interactions(...)``."""
+        warn('`Environment.configure_beambeam_interactions(...)` is deprecated and will be removed '
+             'in a future version. Please use '
+             '`Environment.xfields.configure_beambeam_interactions(...)` instead.',
+             FutureWarning, stacklevel=2)
+        return self.xfields.configure_beambeam_interactions(
+            num_particles=num_particles,
+            nemitt_x=nemitt_x,
+            nemitt_y=nemitt_y,
+            crab_strong_beam=crab_strong_beam,
+            use_antisymmetry=use_antisymmetry,
+            separation_bumps=separation_bumps)
+
+    @doc_group("Upcoming deprecations")
+    def apply_filling_pattern(self, filling_pattern_cw, filling_pattern_acw,
+                              i_bunch_cw, i_bunch_acw):
+        """Deprecated alias for ``env.xfields.apply_filling_pattern(...)``."""
+        warn('`Environment.apply_filling_pattern(...)` is deprecated and will be removed '
+             'in a future version. Please use '
+             '`Environment.xfields.apply_filling_pattern(...)` instead.',
+             FutureWarning, stacklevel=2)
+        return self.xfields.apply_filling_pattern(
+            filling_pattern_cw=filling_pattern_cw,
+            filling_pattern_acw=filling_pattern_acw,
+            i_bunch_cw=i_bunch_cw,
+            i_bunch_acw=i_bunch_acw)
+
+
+Environment.__doc_groups__ = _ENVIRONMENT_DOC_GROUP_COLLECTOR.collect(Environment)
+Environment.__doc_groups_ungrouped__ = _ENVIRONMENT_DOC_GROUP_COLLECTOR.validate(
+    Environment,
+    strict=False,
+)
 
 
 def _parse_kwargs(cls, kwargs, _eval):
@@ -1772,11 +2127,58 @@ class EnvParticles:
         self.remove(name)
 
 
+class EnvXfields:
+    def __init__(self, env):
+        self.env = env
+
+    def install_beambeam_interactions(self, clockwise_line, anticlockwise_line,
+                                      ip_names,
+                                      num_long_range_encounters_per_side,
+                                      num_slices_head_on,
+                                      harmonic_number, bunch_spacing_buckets,
+                                      sigmaz,
+                                      delay_at_ips_slots=None):
+        return MultilineLegacy.install_beambeam_interactions(
+            self.env,
+            clockwise_line=clockwise_line,
+            anticlockwise_line=anticlockwise_line,
+            ip_names=ip_names,
+            num_long_range_encounters_per_side=num_long_range_encounters_per_side,
+            num_slices_head_on=num_slices_head_on,
+            harmonic_number=harmonic_number,
+            bunch_spacing_buckets=bunch_spacing_buckets,
+            sigmaz=sigmaz,
+            delay_at_ips_slots=delay_at_ips_slots)
+
+    def configure_beambeam_interactions(self, num_particles,
+                                        nemitt_x, nemitt_y,
+                                        crab_strong_beam=True,
+                                        use_antisymmetry=False,
+                                        separation_bumps=None):
+        return MultilineLegacy.configure_beambeam_interactions(
+            self.env,
+            num_particles=num_particles,
+            nemitt_x=nemitt_x,
+            nemitt_y=nemitt_y,
+            crab_strong_beam=crab_strong_beam,
+            use_antisymmetry=use_antisymmetry,
+            separation_bumps=separation_bumps)
+
+    def apply_filling_pattern(self, filling_pattern_cw, filling_pattern_acw,
+                              i_bunch_cw, i_bunch_acw):
+        return MultilineLegacy.apply_filling_pattern(
+            self.env,
+            filling_pattern_cw=filling_pattern_cw,
+            filling_pattern_acw=filling_pattern_acw,
+            i_bunch_cw=i_bunch_cw,
+            i_bunch_acw=i_bunch_acw)
+
+
 class EnvRef:
     def __init__(self, env):
         self.env = env
 
-    def __getitem__(self, name):
+    def __getitem__(self, name: str) -> xd.refs.ItemRef:
         if hasattr(self.env, 'lines') and name in self.env.lines:
             return self.env.lines[name].ref
         elif name in self.env._element_dict:
@@ -1949,7 +2351,19 @@ def _reverse_element(env, name):
         ee_ref.crab_voltage = -(ee_ref.crab_voltage._expr or ee_ref.crab_voltage._value)
 
     if hasattr(ee, 'lag'):
-        ee_ref.lag = 180 - (ee_ref.lag._expr or ee_ref.lag._value)
+        # +PI is applied on phase, not needed on lag, so we just change the sign of lag
+        if ee_ref.lag._expr is not None:
+            ee_ref.lag = -(ee_ref.lag._expr)
+        else:
+            ee_ref.lag = -(ee_ref.lag._value)
+
+    if hasattr(ee, 'phase'):
+        if ee_ref.phase._expr is not None:
+            PI = env.vars['pi']
+            ee_ref.phase = PI - (ee_ref.phase._expr)
+        else:
+            PI = env.vars.val['pi']
+            ee_ref.phase = PI - (ee_ref.phase._value)
 
     if hasattr(ee, 'knl'):
         for i in range(1, len(ee.knl), 2):
@@ -2209,16 +2623,16 @@ class EnvVars:
         return expr_or_value
 
     def info(self, var, limit=10):
-        return self[var]._info(limit=limit)
+        return self[var].xdeps.info(limit=limit)
 
     def get_expr(self, var):
-        return self[var]._expr
+        return self[var].xdeps.expr
 
     def rename(self, old, new, verbose=False):
 
         env = self.env
         mgr = env.ref_manager
-        env.vars[new] = env.vv[old]
+        env.vars[new] = env.vars.val[old]
         r_old = env.ref[old]
         r_new = env.ref[new]
         t_old = mgr.tasks.get(r_old)
@@ -2283,17 +2697,23 @@ class EnvVars:
 
     def load_madx(self, filename=None, string=None):
         """Deprecated: see `_load_madx` instead."""
-        warn('EnvVars.load_madx is deprecated, use `load` instead.', FutureWarning)
+        warn('EnvVars.load_madx is deprecated, use `EnvVars.load` instead.'
+             + DEPRECATION_INFO_PREP_1_0,
+             FutureWarning)
         self._load_madx(filename=filename, string=string)
 
     def set_from_madx_file(self, filename=None, string=None):
         """Deprecated: see `_load_madx` instead."""
-        warn('EnvVars.set_from_madx_file is deprecated, use `load` instead.', FutureWarning)
+        warn('EnvVars.set_from_madx_file is deprecated, use `load` instead.'
+             + DEPRECATION_INFO_PREP_1_0,
+             FutureWarning)
         self._load_madx(filename=filename, string=string)
 
     def load_madx_optics_file(self, filename=None, string=None):
         """Deprecated: see `_load_madx` instead."""
-        warn('EnvVars.load_madx_optics_file is deprecated, use `load` instead.', FutureWarning)
+        warn('EnvVars.load_madx_optics_file is deprecated, use `load` instead.'
+             + DEPRECATION_INFO_PREP_1_0,
+             FutureWarning)
         self._load_madx(filename=filename, string=string)
 
     def _load_madx(self, filename=None, string=None):
@@ -2320,7 +2740,9 @@ class EnvVars:
     def load_json(self, filename):
         """Deprecated: use `load` instead."""
         warn(
-            '`EnvVars.load_json` is deprecated, use `load`, optionally with `format="json"` instead.',
+            '`EnvVars.load_json` is deprecated, use `vars.load` ,'
+            'optionally with `format="json"` instead.'
+            + DEPRECATION_INFO_PREP_1_0,
             FutureWarning
         )
         with open(filename, 'r') as fid:

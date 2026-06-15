@@ -16480,7 +16480,7 @@
   },
   "acsca.d5l4.b1": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -16491,7 +16491,7 @@
   },
   "acsca.c5l4.b1": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -16502,7 +16502,7 @@
   },
   "acsca.b5l4.b1": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -16513,7 +16513,7 @@
   },
   "acsca.a5l4.b1": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -16531,7 +16531,7 @@
   },
   "acsca.a5r4.b1": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -16542,7 +16542,7 @@
   },
   "acsca.b5r4.b1": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -16553,7 +16553,7 @@
   },
   "acsca.c5r4.b1": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -16564,7 +16564,7 @@
   },
   "acsca.d5r4.b1": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -177662,14 +177662,14 @@
   },
   "acfgah.4br1.b2": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_integrator": 0,
    "_model": 0
   },
   "acfgav.4br1.b2": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_sin_rot_s": 1.0,
    "_cos_rot_s": 6.123233995736766e-17,
@@ -177682,14 +177682,14 @@
   },
   "acfgah.4ar1.b2": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_integrator": 0,
    "_model": 0
   },
   "acfgav.4ar1.b2": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_sin_rot_s": 1.0,
    "_cos_rot_s": 6.123233995736766e-17,
@@ -182029,14 +182029,14 @@
   },
   "acfgah.4al1.b2": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_integrator": 0,
    "_model": 0
   },
   "acfgav.4al1.b2": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_sin_rot_s": 1.0,
    "_cos_rot_s": 6.123233995736766e-17,
@@ -182049,14 +182049,14 @@
   },
   "acfgah.4bl1.b2": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_integrator": 0,
    "_model": 0
   },
   "acfgav.4bl1.b2": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_sin_rot_s": 1.0,
    "_cos_rot_s": 6.123233995736766e-17,
@@ -248752,14 +248752,14 @@
   },
   "acfgah.4br5.b2": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_integrator": 0,
    "_model": 0
   },
   "acfgav.4br5.b2": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_sin_rot_s": 1.0,
    "_cos_rot_s": 6.123233995736766e-17,
@@ -248772,14 +248772,14 @@
   },
   "acfgah.4ar5.b2": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_integrator": 0,
    "_model": 0
   },
   "acfgav.4ar5.b2": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_sin_rot_s": 1.0,
    "_cos_rot_s": 6.123233995736766e-17,
@@ -253113,14 +253113,14 @@
   },
   "acfgah.4al5.b2": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_integrator": 0,
    "_model": 0
   },
   "acfgav.4al5.b2": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_sin_rot_s": 1.0,
    "_cos_rot_s": 6.123233995736766e-17,
@@ -253133,14 +253133,14 @@
   },
   "acfgah.4bl5.b2": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_integrator": 0,
    "_model": 0
   },
   "acfgav.4bl5.b2": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_sin_rot_s": 1.0,
    "_cos_rot_s": 6.123233995736766e-17,
@@ -268737,7 +268737,7 @@
   },
   "acsca.d5r4.b2": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -268748,7 +268748,7 @@
   },
   "acsca.c5r4.b2": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -268759,7 +268759,7 @@
   },
   "acsca.b5r4.b2": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -268770,7 +268770,7 @@
   },
   "acsca.a5r4.b2": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -268785,7 +268785,7 @@
   },
   "acsca.a5l4.b2": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -268796,7 +268796,7 @@
   },
   "acsca.b5l4.b2": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -268807,7 +268807,7 @@
   },
   "acsca.c5l4.b2": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -268818,7 +268818,7 @@
   },
   "acsca.d5l4.b2": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -300659,7 +300659,7 @@
   },
   "acsca.d5l4.b1/lhcb1_co_ref": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -300670,7 +300670,7 @@
   },
   "acsca.c5l4.b1/lhcb1_co_ref": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -300681,7 +300681,7 @@
   },
   "acsca.b5l4.b1/lhcb1_co_ref": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -300692,7 +300692,7 @@
   },
   "acsca.a5l4.b1/lhcb1_co_ref": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -300707,7 +300707,7 @@
   },
   "acsca.a5r4.b1/lhcb1_co_ref": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -300718,7 +300718,7 @@
   },
   "acsca.b5r4.b1/lhcb1_co_ref": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -300729,7 +300729,7 @@
   },
   "acsca.c5r4.b1/lhcb1_co_ref": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -300740,7 +300740,7 @@
   },
   "acsca.d5r4.b1/lhcb1_co_ref": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -451232,14 +451232,14 @@
   },
   "acfgah.4br1.b2/lhcb2_co_ref": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_integrator": 0,
    "_model": 0
   },
   "acfgav.4br1.b2/lhcb2_co_ref": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_sin_rot_s": 1.0,
    "_cos_rot_s": 6.123233995736766e-17,
@@ -451252,14 +451252,14 @@
   },
   "acfgah.4ar1.b2/lhcb2_co_ref": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_integrator": 0,
    "_model": 0
   },
   "acfgav.4ar1.b2/lhcb2_co_ref": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_sin_rot_s": 1.0,
    "_cos_rot_s": 6.123233995736766e-17,
@@ -455539,14 +455539,14 @@
   },
   "acfgah.4al1.b2/lhcb2_co_ref": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_integrator": 0,
    "_model": 0
   },
   "acfgav.4al1.b2/lhcb2_co_ref": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_sin_rot_s": 1.0,
    "_cos_rot_s": 6.123233995736766e-17,
@@ -455559,14 +455559,14 @@
   },
   "acfgah.4bl1.b2/lhcb2_co_ref": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_integrator": 0,
    "_model": 0
   },
   "acfgav.4bl1.b2/lhcb2_co_ref": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_sin_rot_s": 1.0,
    "_cos_rot_s": 6.123233995736766e-17,
@@ -517726,14 +517726,14 @@
   },
   "acfgah.4br5.b2/lhcb2_co_ref": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_integrator": 0,
    "_model": 0
   },
   "acfgav.4br5.b2/lhcb2_co_ref": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_sin_rot_s": 1.0,
    "_cos_rot_s": 6.123233995736766e-17,
@@ -517746,14 +517746,14 @@
   },
   "acfgah.4ar5.b2/lhcb2_co_ref": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_integrator": 0,
    "_model": 0
   },
   "acfgav.4ar5.b2/lhcb2_co_ref": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_sin_rot_s": 1.0,
    "_cos_rot_s": 6.123233995736766e-17,
@@ -522033,14 +522033,14 @@
   },
   "acfgah.4al5.b2/lhcb2_co_ref": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_integrator": 0,
    "_model": 0
   },
   "acfgav.4al5.b2/lhcb2_co_ref": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_sin_rot_s": 1.0,
    "_cos_rot_s": 6.123233995736766e-17,
@@ -522053,14 +522053,14 @@
   },
   "acfgah.4bl5.b2/lhcb2_co_ref": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_integrator": 0,
    "_model": 0
   },
   "acfgav.4bl5.b2/lhcb2_co_ref": {
    "__class__": "CrabCavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789602.58620286,
    "_sin_rot_s": 1.0,
    "_cos_rot_s": 6.123233995736766e-17,
@@ -536535,7 +536535,7 @@
   },
   "acsca.d5r4.b2/lhcb2_co_ref": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -536546,7 +536546,7 @@
   },
   "acsca.c5r4.b2/lhcb2_co_ref": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -536557,7 +536557,7 @@
   },
   "acsca.b5r4.b2/lhcb2_co_ref": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -536568,7 +536568,7 @@
   },
   "acsca.a5r4.b2/lhcb2_co_ref": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -536583,7 +536583,7 @@
   },
   "acsca.a5l4.b2/lhcb2_co_ref": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -536594,7 +536594,7 @@
   },
   "acsca.b5l4.b2/lhcb2_co_ref": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -536605,7 +536605,7 @@
   },
   "acsca.c5l4.b2/lhcb2_co_ref": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -536616,7 +536616,7 @@
   },
   "acsca.d5l4.b2/lhcb2_co_ref": {
    "__class__": "Cavity",
-   "lag": 180.0,
+   "phase": 3.141592653589793,
    "frequency": 400789598.98582596,
    "_integrator": 0,
    "_model": 0
@@ -567551,64 +567551,64 @@
    "((1.0 * (vars['vrf400'] / 8.0)) * 1000000.0)"
   ],
   [
-   "element_refs['acsca.d5l4.b1'].lag",
-   "(vars['lagrf400.b1'] * 360.0)"
+   "element_refs['acsca.d5l4.b1'].phase",
+   "(vars['lagrf400.b1'] * 2 * vars['pi'])"
   ],
   [
    "element_refs['acsca.c5l4.b1'].voltage",
    "((1.0 * (vars['vrf400'] / 8.0)) * 1000000.0)"
   ],
   [
-   "element_refs['acsca.c5l4.b1'].lag",
-   "(vars['lagrf400.b1'] * 360.0)"
+   "element_refs['acsca.c5l4.b1'].phase",
+   "(vars['lagrf400.b1'] * 2 * vars['pi'])"
   ],
   [
    "element_refs['acsca.b5l4.b1'].voltage",
    "((1.0 * (vars['vrf400'] / 8.0)) * 1000000.0)"
   ],
   [
-   "element_refs['acsca.b5l4.b1'].lag",
-   "(vars['lagrf400.b1'] * 360.0)"
+   "element_refs['acsca.b5l4.b1'].phase",
+   "(vars['lagrf400.b1'] * 2 * vars['pi'])"
   ],
   [
    "element_refs['acsca.a5l4.b1'].voltage",
    "((1.0 * (vars['vrf400'] / 8.0)) * 1000000.0)"
   ],
   [
-   "element_refs['acsca.a5l4.b1'].lag",
-   "(vars['lagrf400.b1'] * 360.0)"
+   "element_refs['acsca.a5l4.b1'].phase",
+   "(vars['lagrf400.b1'] * 2 * vars['pi'])"
   ],
   [
    "element_refs['acsca.a5r4.b1'].voltage",
    "((1.0 * (vars['vrf400'] / 8.0)) * 1000000.0)"
   ],
   [
-   "element_refs['acsca.a5r4.b1'].lag",
-   "(vars['lagrf400.b1'] * 360.0)"
+   "element_refs['acsca.a5r4.b1'].phase",
+   "(vars['lagrf400.b1'] * 2 * vars['pi'])"
   ],
   [
    "element_refs['acsca.b5r4.b1'].voltage",
    "((1.0 * (vars['vrf400'] / 8.0)) * 1000000.0)"
   ],
   [
-   "element_refs['acsca.b5r4.b1'].lag",
-   "(vars['lagrf400.b1'] * 360.0)"
+   "element_refs['acsca.b5r4.b1'].phase",
+   "(vars['lagrf400.b1'] * 2 * vars['pi'])"
   ],
   [
    "element_refs['acsca.c5r4.b1'].voltage",
    "((1.0 * (vars['vrf400'] / 8.0)) * 1000000.0)"
   ],
   [
-   "element_refs['acsca.c5r4.b1'].lag",
-   "(vars['lagrf400.b1'] * 360.0)"
+   "element_refs['acsca.c5r4.b1'].phase",
+   "(vars['lagrf400.b1'] * 2 * vars['pi'])"
   ],
   [
    "element_refs['acsca.d5r4.b1'].voltage",
    "((1.0 * (vars['vrf400'] / 8.0)) * 1000000.0)"
   ],
   [
-   "element_refs['acsca.d5r4.b1'].lag",
-   "(vars['lagrf400.b1'] * 360.0)"
+   "element_refs['acsca.d5r4.b1'].phase",
+   "(vars['lagrf400.b1'] * 2 * vars['pi'])"
   ],
   [
    "element_refs['apwl.5r4.b1'].length",
@@ -576951,8 +576951,8 @@
    "((((vars['on_crab5'] * vars['vhcrabref_l5b1']) * vars['bvaux_lhcb1']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgah.4bl5.b1'].lag",
-   "(((vars['phi_crab_l5b1'] * vars['bvaux_lhcb1']) + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 360.0)"
+   "element_refs['acfgah.4bl5.b1'].phase",
+   "(((vars['phi_crab_l5b1'] * vars['bvaux_lhcb1']) + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acfgav.4bl5.b1'].length",
@@ -576967,8 +576967,8 @@
    "(((vars['on_crab5'] * vars['vvcrabref_l5b1']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgav.4bl5.b1'].lag",
-   "((vars['phi_crab_l5b1'] + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 360.0)"
+   "element_refs['acfgav.4bl5.b1'].phase",
+   "((vars['phi_crab_l5b1'] + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acfgah.4al5.b1'].length",
@@ -576979,8 +576979,8 @@
    "((((vars['on_crab5'] * vars['vhcrabref_l5b1']) * vars['bvaux_lhcb1']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgah.4al5.b1'].lag",
-   "(((vars['phi_crab_l5b1'] * vars['bvaux_lhcb1']) + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 360.0)"
+   "element_refs['acfgah.4al5.b1'].phase",
+   "(((vars['phi_crab_l5b1'] * vars['bvaux_lhcb1']) + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acfgav.4al5.b1'].length",
@@ -576995,8 +576995,8 @@
    "(((vars['on_crab5'] * vars['vvcrabref_l5b1']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgav.4al5.b1'].lag",
-   "((vars['phi_crab_l5b1'] + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 360.0)"
+   "element_refs['acfgav.4al5.b1'].phase",
+   "((vars['phi_crab_l5b1'] + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['mcbrdh.4l5.b1'].knl[0]",
@@ -579007,8 +579007,8 @@
    "((((vars['on_crab5'] * vars['vhcrabref_r5b1']) * vars['bvaux_lhcb1']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgah.4ar5.b1'].lag",
-   "(((vars['phi_crab_r5b1'] * vars['bvaux_lhcb1']) + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 360.0)"
+   "element_refs['acfgah.4ar5.b1'].phase",
+   "(((vars['phi_crab_r5b1'] * vars['bvaux_lhcb1']) + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acfgav.4ar5.b1'].length",
@@ -579023,8 +579023,8 @@
    "(((vars['on_crab5'] * vars['vvcrabref_r5b1']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgav.4ar5.b1'].lag",
-   "((vars['phi_crab_r5b1'] + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 360.0)"
+   "element_refs['acfgav.4ar5.b1'].phase",
+   "((vars['phi_crab_r5b1'] + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acfgah.4br5.b1'].length",
@@ -579035,8 +579035,8 @@
    "((((vars['on_crab5'] * vars['vhcrabref_r5b1']) * vars['bvaux_lhcb1']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgah.4br5.b1'].lag",
-   "(((vars['phi_crab_r5b1'] * vars['bvaux_lhcb1']) + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 360.0)"
+   "element_refs['acfgah.4br5.b1'].phase",
+   "(((vars['phi_crab_r5b1'] * vars['bvaux_lhcb1']) + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acfgav.4br5.b1'].length",
@@ -579051,8 +579051,8 @@
    "(((vars['on_crab5'] * vars['vvcrabref_r5b1']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgav.4br5.b1'].lag",
-   "((vars['phi_crab_r5b1'] + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 360.0)"
+   "element_refs['acfgav.4br5.b1'].phase",
+   "((vars['phi_crab_r5b1'] + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['apwl.4r5.b1'].length",
@@ -618451,8 +618451,8 @@
    "((((vars['on_crab1'] * vars['vhcrabref_l1b1']) * vars['bvaux_lhcb1']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgah.4bl1.b1'].lag",
-   "(((vars['phi_crab_l1b1'] * vars['bvaux_lhcb1']) + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 360.0)"
+   "element_refs['acfgah.4bl1.b1'].phase",
+   "(((vars['phi_crab_l1b1'] * vars['bvaux_lhcb1']) + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acfgav.4bl1.b1'].length",
@@ -618467,8 +618467,8 @@
    "(((vars['on_crab1'] * vars['vvcrabref_l1b1']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgav.4bl1.b1'].lag",
-   "((vars['phi_crab_l1b1'] + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 360.0)"
+   "element_refs['acfgav.4bl1.b1'].phase",
+   "((vars['phi_crab_l1b1'] + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acfgah.4al1.b1'].length",
@@ -618479,8 +618479,8 @@
    "((((vars['on_crab1'] * vars['vhcrabref_l1b1']) * vars['bvaux_lhcb1']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgah.4al1.b1'].lag",
-   "(((vars['phi_crab_l1b1'] * vars['bvaux_lhcb1']) + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 360.0)"
+   "element_refs['acfgah.4al1.b1'].phase",
+   "(((vars['phi_crab_l1b1'] * vars['bvaux_lhcb1']) + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acfgav.4al1.b1'].length",
@@ -618495,8 +618495,8 @@
    "(((vars['on_crab1'] * vars['vvcrabref_l1b1']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgav.4al1.b1'].lag",
-   "((vars['phi_crab_l1b1'] + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 360.0)"
+   "element_refs['acfgav.4al1.b1'].phase",
+   "((vars['phi_crab_l1b1'] + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['mcbrdh.4l1.b1'].knl[0]",
@@ -620507,8 +620507,8 @@
    "((((vars['on_crab1'] * vars['vhcrabref_r1b1']) * vars['bvaux_lhcb1']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgah.4ar1.b1'].lag",
-   "(((vars['phi_crab_r1b1'] * vars['bvaux_lhcb1']) + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 360.0)"
+   "element_refs['acfgah.4ar1.b1'].phase",
+   "(((vars['phi_crab_r1b1'] * vars['bvaux_lhcb1']) + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acfgav.4ar1.b1'].length",
@@ -620523,8 +620523,8 @@
    "(((vars['on_crab1'] * vars['vvcrabref_r1b1']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgav.4ar1.b1'].lag",
-   "((vars['phi_crab_r1b1'] + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 360.0)"
+   "element_refs['acfgav.4ar1.b1'].phase",
+   "((vars['phi_crab_r1b1'] + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acfgah.4br1.b1'].length",
@@ -620535,8 +620535,8 @@
    "((((vars['on_crab1'] * vars['vhcrabref_r1b1']) * vars['bvaux_lhcb1']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgah.4br1.b1'].lag",
-   "(((vars['phi_crab_r1b1'] * vars['bvaux_lhcb1']) + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 360.0)"
+   "element_refs['acfgah.4br1.b1'].phase",
+   "(((vars['phi_crab_r1b1'] * vars['bvaux_lhcb1']) + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acfgav.4br1.b1'].length",
@@ -620551,8 +620551,8 @@
    "(((vars['on_crab1'] * vars['vvcrabref_r1b1']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgav.4br1.b1'].lag",
-   "((vars['phi_crab_r1b1'] + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 360.0)"
+   "element_refs['acfgav.4br1.b1'].phase",
+   "((vars['phi_crab_r1b1'] + (vars['isnotb4'] * vars['bvlag_crab_b1'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['apwl.4r1.b1'].length",
@@ -661875,8 +661875,8 @@
    "((((vars['on_crab1'] * vars['vhcrabref_r1b2']) * vars['bvaux_lhcb2']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgah.4br1.b2'].lag",
-   "(((vars['phi_crab_r1b2'] * vars['bvaux_lhcb2']) + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 360.0)"
+   "element_refs['acfgah.4br1.b2'].phase",
+   "(((vars['phi_crab_r1b2'] * vars['bvaux_lhcb2']) + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acfgav.4br1.b2'].length",
@@ -661891,8 +661891,8 @@
    "(((vars['on_crab1'] * vars['vvcrabref_r1b2']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgav.4br1.b2'].lag",
-   "((vars['phi_crab_r1b2'] + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 360.0)"
+   "element_refs['acfgav.4br1.b2'].phase",
+   "((vars['phi_crab_r1b2'] + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acfgah.4ar1.b2'].length",
@@ -661903,8 +661903,8 @@
    "((((vars['on_crab1'] * vars['vhcrabref_r1b2']) * vars['bvaux_lhcb2']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgah.4ar1.b2'].lag",
-   "(((vars['phi_crab_r1b2'] * vars['bvaux_lhcb2']) + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 360.0)"
+   "element_refs['acfgah.4ar1.b2'].phase",
+   "(((vars['phi_crab_r1b2'] * vars['bvaux_lhcb2']) + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acfgav.4ar1.b2'].length",
@@ -661919,8 +661919,8 @@
    "(((vars['on_crab1'] * vars['vvcrabref_r1b2']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgav.4ar1.b2'].lag",
-   "((vars['phi_crab_r1b2'] + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 360.0)"
+   "element_refs['acfgav.4ar1.b2'].phase",
+   "((vars['phi_crab_r1b2'] + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['mcbrdv.4r1.b2'].ksl[0]",
@@ -663931,8 +663931,8 @@
    "((((vars['on_crab1'] * vars['vhcrabref_l1b2']) * vars['bvaux_lhcb2']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgah.4al1.b2'].lag",
-   "(((vars['phi_crab_l1b2'] * vars['bvaux_lhcb2']) + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 360.0)"
+   "element_refs['acfgah.4al1.b2'].phase",
+   "(((vars['phi_crab_l1b2'] * vars['bvaux_lhcb2']) + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acfgav.4al1.b2'].length",
@@ -663947,8 +663947,8 @@
    "(((vars['on_crab1'] * vars['vvcrabref_l1b2']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgav.4al1.b2'].lag",
-   "((vars['phi_crab_l1b2'] + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 360.0)"
+   "element_refs['acfgav.4al1.b2'].phase",
+   "((vars['phi_crab_l1b2'] + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acfgah.4bl1.b2'].length",
@@ -663959,8 +663959,8 @@
    "((((vars['on_crab1'] * vars['vhcrabref_l1b2']) * vars['bvaux_lhcb2']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgah.4bl1.b2'].lag",
-   "(((vars['phi_crab_l1b2'] * vars['bvaux_lhcb2']) + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 360.0)"
+   "element_refs['acfgah.4bl1.b2'].phase",
+   "(((vars['phi_crab_l1b2'] * vars['bvaux_lhcb2']) + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acfgav.4bl1.b2'].length",
@@ -663975,8 +663975,8 @@
    "(((vars['on_crab1'] * vars['vvcrabref_l1b2']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgav.4bl1.b2'].lag",
-   "((vars['phi_crab_l1b2'] + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 360.0)"
+   "element_refs['acfgav.4bl1.b2'].phase",
+   "((vars['phi_crab_l1b2'] + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['apwl.4l1.b2'].length",
@@ -703403,8 +703403,8 @@
    "((((vars['on_crab5'] * vars['vhcrabref_r5b2']) * vars['bvaux_lhcb2']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgah.4br5.b2'].lag",
-   "(((vars['phi_crab_r5b2'] * vars['bvaux_lhcb2']) + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 360.0)"
+   "element_refs['acfgah.4br5.b2'].phase",
+   "(((vars['phi_crab_r5b2'] * vars['bvaux_lhcb2']) + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acfgav.4br5.b2'].length",
@@ -703419,8 +703419,8 @@
    "(((vars['on_crab5'] * vars['vvcrabref_r5b2']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgav.4br5.b2'].lag",
-   "((vars['phi_crab_r5b2'] + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 360.0)"
+   "element_refs['acfgav.4br5.b2'].phase",
+   "((vars['phi_crab_r5b2'] + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acfgah.4ar5.b2'].length",
@@ -703431,8 +703431,8 @@
    "((((vars['on_crab5'] * vars['vhcrabref_r5b2']) * vars['bvaux_lhcb2']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgah.4ar5.b2'].lag",
-   "(((vars['phi_crab_r5b2'] * vars['bvaux_lhcb2']) + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 360.0)"
+   "element_refs['acfgah.4ar5.b2'].phase",
+   "(((vars['phi_crab_r5b2'] * vars['bvaux_lhcb2']) + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acfgav.4ar5.b2'].length",
@@ -703447,8 +703447,8 @@
    "(((vars['on_crab5'] * vars['vvcrabref_r5b2']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgav.4ar5.b2'].lag",
-   "((vars['phi_crab_r5b2'] + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 360.0)"
+   "element_refs['acfgav.4ar5.b2'].phase",
+   "((vars['phi_crab_r5b2'] + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['mcbrdv.4r5.b2'].ksl[0]",
@@ -705459,8 +705459,8 @@
    "((((vars['on_crab5'] * vars['vhcrabref_l5b2']) * vars['bvaux_lhcb2']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgah.4al5.b2'].lag",
-   "(((vars['phi_crab_l5b2'] * vars['bvaux_lhcb2']) + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 360.0)"
+   "element_refs['acfgah.4al5.b2'].phase",
+   "(((vars['phi_crab_l5b2'] * vars['bvaux_lhcb2']) + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acfgav.4al5.b2'].length",
@@ -705475,8 +705475,8 @@
    "(((vars['on_crab5'] * vars['vvcrabref_l5b2']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgav.4al5.b2'].lag",
-   "((vars['phi_crab_l5b2'] + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 360.0)"
+   "element_refs['acfgav.4al5.b2'].phase",
+   "((vars['phi_crab_l5b2'] + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acfgah.4bl5.b2'].length",
@@ -705487,8 +705487,8 @@
    "((((vars['on_crab5'] * vars['vhcrabref_l5b2']) * vars['bvaux_lhcb2']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgah.4bl5.b2'].lag",
-   "(((vars['phi_crab_l5b2'] * vars['bvaux_lhcb2']) + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 360.0)"
+   "element_refs['acfgah.4bl5.b2'].phase",
+   "(((vars['phi_crab_l5b2'] * vars['bvaux_lhcb2']) + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acfgav.4bl5.b2'].length",
@@ -705503,8 +705503,8 @@
    "(((vars['on_crab5'] * vars['vvcrabref_l5b2']) * 1000000.0) * 1.0)"
   ],
   [
-   "element_refs['acfgav.4bl5.b2'].lag",
-   "((vars['phi_crab_l5b2'] + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 360.0)"
+   "element_refs['acfgav.4bl5.b2'].phase",
+   "((vars['phi_crab_l5b2'] + (vars['isnotb4'] * vars['bvlag_crab_b2'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['apwl.4l5.b2'].length",
@@ -714839,64 +714839,64 @@
    "((1.0 * (vars['vrf400'] / 8.0)) * 1000000.0)"
   ],
   [
-   "element_refs['acsca.d5r4.b2'].lag",
-   "((0.5 - (0.0 + vars['lagrf400.b2'])) * 360.0)"
+   "element_refs['acsca.d5r4.b2'].phase",
+   "((0.5 - (0.0 + vars['lagrf400.b2'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acsca.c5r4.b2'].voltage",
    "((1.0 * (vars['vrf400'] / 8.0)) * 1000000.0)"
   ],
   [
-   "element_refs['acsca.c5r4.b2'].lag",
-   "((0.5 - (0.0 + vars['lagrf400.b2'])) * 360.0)"
+   "element_refs['acsca.c5r4.b2'].phase",
+   "((0.5 - (0.0 + vars['lagrf400.b2'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acsca.b5r4.b2'].voltage",
    "((1.0 * (vars['vrf400'] / 8.0)) * 1000000.0)"
   ],
   [
-   "element_refs['acsca.b5r4.b2'].lag",
-   "((0.5 - (0.0 + vars['lagrf400.b2'])) * 360.0)"
+   "element_refs['acsca.b5r4.b2'].phase",
+   "((0.5 - (0.0 + vars['lagrf400.b2'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acsca.a5r4.b2'].voltage",
    "((1.0 * (vars['vrf400'] / 8.0)) * 1000000.0)"
   ],
   [
-   "element_refs['acsca.a5r4.b2'].lag",
-   "((0.5 - (0.0 + vars['lagrf400.b2'])) * 360.0)"
+   "element_refs['acsca.a5r4.b2'].phase",
+   "((0.5 - (0.0 + vars['lagrf400.b2'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acsca.a5l4.b2'].voltage",
    "((1.0 * (vars['vrf400'] / 8.0)) * 1000000.0)"
   ],
   [
-   "element_refs['acsca.a5l4.b2'].lag",
-   "((0.5 - (0.0 + vars['lagrf400.b2'])) * 360.0)"
+   "element_refs['acsca.a5l4.b2'].phase",
+   "((0.5 - (0.0 + vars['lagrf400.b2'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acsca.b5l4.b2'].voltage",
    "((1.0 * (vars['vrf400'] / 8.0)) * 1000000.0)"
   ],
   [
-   "element_refs['acsca.b5l4.b2'].lag",
-   "((0.5 - (0.0 + vars['lagrf400.b2'])) * 360.0)"
+   "element_refs['acsca.b5l4.b2'].phase",
+   "((0.5 - (0.0 + vars['lagrf400.b2'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acsca.c5l4.b2'].voltage",
    "((1.0 * (vars['vrf400'] / 8.0)) * 1000000.0)"
   ],
   [
-   "element_refs['acsca.c5l4.b2'].lag",
-   "((0.5 - (0.0 + vars['lagrf400.b2'])) * 360.0)"
+   "element_refs['acsca.c5l4.b2'].phase",
+   "((0.5 - (0.0 + vars['lagrf400.b2'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['acsca.d5l4.b2'].voltage",
    "((1.0 * (vars['vrf400'] / 8.0)) * 1000000.0)"
   ],
   [
-   "element_refs['acsca.d5l4.b2'].lag",
-   "((0.5 - (0.0 + vars['lagrf400.b2'])) * 360.0)"
+   "element_refs['acsca.d5l4.b2'].phase",
+   "((0.5 - (0.0 + vars['lagrf400.b2'])) * 2 * vars['pi'])"
   ],
   [
    "element_refs['apwl.5l4.b2'].length",

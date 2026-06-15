@@ -1,15 +1,13 @@
 import xtrack as xt
 import numpy as np
 
-import xobjects as xo
-
 env = xt.load(['../../test_data/sps_thick/sps.seq',
                '../../test_data/sps_thick/lhc_q20.str'])
 line = env.sps
 
 line['actcse.31632'].voltage = 4.2e+08
 line['actcse.31632'].frequency = 3e6
-line['actcse.31632'].lag = 180.
+line['actcse.31632'].phase = np.pi
 
 tt = line.get_table()
 
@@ -64,7 +62,7 @@ tw6d_thick = line.twiss()
 
 line.configure_radiation(model='mean')
 
-tw_rad = line.twiss(eneloss_and_damping=True, strengths=True)
+tw_rad = line.twiss(radiation_analysis=True, strengths=True)
 
 import matplotlib.pyplot as plt
 plt.close('all')

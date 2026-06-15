@@ -19,10 +19,12 @@ void track_rf_kick_single_particle(
     LocalParticle* part,
     double voltage,
     double frequency,
-    double lag,
     double harmonic,
+    double lag,
+    double phase,
     double transverse_voltage,
     double transverse_lag,
+    double transverse_phase,
     int64_t absolute_time,
     int64_t order,
     double factor_knl_ksl,
@@ -30,6 +32,8 @@ void track_rf_kick_single_particle(
     GPUGLMEM const double* ksl,
     GPUGLMEM const double* pn,
     GPUGLMEM const double* ps,
+    GPUGLMEM const double* phase_n,
+    GPUGLMEM const double* phase_s,
     const uint8_t kill_energy_kick
 ){
 
@@ -54,7 +58,8 @@ void track_rf_kick_single_particle(
     double const tau = zeta / beta0;
 
     double const energy_kick = q * voltage
-        * sin(phase0 + DEG2RAD * lag - (2.0 * PI) / C_LIGHT * frequency * tau);
+        * sin(phase0 + DEG2RAD * lag + phase
+              - (2.0 * PI) / C_LIGHT * frequency * tau);
 
     double rfmultipole_energy_kick = 0;
     if (order >= 0) {
@@ -77,8 +82,8 @@ void track_rf_kick_single_particle(
                 factorial *= kk;
             }
 
-            double const pn_kk = phase0 + DEG2RAD * pn[kk] - (2.0 * PI) / C_LIGHT * frequency * tau;
-            double const ps_kk = phase0 + DEG2RAD * ps[kk] - (2.0 * PI) / C_LIGHT * frequency * tau;
+            double const pn_kk = phase0 + DEG2RAD * pn[kk] + phase_n[kk] - (2.0 * PI) / C_LIGHT * frequency * tau;
+            double const ps_kk = phase0 + DEG2RAD * ps[kk] + phase_s[kk] - (2.0 * PI) / C_LIGHT * frequency * tau;
 
             double bal_n_kk = factor_knl_ksl * knl[kk]/factorial;
             double bal_s_kk = factor_knl_ksl * ksl[kk]/factorial;
@@ -120,7 +125,9 @@ void track_rf_kick_single_particle(
         double const y = LocalParticle_get_y(part);
         double const p0c = LocalParticle_get_p0c(part);
 
-        double const pn_kk = phase0 + DEG2RAD * (transverse_lag + 90.) - (2.0 * PI) / C_LIGHT * frequency * tau;
+        double const pn_kk = phase0 + DEG2RAD * (transverse_lag + 90.)
+                           + transverse_phase
+                           - (2.0 * PI) / C_LIGHT * frequency * tau;
         double const k0l = transverse_voltage / p0c;
 
         double bal_n_kk = k0l;
@@ -166,10 +173,12 @@ void track_rf_body_single_particle(
     double length,
     double voltage,
     double frequency,
-    double lag,
     double harmonic,
+    double lag,
+    double phase,
     double transverse_voltage,
     double transverse_lag,
+    double transverse_phase,
     int64_t absolute_time,
     int64_t order,
     double factor_knl_ksl,
@@ -177,6 +186,8 @@ void track_rf_body_single_particle(
     GPUGLMEM const double* ksl,
     GPUGLMEM const double* pn,
     GPUGLMEM const double* ps,
+    GPUGLMEM const double* phase_n,
+    GPUGLMEM const double* phase_s,
     const int64_t num_kicks,
     const int8_t drift_model,
     const int8_t integrator,
@@ -185,10 +196,10 @@ void track_rf_body_single_particle(
 
     #define RF_KICK(part, kick_weight) \
         track_rf_kick_single_particle(\
-            part, voltage * (kick_weight), frequency, lag, harmonic,\
-            transverse_voltage * (kick_weight), transverse_lag,\
+            part, voltage * (kick_weight), frequency, harmonic, lag, phase,\
+            transverse_voltage * (kick_weight), transverse_lag, transverse_phase,\
             absolute_time, order, \
-            factor_knl_ksl * (kick_weight), knl, ksl, pn, ps,\
+            factor_knl_ksl * (kick_weight), knl, ksl, pn, ps, phase_n, phase_s,\
             kill_energy_kick\
         )
 
@@ -228,16 +239,20 @@ void track_rf_particles(
     double length,
     double voltage,
     double frequency,
-    double lag,
     double harmonic,
+    double lag,
+    double phase,
     double transverse_voltage,
     double transverse_lag,
+    double transverse_phase,
     int64_t absolute_time,
     int64_t order,
     GPUGLMEM const double* knl,
     GPUGLMEM const double* ksl,
     GPUGLMEM const double* pn,
     GPUGLMEM const double* ps,
+    GPUGLMEM const double* phase_n,
+    GPUGLMEM const double* phase_s,
     int64_t num_kicks,
     int8_t model,
     int8_t default_model,
@@ -246,6 +261,7 @@ void track_rf_particles(
     int64_t radiation_flag,
     int64_t radiation_flag_parent,
     double lag_taper,
+    double phase_taper,
     int64_t body_active,
     int64_t edge_entry_active,
     int64_t edge_exit_active
@@ -261,6 +277,7 @@ void track_rf_particles(
 
     #ifndef XTRACK_MULTIPOLE_NO_SYNRAD
         lag += lag_taper;
+        phase += phase_taper;
     #endif
 
     if (LocalParticle_check_track_flag(part0, XS_FLAG_BACKTRACK)) {
@@ -328,10 +345,12 @@ void track_rf_particles(
                 body_length * weight,
                 voltage * weight,
                 frequency,
-                lag,
                 harmonic,
+                lag,
+                phase,
                 transverse_voltage * weight,
                 transverse_lag,
+                transverse_phase,
                 absolute_time,
                 order,
                 factor_knl_ksl_body * weight,
@@ -339,6 +358,8 @@ void track_rf_particles(
                 ksl,
                 pn,
                 ps,
+                phase_n,
+                phase_s,
                 num_kicks,
                 drift_model,
                 integrator,

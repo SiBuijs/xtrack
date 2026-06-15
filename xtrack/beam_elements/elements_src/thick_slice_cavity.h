@@ -20,16 +20,20 @@ void ThickSliceCavity_track_local_particle(ThickSliceCavityData el, LocalParticl
         /*length*/                ThickSliceCavityData_get__parent_length(el),
         /*voltage*/               ThickSliceCavityData_get__parent_voltage(el),
         /*frequency*/             ThickSliceCavityData_get__parent_frequency(el),
-        /*lag*/                   ThickSliceCavityData_get__parent_lag(el),
         /*harmonic*/              ThickSliceCavityData_get__parent_harmonic(el),
+        /*lag*/                   ThickSliceCavityData_get__parent_lag(el),
+        /*phase*/                 ThickSliceCavityData_get__parent_phase(el),
         /*transverse_voltage*/    0.,
         /*transverse_lag*/        0.,
+        /*transverse_phase*/      0.,
         /*absolute_time*/         ThickSliceCavityData_get__parent_absolute_time(el),
         /*order*/                 -1, // not used here
         /*knl*/                   NULL,
         /*ksl*/                   NULL,
         /*pn*/                    NULL,
         /*ps*/                    NULL,
+        /*phase_n*/               NULL,
+        /*phase_s*/               NULL,
         /*num_kicks*/             ThickSliceCavityData_get__parent_num_kicks(el),
         /*model*/                 ThickSliceCavityData_get__parent_model(el),
         /*default_model*/         6, // drift-kick-drift-expanded
@@ -38,6 +42,7 @@ void ThickSliceCavity_track_local_particle(ThickSliceCavityData el, LocalParticl
         /*radiation_flag*/        0, // not used here
         /*radiation_flag_parent*/ 0, // not used here
         /*lag_taper*/             ThickSliceCavityData_get__parent_lag_taper(el),
+        /*phase_taper*/           ThickSliceCavityData_get__parent_phase_taper(el),
         /*body_active*/           1,
         /*edge_entry_active*/     0, // not used here
         /*edge_exit_active*/      0  // not used here

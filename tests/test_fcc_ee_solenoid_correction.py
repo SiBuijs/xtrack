@@ -11,7 +11,7 @@ test_data_folder = pathlib.Path(
     __file__).parent.joinpath('../test_data').absolute()
 
 
-def test_fcc_ee_solenoid_correction():
+def test_fcc_ee_solenoid_correction(tmp_path):
     fname = 'fccee_t'; pc_gev = 182.5
 
     env = xt.load([test_data_folder / 'fcc_ee/' / (fname + '.seq')])
@@ -24,9 +24,9 @@ def test_fcc_ee_solenoid_correction():
     tt = line.get_table()
     bz_data_file = test_data_folder / 'fcc_ee/Bz_closed_before_quads.dat'
 
-    line.vars['voltca1_ref'] = line.vv['voltca1']
+    line.vars['voltca1_ref'] = line['voltca1']
     if 'voltca2' in line.vars.keys():
-        line.vars['voltca2_ref'] = line.vv['voltca2']
+        line.vars['voltca2_ref'] = line['voltca2']
     else:
         line.vars['voltca2_ref'] = 0
 
@@ -65,10 +65,10 @@ def test_fcc_ee_solenoid_correction():
     line.insert(what='sol_start_'+ip_sol, obj=xt.Marker(), at=s_ip + ds_sol_start)
     line.insert(what='sol_end_'+ip_sol, obj=xt.Marker(), at=s_ip + ds_sol_end)
 
-    sol_start_tilt = xt.YRotation(angle=-theta_tilt * 180 / np.pi)
-    sol_end_tilt = xt.YRotation(angle=+theta_tilt * 180 / np.pi)
-    sol_start_shift = xt.XYShift(dx=l_solenoid/2 * np.tan(theta_tilt))
-    sol_end_shift = xt.XYShift(dx=l_solenoid/2 * np.tan(theta_tilt))
+    sol_start_tilt = xt.Rotation(rot_y_rad=-theta_tilt)
+    sol_end_tilt = xt.Rotation(rot_y_rad=+theta_tilt)
+    sol_start_shift = xt.Translation(shift_x=l_solenoid/2 * np.tan(theta_tilt))
+    sol_end_shift = xt.Translation(shift_x=l_solenoid/2 * np.tan(theta_tilt))
 
     line.env.elements['sol_start_tilt_'+ip_sol] = sol_start_tilt
     line.env.elements['sol_end_tilt_'+ip_sol] = sol_end_tilt
@@ -328,14 +328,14 @@ def test_fcc_ee_solenoid_correction():
     opt_r.enable(vary=True)
     opt_r.solve()
 
-    line.to_json(fname + '_with_sol_corrected.json')
+    line.to_json(tmp_path / f'{fname}_with_sol_corrected.json')
 
     tw_sol_on_corrected = line.twiss(method='4d')
 
     assert_allclose = np.testing.assert_allclose
 
     # Check that tilt is present
-    assert_allclose(tw_sol_off['kin_xprime', 'ip.1'], np.tan(0.015), atol=1e-14, rtol=0)
+    assert_allclose(tw_sol_off['kin_xp', 'ip.1'], np.tan(0.015), atol=1e-14, rtol=0)
 
     # Check that solenoid introduces coupling
     assert tw_sol_on.c_minus > 1e-4
@@ -345,16 +345,16 @@ def test_fcc_ee_solenoid_correction():
 
     assert_allclose(tw_chk['x', 'ip.1'], 0, atol=1e-8, rtol=0)
     assert_allclose(tw_chk['y', 'ip.1'], 0, atol=1e-10, rtol=0)
-    assert_allclose(tw_chk['kin_xprime', 'ip.1'], tw_sol_off['kin_xprime', 'ip.1'],  atol=1e-9, rtol=0)
-    assert_allclose(tw_chk['kin_yprime', 'ip.1'], 0,  atol=1e-8, rtol=0)
+    assert_allclose(tw_chk['kin_xp', 'ip.1'], tw_sol_off['kin_xp', 'ip.1'],  atol=1e-9, rtol=0)
+    assert_allclose(tw_chk['kin_yp', 'ip.1'], 0,  atol=1e-8, rtol=0)
     assert_allclose(tw_chk['x', 'pqc2re.1'], 0, atol=5e-8, rtol=0)
     assert_allclose(tw_chk['y', 'pqc2re.1'], 0, atol=5e-8, rtol=0)
-    assert_allclose(tw_chk['kin_xprime', 'pqc2re.1'], 0, atol=1e-8, rtol=0)
-    assert_allclose(tw_chk['kin_yprime', 'pqc2re.1'], 0, atol=1e-8, rtol=0)
+    assert_allclose(tw_chk['kin_xp', 'pqc2re.1'], 0, atol=1e-8, rtol=0)
+    assert_allclose(tw_chk['kin_yp', 'pqc2re.1'], 0, atol=1e-8, rtol=0)
     assert_allclose(tw_chk['x', 'pqc2le.4'], 0, atol=5e-8, rtol=0)
     assert_allclose(tw_chk['y', 'pqc2le.4'], 0, atol=5e-8, rtol=0)
-    assert_allclose(tw_chk['kin_xprime', 'pqc2le.4'], 0, atol=1e-8, rtol=0)
-    assert_allclose(tw_chk['kin_yprime', 'pqc2le.4'], 0, atol=1e-8, rtol=0)
+    assert_allclose(tw_chk['kin_xp', 'pqc2le.4'], 0, atol=1e-8, rtol=0)
+    assert_allclose(tw_chk['kin_yp', 'pqc2le.4'], 0, atol=1e-8, rtol=0)
 
     assert_allclose(tw_chk['betx', 'ip.1'], tw_sol_off['betx', 'ip.1'], atol=0, rtol=5e-5)
     assert_allclose(tw_chk['bety', 'ip.1'], tw_sol_off['bety', 'ip.1'], atol=0, rtol=5e-5)

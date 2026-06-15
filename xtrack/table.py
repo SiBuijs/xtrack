@@ -9,15 +9,16 @@ import json
 import math
 import numbers
 import os
-import shlex
 import tempfile
 from typing import Any, Dict, Iterable, Mapping, Optional
+from warnings import warn
 
 import numpy as np
 import pandas as pd
 
 from xdeps import Table as _XdepsTable
 import xtrack as xt
+from .general import DEPRECATION_INFO_PREP_1_0
 
 from . import json as json_utils
 
@@ -137,6 +138,27 @@ def _parse_headers(text):
 
 
 class Table(_XdepsTable):
+
+    # Messages to be shown when accessing deprecated fields
+    _DEPRECATED_FIELDS = None
+
+    def __getitem__(self, key):
+        depr_fields = object.__getattribute__(self, '_DEPRECATED_FIELDS')
+        if depr_fields is not None:
+            if isinstance(key, (tuple, list)):
+                first_key = key[0]
+            else:
+                first_key = key
+            if first_key in depr_fields:
+                warn(depr_fields[first_key], FutureWarning)
+        return super().__getitem__(key)
+
+    def __getattribute__(self, name):
+        depr_fields = object.__getattribute__(self, '_DEPRECATED_FIELDS')
+        if depr_fields is not None and name in depr_fields:
+            warn(depr_fields[name], FutureWarning)
+        return super().__getattribute__(name)
+
     """Extension of :class:`xdeps.Table` with export/import helpers."""
 
     # ------------------------------------------------------------------
@@ -395,7 +417,7 @@ class Table(_XdepsTable):
     # ------------------------------------------------------------------
     def to_json(self, file, indent=1, **kwargs):
         """Dump the table to JSON using the xtrack JSON utilities."""
-        json_utils.dump(self.to_dict(**kwargs), file, indent=indent)
+        json_utils.dump(self.to_dict(**kwargs), file, sort_keys=False, indent=indent)
 
     @classmethod
     def from_json(cls, file):
@@ -1555,7 +1577,7 @@ class Table(_XdepsTable):
         data = {}
         col_names = []
 
-        contain_capital = ["W_matrix", "R_matrix", "R_matrix_ebe", "T_rev0"]
+        contain_capital = ["W_matrix", "R_matrix", "R_matrix_ebe", "steps_R_matrix"]
         rename_dict = {cc.lower(): cc for cc in contain_capital}
 
         for cc in tfs_table.columns:
@@ -1588,11 +1610,16 @@ class Table(_XdepsTable):
 
         if 'attrs_serialization' in data:
             attrs_serialization = json_utils.load(string=data['attrs_serialization'])
+            done = set()
             for kk, ss in attrs_serialization.items():
+                kk = rename_dict.get(kk, kk)
                 if data[kk] is None:
+                    continue
+                if kk in done: # some deprecated elements are the same apart from capital letters
                     continue
                 assert ss == 'json'
                 data[kk] = json_utils.load(string=data[kk])
+                done.add(kk)
 
         if tmad :=tfs_table.headers.get('TYPE', None):
             if tmad == 'TWISS':

@@ -51,7 +51,7 @@ line.cycle('bpv.11706', inplace=True)
 line.env.new('cav', xt.Cavity, length=0,
              frequency=line.ref['actcse.31632'].frequency,
              voltage=line.ref['actcse.31632'].voltage,
-             lag=line.ref['actcse.31632'].lag)
+             phase=line.ref['actcse.31632'].phase)
 
 line.insert([
     line.env.new('cav1', 'cav', at='bpv.11706@start'),
@@ -170,9 +170,9 @@ line.configure_radiation(model='mean')
 # Tapering!!!
 line.compensate_radiation_energy_loss()
 
-tw_rad = line.twiss(eneloss_and_damping=True, method='6d',
+tw_rad = line.twiss(radiation_analysis=True, method='6d',
                     use_full_inverse=False)
-tw_rad2 = line.twiss(eneloss_and_damping=True, method='6d',
+tw_rad2 = line.twiss(radiation_analysis=True, method='6d',
                      radiation_method='full')
 
 
@@ -193,7 +193,7 @@ line.track(p, num_turns=num_turns, time=True, turn_by_turn_monitor=True)
 print(f'Tracking time: {line.time_last_track}')
 
 twe = tw.rows[:-1]
-hl = twe.angle_rad
+hl = twe.angle
 dl = twe.length
 hh = hl * 0
 hh[dl>0] = hl[dl>0] / dl[dl>0]
@@ -278,3 +278,5 @@ mdv.53107, kick := mdv.53107.ksl0;
 mdv.53307, kick := mdv.53307.ksl0;
 mdv.53507, kick := mdv.53507.ksl0;
 ''')
+
+plt.show()

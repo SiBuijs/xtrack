@@ -302,6 +302,68 @@ for td in to_do:
     out_drift_slice = drift_slice_template.replace("Octupole", parent_class)
     out_drift_slice = out_drift_slice.replace("Octupole".upper(), parent_class.upper())
 
+    if parent_class == "RBend":
+
+        out_drift_slice = '''
+        // copyright ############################### //
+        // This file is part of the Xtrack Package.  //
+        // Copyright (c) CERN, 2023.                 //
+        // ######################################### //
+
+        #ifndef XTRACK_DRIFT_SLICE_RBEND_H
+        #define XTRACK_DRIFT_SLICE_RBEND_H
+
+        #include "xtrack/headers/track.h"
+        #include "xtrack/beam_elements/elements_src/track_drift.h"
+
+
+        GPUFUN
+        void DriftSliceRBend_track_local_particle(
+                DriftSliceRBendData el,
+                LocalParticle* part0
+        ) {
+
+            double weight = DriftSliceRBendData_get_weight(el);
+            int64_t rbend_model = DriftSliceRBendData_get__parent_rbend_model(el);
+            double full_length;
+            double length_drift;
+            double ds_corr = 0;
+            double full_length_curved = DriftSliceRBendData_get__parent_length(el);
+            if (rbend_model == 2) { // straight-body
+                double full_length_straight = DriftSliceRBendData_get__parent_length_straight(el);
+                length_drift = full_length_straight * weight;
+                ds_corr = (full_length_curved - full_length_straight) * weight;
+            }
+            else {
+                length_drift = full_length_curved * weight;
+            }
+
+
+            if (LocalParticle_check_track_flag(part0, XS_FLAG_BACKTRACK)) {
+                length_drift *= -1;
+                ds_corr *= -1;
+            }
+
+            if (rbend_model == 2) { // straight-body
+                // Force exact drift
+                START_PER_PARTICLE_BLOCK(part0, part);
+                    Drift_single_particle_exact(part, length_drift);
+                END_PER_PARTICLE_BLOCK;
+                START_PER_PARTICLE_BLOCK(part0, part);
+                    LocalParticle_add_to_s(part, ds_corr);
+                    LocalParticle_add_to_zeta(part, ds_corr);
+                END_PER_PARTICLE_BLOCK;
+            }
+            else {
+                START_PER_PARTICLE_BLOCK(part0, part);
+                    Drift_single_particle(part, length_drift);
+                END_PER_PARTICLE_BLOCK;
+            }
+        }
+
+        #endif
+        '''
+
     parent_class_snake = ''.join(['_' + c.lower() if c.isupper() else c for c in parent_class]).lstrip('_')
     parent_class_snake = parent_class_snake.replace("r_bend", "rbend")
 

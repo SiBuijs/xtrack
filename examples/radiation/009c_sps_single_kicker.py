@@ -35,7 +35,7 @@ twm4d = mad.table.tw4d
 
 mad.sequence.sps.elements['actcse.31632'].volt = v_mv * 10   # To stay in the linear region
 mad.sequence.sps.elements['actcse.31632'].freq = 0.3
-mad.sequence.sps.elements['actcse.31632'].lag = 0.5
+mad.sequence.sps.elements['actcse.31632'].phase = np.pi
 
 
 mad.input('twiss, table=tw6d;')
@@ -81,7 +81,7 @@ line.discard_tracker()
 line.build_tracker(_context=xo.ContextCpu())
 line.configure_radiation(model=None)
 
-# line.vv['vkick'] = 1e-6
+# line['vkick'] = 1e-6
 # line['mdv.10107'].ksl[0] = line.vars['vkick']
 line['qd.10110'].shift_y = 'vkick'
 
@@ -144,9 +144,9 @@ line.configure_radiation(model='mean')
 # Tapering!!!
 line.compensate_radiation_energy_loss()
 
-tw_rad = line.twiss(eneloss_and_damping=True, method='6d',
+tw_rad = line.twiss(radiation_analysis=True, method='6d',
                     use_full_inverse=False)
-tw_rad2 = line.twiss(eneloss_and_damping=True, method='6d',
+tw_rad2 = line.twiss(radiation_analysis=True, method='6d',
                      radiation_method='full')
 
 assert tw_rad.eq_gemitt_x is not None

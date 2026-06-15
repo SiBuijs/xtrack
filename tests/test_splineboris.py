@@ -48,9 +48,9 @@ def test_data_dir():
 @pytest.fixture
 def make_uniform_splineboris():
     def _make(Bx=0, By=0, Bs=0, s_start=0, s_end=1, n_steps=100,
-                multipole_order=1, radiation_flag=0, kn=None, ks=None):
-        # Uniform field: Hermite params (val_start, der_start, val_end, der_end, integral)
-        # For a constant field B, all boundary values = B, derivatives = 0, integral = B
+                multipole_order=1, radiation_flag=0, scale_b=1.0, kn=None, ks=None):
+        # Uniform field: Hermite params (val_start, der_start, val_end, der_end, mean)
+        # For a constant field B, all boundary values = B, derivatives = 0, mean = B
         Bx_h = [Bx, 0, Bx, 0, Bx]
         By_h = [By, 0, By, 0, By]
         Bs_h = [Bs, 0, Bs, 0, Bs]
@@ -69,6 +69,7 @@ def make_uniform_splineboris():
             bx=(xt.Spline4(*Bx_h),),
             length=s_end - s_start,
             n_steps=n_steps,
+            scale_b=scale_b,
             radiation_flag=radiation_flag,
         )
         return splineboris
@@ -186,6 +187,7 @@ def test_splineboris_to_dict_from_dict_roundtrip(test_context):
         n_steps=4,
         shift_x=1e-3,
         shift_y=-2e-3,
+        scale_b=1.7,
         radiation_flag=1,
         bs=xt.Spline4(0.1, 0.2, 0.3, 0.4, 0.5),
         by=(
@@ -197,6 +199,8 @@ def test_splineboris_to_dict_from_dict_roundtrip(test_context):
             None,
             xt.Spline4(-2.0, -2.1, -2.2, -2.3, -2.4),
         ),
+        knl=[0.01, -0.02, 0.03],
+        ksl=[-0.04, 0.05],
         _context=test_context,
     )
 
@@ -208,7 +212,16 @@ def test_splineboris_to_dict_from_dict_roundtrip(test_context):
     assert isinstance(element_dict['bs'], dict)
     assert isinstance(element_dict['by'], list)
     assert isinstance(element_dict['bx'], list)
+    assert element_dict['bs']['mean'] == 0.5
+    assert 'integral' not in element_dict['bs']
     assert 'multipole_order' not in element_dict
+
+    legacy_ctor_dict = element_dict.copy()
+    legacy_ctor_dict.pop('__class__', None)
+    legacy_ctor_dict['bs'] = legacy_ctor_dict['bs'].copy()
+    legacy_ctor_dict['bs']['integral'] = legacy_ctor_dict['bs'].pop('mean')
+    with pytest.raises(ValueError, match='mean'):
+        xt.SplineBoris(_context=test_context, **legacy_ctor_dict)
 
     roundtrip = xt.SplineBoris.from_dict(element_dict, _context=test_context)
 
@@ -225,10 +238,321 @@ def test_splineboris_to_dict_from_dict_roundtrip(test_context):
         xo.assert_allclose(candidate.n_steps, element_cpu.n_steps, atol=0, rtol=0)
         xo.assert_allclose(candidate.shift_x, element_cpu.shift_x, atol=0, rtol=0)
         xo.assert_allclose(candidate.shift_y, element_cpu.shift_y, atol=0, rtol=0)
+        xo.assert_allclose(candidate.scale_b, element_cpu.scale_b, atol=0, rtol=0)
         xo.assert_allclose(candidate.radiation_flag, element_cpu.radiation_flag, atol=0, rtol=0)
         xo.assert_allclose(candidate.bs, element_cpu.bs, atol=0, rtol=0)
         xo.assert_allclose(candidate.by, element_cpu.by, atol=0, rtol=0)
         xo.assert_allclose(candidate.bx, element_cpu.bx, atol=0, rtol=0)
+        xo.assert_allclose(candidate.knl, element_cpu.knl, atol=0, rtol=0)
+        xo.assert_allclose(candidate.ksl, element_cpu.ksl, atol=0, rtol=0)
+
+
+def test_splineboris_multipole_kick_matches_stepwise_thin_multipoles():
+    length = 1.7
+    n_steps = 17
+    knl = np.array([1.2e-5, -3.4e-4, 1.5e-3])
+    ksl = np.array([-4e-6, 2.1e-5, -7e-4])
+
+    splineboris = xt.SplineBoris(
+        length=length,
+        n_steps=n_steps,
+        knl=knl,
+        ksl=ksl,
+    )
+
+    reference_elements = []
+    for _ in range(n_steps):
+        reference_elements.append(xt.Drift(length=0.5 * length / n_steps))
+        reference_elements.append(xt.Multipole(
+            knl=knl / n_steps,
+            ksl=ksl / n_steps,
+        ))
+        reference_elements.append(xt.Drift(length=0.5 * length / n_steps))
+    reference = xt.Line(elements=reference_elements)
+
+    p0 = xt.Particles(
+        p0c=7e9,
+        x=1.3e-3,
+        px=2.1e-4,
+        y=-0.7e-3,
+        py=-1.2e-4,
+        delta=3e-4,
+    )
+
+    p_splineboris = p0.copy()
+    p_splineboris_line = p0.copy()
+    p_ref = p0.copy()
+
+    splineboris.track(p_splineboris)
+    line_splineboris = xt.Line(elements=[splineboris.copy()])
+    line_splineboris.build_tracker()
+    line_splineboris.track(p_splineboris_line)
+    reference.track(p_ref)
+
+    xo.assert_allclose(p_splineboris_line.x, p_splineboris.x, rtol=0, atol=5e-14)
+    xo.assert_allclose(p_splineboris_line.px, p_splineboris.px, rtol=0, atol=5e-14)
+    xo.assert_allclose(p_splineboris_line.y, p_splineboris.y, rtol=0, atol=5e-14)
+    xo.assert_allclose(p_splineboris_line.py, p_splineboris.py, rtol=0, atol=5e-14)
+
+    xo.assert_allclose(p_splineboris.x, p_ref.x, rtol=0, atol=5e-11)
+    xo.assert_allclose(p_splineboris.px, p_ref.px, rtol=0, atol=5e-11)
+    xo.assert_allclose(p_splineboris.y, p_ref.y, rtol=0, atol=5e-11)
+    xo.assert_allclose(p_splineboris.py, p_ref.py, rtol=0, atol=5e-11)
+    xo.assert_allclose(p_splineboris.zeta, p_ref.zeta, rtol=0, atol=5e-11)
+
+
+def test_splineboris_multipole_field_contributes_to_mean_radiation():
+    length = 1.0
+    n_steps = 100
+    B_T = 2.0
+    p0c = 5e9
+    brho = p0c / clight
+    knl0 = B_T * length / brho
+
+    particles = xt.Particles(
+        p0c=p0c,
+        px=1e-4,
+        py=-1e-4,
+        delta=0,
+        mass0=xt.ELECTRON_MASS_EV,
+    )
+    particles_before = particles.copy()
+
+    splineboris = xt.SplineBoris(
+        length=length,
+        n_steps=n_steps,
+        knl=[knl0],
+        radiation_flag=1,
+    )
+    splineboris.track(particles)
+
+    gamma = (particles_before.energy / particles_before.mass0)[0]
+    gamma0 = particles_before.gamma0[0]
+    rho_0 = brho / B_T
+    mass0_kg = particles_before.mass0 * qe / clight**2
+    r0 = qe**2 / (4 * np.pi * epsilon_0 * mass0_kg * clight**2)
+    ps = (2 * r0 * clight * mass0_kg * clight**2 * gamma0**2 * gamma**2) / (3 * rho_0**2)
+    expected_delta_e_ev = -ps * (length / clight) / qe
+    tracked_delta_e_ev = ((particles.ptau - particles_before.ptau) * particles.p0c)[0]
+
+    xo.assert_allclose(tracked_delta_e_ev, expected_delta_e_ev, rtol=5e-3, atol=0)
+
+
+def test_splineboris_scale_b_does_not_scale_multipole_components():
+    length = 1.2
+    n_steps = 30
+    knl = [2.0e-3, -1.0e-2]
+    ksl = [-1.5e-3, 4.0e-3]
+
+    el_scale_1 = xt.SplineBoris(
+        length=length,
+        n_steps=n_steps,
+        knl=knl,
+        ksl=ksl,
+        scale_b=1.0,
+    )
+    el_scale_7 = xt.SplineBoris(
+        length=length,
+        n_steps=n_steps,
+        knl=knl,
+        ksl=ksl,
+        scale_b=7.0,
+    )
+
+    p_scale_1 = xt.Particles(
+        p0c=7e9,
+        x=1.3e-3,
+        px=2.1e-4,
+        y=-0.7e-3,
+        py=-1.2e-4,
+        delta=3e-4,
+    )
+    p_scale_7 = p_scale_1.copy()
+
+    xt.Line(elements=[el_scale_1]).track(p_scale_1)
+    xt.Line(elements=[el_scale_7]).track(p_scale_7)
+
+    xo.assert_allclose(p_scale_7.x, p_scale_1.x, rtol=0, atol=1e-15)
+    xo.assert_allclose(p_scale_7.px, p_scale_1.px, rtol=0, atol=1e-15)
+    xo.assert_allclose(p_scale_7.y, p_scale_1.y, rtol=0, atol=1e-15)
+    xo.assert_allclose(p_scale_7.py, p_scale_1.py, rtol=0, atol=1e-15)
+    xo.assert_allclose(p_scale_7.zeta, p_scale_1.zeta, rtol=0, atol=1e-15)
+
+
+def test_splineboris_spline_and_multipole_fields_add_for_mean_radiation():
+    length = 1.0
+    n_steps = 100
+    B_spline_T = 1.25
+    B_multipole_T = 0.75
+    B_total_T = B_spline_T + B_multipole_T
+    p0c = 5e9
+    brho = p0c / clight
+    knl0 = B_multipole_T * length / brho
+
+    by_h = [B_spline_T, 0, B_spline_T, 0, B_spline_T]
+
+    particles = xt.Particles(
+        p0c=p0c,
+        px=1e-4,
+        py=-1e-4,
+        delta=0,
+        mass0=xt.ELECTRON_MASS_EV,
+    )
+    particles_before = particles.copy()
+
+    splineboris = xt.SplineBoris(
+        length=length,
+        n_steps=n_steps,
+        by=(xt.Spline4(*by_h),),
+        knl=[knl0],
+        radiation_flag=1,
+    )
+    splineboris.track(particles)
+
+    gamma = (particles_before.energy / particles_before.mass0)[0]
+    gamma0 = particles_before.gamma0[0]
+    rho_0 = brho / B_total_T
+    mass0_kg = particles_before.mass0 * qe / clight**2
+    r0 = qe**2 / (4 * np.pi * epsilon_0 * mass0_kg * clight**2)
+    ps = (2 * r0 * clight * mass0_kg * clight**2 * gamma0**2 * gamma**2) / (3 * rho_0**2)
+    expected_delta_e_ev = -ps * (length / clight) / qe
+    tracked_delta_e_ev = ((particles.ptau - particles_before.ptau) * particles.p0c)[0]
+
+    xo.assert_allclose(tracked_delta_e_ev, expected_delta_e_ev, rtol=5e-3, atol=0)
+
+
+def test_splineboris_scale_b_scales_field_and_tracking(make_uniform_splineboris):
+    scale_b = 2.5
+    Bx = 0.03
+    By = -0.07
+    Bs = 0.01
+
+    scaled = make_uniform_splineboris(
+        Bx=Bx, By=By, Bs=Bs, n_steps=20, scale_b=scale_b)
+    reference = make_uniform_splineboris(
+        Bx=scale_b * Bx, By=scale_b * By, Bs=scale_b * Bs, n_steps=20)
+
+    xo.assert_allclose(scaled.scale_b, scale_b, atol=0, rtol=0)
+    xo.assert_allclose(
+        scaled.get_field(1e-3, -2e-3, 0.4),
+        reference.get_field(1e-3, -2e-3, 0.4),
+        atol=1e-14,
+        rtol=0,
+    )
+
+    particle_ref = xt.Particles(
+        mass0=xt.ELECTRON_MASS_EV,
+        q0=1.0,
+        energy0=1e9,
+    )
+
+    p_scaled = particle_ref.copy()
+    p_reference = particle_ref.copy()
+    for pp in (p_scaled, p_reference):
+        pp.x = 1e-3
+        pp.y = -2e-3
+        pp.px = 3e-4
+        pp.py = -4e-4
+
+    line_scaled = xt.Line(elements=[scaled])
+    line_reference = xt.Line(elements=[reference])
+    line_scaled.particle_ref = particle_ref.copy()
+    line_reference.particle_ref = particle_ref.copy()
+
+    line_scaled.track(p_scaled)
+    line_reference.track(p_reference)
+
+    xo.assert_allclose(p_scaled.x, p_reference.x, atol=1e-15, rtol=0)
+    xo.assert_allclose(p_scaled.y, p_reference.y, atol=1e-15, rtol=0)
+    xo.assert_allclose(p_scaled.px, p_reference.px, atol=1e-15, rtol=0)
+    xo.assert_allclose(p_scaled.py, p_reference.py, atol=1e-15, rtol=0)
+    xo.assert_allclose(p_scaled.zeta, p_reference.zeta, atol=1e-15, rtol=0)
+
+
+def test_splineboris_backtrack_twiss_checks_s():
+    def make_splineboris(length, scale=1.0):
+        return xt.SplineBoris(
+            bs=xt.Spline4(
+                scale * 0.020, scale * 0.003, scale * 0.017,
+                scale * -0.002, scale * 0.018),
+            by=(xt.Spline4(
+                scale * -0.010, scale * 0.004, scale * -0.012,
+                scale * 0.001, scale * -0.011),),
+            bx=(xt.Spline4(
+                scale * 0.006, scale * -0.002, scale * 0.009,
+                scale * 0.003, scale * 0.007),),
+            length=length,
+            n_steps=8,
+        )
+
+    splineboris_0 = make_splineboris(length=1.3, scale=1.0)
+    splineboris_1 = make_splineboris(length=0.7, scale=-0.6)
+
+    assert splineboris_0.has_backtrack
+    assert splineboris_1.has_backtrack
+
+    line = xt.Line(elements={
+        'sb0': splineboris_0,
+        'sb1': splineboris_1,
+        'end': xt.Marker(),
+    })
+    line.particle_ref = xt.Particles(
+        mass0=xt.ELECTRON_MASS_EV,
+        q0=1.0,
+        energy0=1e9,
+    )
+    line.build_tracker(use_prebuilt_kernels=False)
+
+    tw_forward = line.twiss(
+        method='4d',
+        start='sb0',
+        end='end',
+        init_at='sb0',
+        x=1.2e-3,
+        px=2.0e-4,
+        y=-0.8e-3,
+        py=-3.0e-4,
+        betx=1.0,
+        bety=1.0,
+    )
+    tw_backtrack = line.twiss(
+        method='4d',
+        start='sb0',
+        end='end',
+        init=tw_forward,
+        init_at='end',
+    )
+
+    xo.assert_allclose(
+        tw_forward.s,
+        [0.0, splineboris_0.length,
+         splineboris_0.length + splineboris_1.length,
+         splineboris_0.length + splineboris_1.length],
+        atol=1e-14,
+        rtol=0,
+    )
+    xo.assert_allclose(tw_backtrack.s, tw_forward.s, atol=1e-14, rtol=0)
+
+    for name in ('sb0', 'sb1', 'end', '_end_point'):
+        assert name in tw_forward.name
+        assert name in tw_backtrack.name
+
+    for column in ('x', 'px', 'y', 'py', 'delta'):
+        xo.assert_allclose(
+            tw_backtrack[column],
+            tw_forward[column],
+            atol=1e-12,
+            rtol=0,
+        )
+
+    for column in ('betx', 'bety', 'alfx', 'alfy'):
+        xo.assert_allclose(
+            tw_backtrack[column],
+            tw_forward[column],
+            atol=1e-9,
+            rtol=0,
+        )
+
 
 # Test some common field angles, as well as some unusual ones
 @pytest.mark.parametrize('field_angle', [0, np.pi/4, np.pi/2, 3*np.pi/4, np.pi, 4*np.pi/9, np.pi/7])
@@ -264,8 +588,8 @@ def test_splineboris_homogeneous_analytic(field_angle, make_uniform_splineboris)
     p.px = 1e-3  # small transverse momentum to create a visible helix
 
     # Analytic solution for the helix angle
-    kin_xp = p.kin_xprime[0]
-    kin_yp = p.kin_yprime[0]
+    kin_xp = p.kin_xp[0]
+    kin_yp = p.kin_yp[0]
     x = p.x[0]
     y = p.y[0]
 
@@ -369,8 +693,8 @@ def test_splineboris_homogeneous_analytic(field_angle, make_uniform_splineboris)
     line.track(p)
     x_end_splineboris = p.x[0]
     y_end_splineboris = p.y[0]
-    xp_final_splineboris = p.kin_xprime[0]
-    yp_final_splineboris = p.kin_yprime[0]
+    xp_final_splineboris = p.kin_xp[0]
+    yp_final_splineboris = p.kin_yp[0]
 
     xo.assert_allclose(x_final, x_end_splineboris, atol=1e-12, rtol=1e-5)
     xo.assert_allclose(y_final, y_end_splineboris, atol=1e-12, rtol=1e-5)
@@ -1203,6 +1527,53 @@ def test_splineboris_spin_uniform_solenoid(case, atol, make_uniform_splineboris)
     xo.assert_allclose(p.spin_x[0], p_ref.spin_x[0], atol=atol, rtol=0)
     xo.assert_allclose(p.spin_y[0], p_ref.spin_y[0], atol=atol, rtol=0)
     xo.assert_allclose(p.spin_z[0], p_ref.spin_z[0], atol=atol, rtol=0)
+
+
+def test_splineboris_spin_multipole_dipole_component():
+    spin_x = 0.1
+    spin_z = 0.2
+    spin_y = np.sqrt(1 - spin_x**2 - spin_z**2)
+
+    p = xt.Particles(
+        p0c=700e9,
+        mass0=xt.ELECTRON_MASS_EV,
+        anomalous_magnetic_moment=0.00115965218128,
+        x=1e-3,
+        px=1e-5,
+        y=2e-3,
+        py=2e-5,
+        delta=1e-3,
+        spin_x=spin_x,
+        spin_y=spin_y,
+        spin_z=spin_z,
+    )
+    p_ref = p.copy()
+
+    length = 0.02
+    k0 = 0.01
+    n_steps = 100
+
+    line_ref = xt.Line(elements=[
+        xt.Bend(length=length, angle=0.0, k0=k0),
+        xt.Marker(),
+    ])
+    line_ref.configure_spin(spin_model='auto')
+    line_ref.track(p_ref)
+
+    line_splineboris = xt.Line(elements=[
+        xt.SplineBoris(
+            length=length,
+            n_steps=n_steps,
+            knl=[k0 * length],
+        )
+    ])
+    line_splineboris.particle_ref = p.copy()
+    line_splineboris.configure_spin(spin_model='auto')
+    line_splineboris.track(p)
+
+    xo.assert_allclose(p.spin_x[0], p_ref.spin_x[0], atol=3e-8, rtol=0)
+    xo.assert_allclose(p.spin_y[0], p_ref.spin_y[0], atol=3e-8, rtol=0)
+    xo.assert_allclose(p.spin_z[0], p_ref.spin_z[0], atol=3e-8, rtol=0)
 
 
 
