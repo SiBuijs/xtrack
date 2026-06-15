@@ -380,6 +380,44 @@ line_varsol_half = xt.Line(
 )
 
 
+# Build the corresponding BorisSolenoid line. Like VariableSolenoid, one element
+# per slice along s, but with the Boris helical integrator in the analytical
+# untilted solenoid field (no tilt in BorisSolenoid).
+borissol_elements_left = []
+borissol_names_left = []
+borissol_elements_right = []
+borissol_names_right = []
+
+for ii in range(len(s_axis) - 1):
+    s_start = s_axis[ii]
+    s_end = s_axis[ii + 1]
+    length = s_end - s_start
+    element = xt.BorisSolenoid(
+        L_coil=field_model._sf.L,
+        a=field_model._sf.a,
+        B0=field_model._sf.B0,
+        z0=field_model._sf.z0,
+        length=length,
+        n_steps=BORIS_STEPS_PER_SLICE,
+    )
+
+    if s_end <= 0.0:
+        borissol_elements_left.append(element)
+        borissol_names_left.append(f'borissol_l_{ii:03d}')
+    else:
+        borissol_elements_right.append(element)
+        borissol_names_right.append(f'borissol_r_{ii:03d}')
+
+line_borissol_full = xt.Line(
+    elements=borissol_elements_left + [xt.Marker()] + borissol_elements_right,
+    element_names=borissol_names_left + ['ip'] + borissol_names_right,
+)
+line_borissol_half = xt.Line(
+    elements=[xt.Marker()] + borissol_elements_right,
+    element_names=['ip'] + borissol_names_right,
+)
+
+
 # Build the direct BorisSpatialIntegrator line, one spatial integrator per
 # slice, using the tilted field map directly.
 boris_elements_left = []
@@ -418,11 +456,13 @@ line_boris_half = xt.Line(
 lines_full = {
     'SplineBoris': line_splineboris_full,
     'VariableSolenoid': line_varsol_full,
+    'BorisSolenoid': line_borissol_full,
     'BorisSpatialIntegrator': line_boris_full,
 }
 lines_half = {
     'SplineBoris': line_splineboris_half,
     'VariableSolenoid': line_varsol_half,
+    'BorisSolenoid': line_borissol_half,
     'BorisSpatialIntegrator': line_boris_half,
 }
 

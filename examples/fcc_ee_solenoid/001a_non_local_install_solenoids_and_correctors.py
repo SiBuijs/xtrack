@@ -8,7 +8,7 @@ from xtrack._temp.boris_and_solenoid_map.solenoid_field import SolenoidField
 import numpy as np
 from tilted_solenoid import TiltedSolenoid
 
-env = xt.load('fccee_z_lcc.json')
+env = xt.load('examples/fcc_ee_solenoid/fccee_z_lcc.json')
 line = env.fccee_p_ring
 
 ip_names = ['ipa', 'ipd', 'ipg', 'ipj']
