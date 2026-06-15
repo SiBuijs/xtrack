@@ -32,6 +32,7 @@ ONLY_XTRACK_ELEMENTS = [
     Solenoid,
     VariableSolenoid,
     UniformSolenoid,
+    BorisWiggler,
     RFMultipole,
     DipoleEdge,
     MultipoleEdge,

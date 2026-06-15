@@ -385,6 +385,19 @@ class Slicer:
             slice_parent = element
             is_drift_slice = False
 
+        if isinstance(slice_parent, xt.BorisWiggler):
+            weights = chosen_slicing.drift_weights(elem_length)
+            segments = slice_parent.split_into_segments(
+                weights, _buffer=element._buffer)
+            for seg in segments:
+                while (nn := f'{name}..{element_idx}') in self._line._element_dict:
+                    element_idx += 1
+                self._line._element_dict[nn] = seg
+                slices_to_append.append(nn)
+            slice_parent._movable = True
+            element._movable = True
+            return slices_to_append
+
         if chosen_slicing.mode == 'thin' or is_drift_slice:
             slice_offset = 0
             for weight, is_drift in chosen_slicing.iter_weights(elem_length):

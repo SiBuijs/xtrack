@@ -160,6 +160,255 @@ class SynchrotronRadiationRecord(xo.HybridClass):
 # circular import issues while keeping SplineBoris in its own module.
 from .splineboris import Spline4, SplineBoris
 
+
+def _resolve_wiggler_period_params(length, n_periods=None, lambda_u=None, k_u=None):
+    """Resolve wiggler period parameters and check length / wavelength consistency."""
+    provided = sum(x is not None for x in (n_periods, lambda_u, k_u))
+    if provided != 1:
+        raise ValueError(
+            "Exactly one of n_periods, lambda_u, k_u must be provided"
+        )
+
+    if not np.isfinite(length) or length <= 0:
+        raise ValueError(f"length must be finite and > 0, got {length}")
+
+    if k_u is not None:
+        if not np.isfinite(k_u) or k_u <= 0:
+            raise ValueError(f"k_u must be finite and > 0, got {k_u}")
+        lambda_u = 2.0 * np.pi / k_u
+        n_periods = length / lambda_u
+    elif n_periods is not None:
+        if n_periods <= 0:
+            raise ValueError(f"n_periods must be > 0, got {n_periods}")
+        lambda_u = length / n_periods
+    else:
+        if not np.isfinite(lambda_u) or lambda_u <= 0:
+            raise ValueError(f"lambda_u must be finite and > 0, got {lambda_u}")
+        n_periods = length / lambda_u
+
+    if not np.isclose(n_periods, round(n_periods), rtol=0.0, atol=1e-9):
+        raise ValueError(
+            f"length / lambda_u must be an integer number of periods, "
+            f"got {n_periods}"
+        )
+
+    n_periods = int(round(n_periods))
+    lambda_u = length / n_periods
+    k_u = 2.0 * np.pi / lambda_u
+
+    if not np.isclose(length, n_periods * lambda_u, rtol=0.0, atol=1e-12 * length):
+        raise ValueError(
+            f"length must equal n_periods * lambda_u, got "
+            f"{length} != {n_periods} * {lambda_u}"
+        )
+
+    return n_periods, lambda_u, k_u
+
+
+class BorisWiggler(BeamElement):
+    '''
+    Thick wiggler element integrated with a Boris stepper in an analytic
+  magnetic field (no horizontal dependence).
+
+    Parameters
+    ----------
+    length : float
+        Element length [m]. Must be an integer multiple of the wavelength.
+    g : float
+        Wiggler gap [m].
+    B_r : float
+        Peak field parameter B_0 [T] before the gap attenuation factor.
+    n_periods : int, optional
+        Number of wiggler periods. Exactly one of ``n_periods``, ``lambda_u``,
+        or ``k_u`` must be given.
+    lambda_u : float, optional
+        Wiggler wavelength [m].
+    k_u : float, optional
+        Wiggler wave number [1/m].
+    n_steps : int, optional
+        Number of Boris substeps. Defaults to ``10 * n_periods``.
+    '''
+
+    isthick = True
+    has_backtrack = True
+    allow_rot_and_shift = False
+
+    _xofields = {
+        'length': xo.Float64,
+        'g': xo.Float64,
+        'B_r': xo.Float64,
+        'k_u': xo.Float64,
+        'n_periods': xo.Int64,
+        'b_tilde': xo.Float64,
+        'n_steps': xo.Int64,
+        's_offset': xo.Field(xo.Float64, 0),
+    }
+
+    _extra_c_sources = [
+        '#include "xtrack/beam_elements/elements_src/boriswiggler.h"',
+    ]
+
+    def __init__(self,
+                 length,
+                 g,
+                 B_r,
+                 *,
+                 n_periods=None,
+                 lambda_u=None,
+                 k_u=None,
+                 b_tilde=None,
+                 n_steps=None,
+                 s_offset=0.0,
+                 _for_slice=False,
+                 **kwargs,
+    ):
+        if '_xobject' in kwargs and kwargs['_xobject'] is not None:
+            super().__init__(**kwargs)
+            return
+
+        if _for_slice:
+            if k_u is None or b_tilde is None:
+                raise ValueError("k_u and b_tilde must be provided for slice segments")
+            if n_steps is None or n_steps <= 0:
+                raise ValueError(f"n_steps must be > 0, got {n_steps}")
+            super().__init__(
+                length=float(length),
+                g=float(g),
+                B_r=float(B_r),
+                k_u=float(k_u),
+                n_periods=int(n_periods or 0),
+                b_tilde=float(b_tilde),
+                n_steps=int(n_steps),
+                s_offset=float(s_offset),
+                **kwargs,
+            )
+            return
+
+        if not np.isfinite(g) or g <= 0:
+            raise ValueError(f"g must be finite and > 0, got {g}")
+        if not np.isfinite(B_r):
+            raise ValueError(f"B_r must be finite, got {B_r}")
+
+        n_periods, lambda_u, k_u = _resolve_wiggler_period_params(
+            length, n_periods=n_periods, lambda_u=lambda_u, k_u=k_u,
+        )
+
+        if n_steps is None:
+            n_steps = 10 * n_periods
+        if n_steps <= 0:
+            raise ValueError(f"n_steps must be > 0, got {n_steps}")
+
+        b_tilde = B_r / np.cosh(np.pi * g / lambda_u)
+
+        super().__init__(
+            length=float(length),
+            g=float(g),
+            B_r=float(B_r),
+            k_u=float(k_u),
+            n_periods=int(n_periods),
+            b_tilde=float(b_tilde),
+            n_steps=int(n_steps),
+            s_offset=float(s_offset),
+            **kwargs,
+        )
+
+    def get_field(self, x, y, s_local):
+        """Evaluate **B** in the element's local longitudinal coordinate."""
+        x_arr, y_arr, s_loc = np.broadcast_arrays(
+            np.asarray(x, dtype=float),
+            np.asarray(y, dtype=float),
+            np.asarray(s_local, dtype=float),
+        )
+
+        outside = (s_loc < 0) | (s_loc > self.length)
+        if np.any(outside):
+            s_min = float(np.min(s_loc))
+            s_max = float(np.max(s_loc))
+            raise ValueError(
+                "s_local contains values outside the local element range "
+                f"[0, {self.length}] (min={s_min}, max={s_max})"
+            )
+
+        from .boriswiggler_src.wiggler_B_field_eval_python import evaluate_wiggler_B
+
+        bx_eval, by_eval, bs_eval = evaluate_wiggler_B(
+            x_arr, y_arr, self.s_offset + s_loc, self.k_u, self.b_tilde,
+        )
+
+        if bx_eval.shape == ():
+            return float(bx_eval), float(by_eval), float(bs_eval)
+        return bx_eval, by_eval, bs_eval
+
+    def split_into_segments(self, weights, _buffer=None):
+        """Return BorisWiggler segments covering the integration interval."""
+        weights = list(weights)
+        if len(weights) == 0:
+            raise ValueError("weights must contain at least one segment")
+
+        total_length = self.length
+        total_n_steps = self.n_steps
+        n_seg = len(weights)
+
+        lengths = []
+        n_steps_list = []
+        length_sum = 0.0
+        steps_sum = 0
+
+        for i, w in enumerate(weights):
+            if i < n_seg - 1:
+                length_i = total_length * w
+                n_steps_i = max(1, int(round(total_n_steps * w)))
+                lengths.append(length_i)
+                n_steps_list.append(n_steps_i)
+                length_sum += length_i
+                steps_sum += n_steps_i
+            else:
+                lengths.append(total_length - length_sum)
+                n_steps_list.append(total_n_steps - steps_sum)
+
+        common = dict(
+            g=self.g,
+            B_r=self.B_r,
+            k_u=self.k_u,
+            b_tilde=self.b_tilde,
+            n_periods=0,
+            _for_slice=True,
+        )
+        if _buffer is not None:
+            common['_buffer'] = _buffer
+
+        segments = []
+        s_offset = self.s_offset
+        for length_i, n_steps_i in zip(lengths, n_steps_list):
+            if n_steps_i < 1:
+                raise ValueError(
+                    f"Cannot split n_steps={total_n_steps} into {n_seg} segments"
+                )
+            segments.append(BorisWiggler(
+                length=length_i,
+                n_steps=n_steps_i,
+                s_offset=s_offset,
+                **common,
+            ))
+            s_offset += length_i
+        return segments
+
+    def to_dict(self, copy_to_cpu=True):
+        out = super().to_dict(copy_to_cpu=copy_to_cpu)
+        out.pop('k_u', None)
+        out.pop('b_tilde', None)
+        if out.get('s_offset', 0) == 0:
+            out.pop('s_offset', None)
+        return out
+
+    @classmethod
+    def from_dict(cls, dct, **kwargs):
+        dct = dct.copy()
+        dct.pop('__class__', None)
+        dct.update(kwargs)
+        return cls(**dct)
+
+
 class _HasIntegrator:
 
     """
