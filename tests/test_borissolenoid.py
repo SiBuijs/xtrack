@@ -844,3 +844,113 @@ def test_borissolenoid_slicing_line_structure():
     tt = line.get_table()
     slice_mask = np.array([name.startswith('sol..') for name in tt.name])
     assert np.all(tt.element_type[slice_mask] == 'BorisSolenoid')
+
+
+def test_borissolenoid_tapered_line_structure_and_conservation():
+    sol = xt.BorisSolenoid(
+        **SOLENOID_MODEL_PARAMS,
+        length=INTERVAL,
+        n_steps=N_STEPS,
+        taper=True,
+    )
+    line = sol.to_tapered_line()
+    assert len(line.elements) == 3
+    assert isinstance(line.elements[0], xt.SplineBoris)
+    assert isinstance(line.elements[1], xt.BorisSolenoid)
+    assert isinstance(line.elements[2], xt.SplineBoris)
+    assert np.isclose(sum(ee.length for ee in line.elements), INTERVAL)
+    assert sum(int(ee.n_steps) for ee in line.elements) == N_STEPS
+
+
+def test_borissolenoid_taper_auto_lengths_are_asymmetric():
+    sol = xt.BorisSolenoid(
+        L_coil=SOLENOID_MODEL_PARAMS["L_coil"],
+        a=SOLENOID_MODEL_PARAMS["a"],
+        B0=SOLENOID_MODEL_PARAMS["B0"],
+        z0=5.0,  # intentionally not centered in [0, INTERVAL]
+        length=INTERVAL,
+        n_steps=N_STEPS,
+        taper=True,
+    )
+    left, right = sol._compute_auto_taper_lengths()
+    assert left > 0
+    assert right > 0
+    assert not np.isclose(left, right)
+    assert left + right < sol.length
+
+
+def test_borissolenoid_taper_field_continuity_at_interfaces():
+    sol = xt.BorisSolenoid(
+        **SOLENOID_MODEL_PARAMS,
+        length=INTERVAL,
+        n_steps=N_STEPS,
+        taper=True,
+        taper_left=1.0,
+        taper_right=1.5,
+    )
+    line = sol.to_tapered_line()
+    left_taper, core, right_taper = line.elements
+
+    bx_l_t, by_l_t, bz_l_t = left_taper.get_field(0.0, 0.0, left_taper.length)
+    bx_l_c, by_l_c, bz_l_c = core.get_field(
+        np.array([0.0]), np.array([0.0]), np.array([0.0]),
+        s_at_element=left_taper.length)
+    bx_l_c = float(np.asarray(bx_l_c)[0])
+    by_l_c = float(np.asarray(by_l_c)[0])
+    bz_l_c = float(np.asarray(bz_l_c)[0])
+    xo.assert_allclose([bx_l_t, by_l_t, bz_l_t], [bx_l_c, by_l_c, bz_l_c], rtol=0, atol=5e-11)
+
+    bx_r_c, by_r_c, bz_r_c = core.get_field(
+        np.array([0.0]), np.array([0.0]), np.array([core.length]),
+        s_at_element=left_taper.length)
+    bx_r_c = float(np.asarray(bx_r_c)[0])
+    by_r_c = float(np.asarray(by_r_c)[0])
+    bz_r_c = float(np.asarray(bz_r_c)[0])
+    bx_r_t, by_r_t, bz_r_t = right_taper.get_field(0.0, 0.0, 0.0)
+    xo.assert_allclose([bx_r_t, by_r_t, bz_r_t], [bx_r_c, by_r_c, bz_r_c], rtol=0, atol=5e-11)
+
+    (_, _, _), (dbx_l, dby_l, dbz_l) = sol._field_and_derivative_on_axis(left_taper.length)
+    (_, _, _), (dbx_r, dby_r, dbz_r) = sol._field_and_derivative_on_axis(sol.length - right_taper.length)
+    xo.assert_allclose([left_taper.bx[0, 3], left_taper.by[0, 3], left_taper.bs[3]],
+                       [dbx_l, dby_l, dbz_l], rtol=0, atol=1e-9)
+    xo.assert_allclose([right_taper.bx[0, 1], right_taper.by[0, 1], right_taper.bs[1]],
+                       [dbx_r, dby_r, dbz_r], rtol=0, atol=1e-9)
+
+
+def test_borissolenoid_to_tapered_line_with_taper_false_is_single_element():
+    sol = xt.BorisSolenoid(
+        **SOLENOID_MODEL_PARAMS,
+        length=INTERVAL,
+        n_steps=N_STEPS,
+        taper=False,
+    )
+    line = sol.to_tapered_line()
+    assert len(line.elements) == 1
+    assert isinstance(line.elements[0], xt.BorisSolenoid)
+    clone = line.elements[0]
+    assert clone.length == sol.length
+    assert clone.n_steps == sol.n_steps
+    assert clone.L_coil == sol.L_coil
+    assert clone.a == sol.a
+    assert clone.B0 == sol.B0
+    assert clone.z0 == sol.z0
+
+
+def test_borissolenoid_taper_has_zero_external_field():
+    sol = xt.BorisSolenoid(
+        **SOLENOID_MODEL_PARAMS,
+        length=INTERVAL,
+        n_steps=N_STEPS,
+        taper=True,
+        taper_left=0.8,
+        taper_right=0.8,
+    )
+    line = sol.to_tapered_line()
+    left_taper = line.elements[0]
+    right_taper = line.elements[2]
+
+    bx0, by0, bz0 = left_taper.get_field(0.0, 0.0, 0.0)
+    bxe, bye, bze = right_taper.get_field(0.0, 0.0, right_taper.length)
+
+    xo.assert_allclose([bx0, by0, bz0], [0.0, 0.0, 0.0], rtol=0, atol=1e-14)
+    xo.assert_allclose([bxe, bye, bze], [0.0, 0.0, 0.0], rtol=0, atol=1e-14)

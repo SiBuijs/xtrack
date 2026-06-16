@@ -102,13 +102,18 @@ sympl_error = []
 sympl_error_4d = []
 sympl_error_norm = []
 sympl_error_4d_norm = []
+sympl_error_taper_norm = []
+sympl_error_4d_taper_norm = []
 sympl_error_spatial_norm = []
 sympl_error_4d_spatial_norm = []
 sympl_error_varsol_norm = []
 sympl_error_4d_varsol_norm = []
 det_R = []
+det_R_taper = []
 x = []
 y = []
+x_taper = []
+y_taper = []
 for n_steps in n_steps_vect:
     print("n_steps=", n_steps)
     solenoid = xt.BorisSolenoid(
@@ -127,6 +132,21 @@ for n_steps in n_steps_vect:
     sympl_error_4d.append(se4)
     sympl_error_norm.append(se_norm)
     sympl_error_4d_norm.append(se4_norm)
+
+    solenoid_taper = xt.BorisSolenoid(
+        L_coil=L_coil,
+        a=a,
+        B0=B0,
+        z0=z0,
+        length=length,
+        n_steps=n_steps,
+        taper=True,
+    )
+    line_taper = solenoid_taper.to_tapered_line()
+    RR_taper = line_taper.get_R_matrix(particle_on_co=p0.copy())["R_matrix"]
+    _, _, se_taper_norm, se4_taper_norm = normalized_symplectic_errors(RR_taper)
+    sympl_error_taper_norm.append(se_taper_norm)
+    sympl_error_4d_taper_norm.append(se4_taper_norm)
 
     spatial_integrator = xt.BorisSpatialIntegrator(
         fieldmap_callable=solenoid_field.get_field,
@@ -165,13 +185,25 @@ for n_steps in n_steps_vect:
     solenoid.track(p_boris)
     x.append(p_boris.x[0])
     y.append(p_boris.y[0])
+    p_taper = p0.copy()
+    line_taper.track(p_taper)
+    x_taper.append(p_taper.x[0])
+    y_taper.append(p_taper.y[0])
     det_R.append(np.linalg.det(RR))
+    det_R_taper.append(np.linalg.det(RR_taper))
 
 err = np.sqrt((np.array(x) - x[-1]) ** 2 + (np.array(y) - y[-1]) ** 2)
+err_taper = np.sqrt(
+    (np.array(x_taper) - x_taper[-1]) ** 2
+    + (np.array(y_taper) - y_taper[-1]) ** 2
+)
 
 plt.close("all")
 fig1 = plt.figure(1, figsize=(6.4, 4.8))
-plt.loglog(n_steps_vect[:-1], err[:-1], "-o", label="Simulation")
+plt.loglog(n_steps_vect[:-1], err[:-1], "-o", label="BorisSolenoid")
+plt.loglog(
+    n_steps_vect[:-1], err_taper[:-1], "-s", label="BorisSolenoid tapered"
+)
 plt.loglog(
     n_steps_vect[:-1],
     err[0] * n_steps_vect[0] ** 2 * 1 / np.array(n_steps_vect[:-1]) ** (2),
@@ -195,6 +227,18 @@ plt.loglog(
     np.abs(sympl_error_4d_norm),
     "-s",
     label=r"BorisSolenoid, $||R_{4d}^T S_{4d} R_{4d} - S_{4d}||_2 / ||R_{4d}||_2^2$",
+)
+plt.loglog(
+    n_steps_vect,
+    np.abs(sympl_error_taper_norm),
+    "-^",
+    label=r"BorisSolenoid tapered, $||R^T S R - S||_2 / ||R_{4d}||_2^2$",
+)
+plt.loglog(
+    n_steps_vect,
+    np.abs(sympl_error_4d_taper_norm),
+    "-v",
+    label=r"BorisSolenoid tapered, $||R_{4d}^T S_{4d} R_{4d} - S_{4d}||_2 / ||R_{4d}||_2^2$",
 )
 plt.loglog(
     n_steps_vect,
@@ -226,7 +270,13 @@ plt.xlim(n_steps_vect[0] / 2, n_steps_vect[-1])
 plt.legend(fontsize=8)
 
 fig3 = plt.figure(3, figsize=(6.4, 4.8))
-plt.loglog(n_steps_vect, np.abs(np.abs(det_R) - 1), "-o", label="Simulation")
+plt.loglog(n_steps_vect, np.abs(np.abs(det_R) - 1), "-o", label="BorisSolenoid")
+plt.loglog(
+    n_steps_vect,
+    np.abs(np.abs(det_R_taper) - 1),
+    "-s",
+    label="BorisSolenoid tapered",
+)
 plt.xlabel("Number of steps")
 plt.ylabel(r"$| |\det R| - 1 |$ (volume preservation)")
 plt.legend()

@@ -3167,8 +3167,19 @@ class BorisSolenoid(BeamElement):
 
     def __init__(self, L_coil=1.0, a=0.1, B0=1.0, z0=0.0, length=1.0,
                  n_steps=100, shift_x=0.0, shift_y=0.0, **kwargs):
+        taper = bool(kwargs.pop('taper', False))
+        taper_left = kwargs.pop('taper_left', None)
+        taper_right = kwargs.pop('taper_right', None)
+        taper_factor_lambda = float(kwargs.pop('taper_factor_lambda', 1.0))
+        taper_min_fraction = float(kwargs.pop('taper_min_fraction', 0.02))
+
         if '_xobject' in kwargs and kwargs['_xobject'] is not None:
             super().__init__(**kwargs)
+            self.taper = taper
+            self.taper_left = taper_left
+            self.taper_right = taper_right
+            self.taper_factor_lambda = taper_factor_lambda
+            self.taper_min_fraction = taper_min_fraction
             return
 
         if n_steps < 1:
@@ -3179,6 +3190,16 @@ class BorisSolenoid(BeamElement):
             raise ValueError(f"L_coil must be finite and > 0, got {L_coil}")
         if not np.isfinite(a) or a <= 0:
             raise ValueError(f"a must be finite and > 0, got {a}")
+        if taper_left is not None and taper_left < 0:
+            raise ValueError(f"taper_left must be >= 0, got {taper_left}")
+        if taper_right is not None and taper_right < 0:
+            raise ValueError(f"taper_right must be >= 0, got {taper_right}")
+        if taper_factor_lambda <= 0:
+            raise ValueError(
+                f"taper_factor_lambda must be > 0, got {taper_factor_lambda}")
+        if taper_min_fraction < 0:
+            raise ValueError(
+                f"taper_min_fraction must be >= 0, got {taper_min_fraction}")
 
         radiation_flag = kwargs.pop('radiation_flag', 0)
 
@@ -3194,6 +3215,11 @@ class BorisSolenoid(BeamElement):
             radiation_flag=radiation_flag,
             **kwargs,
         )
+        self.taper = taper
+        self.taper_left = taper_left
+        self.taper_right = taper_right
+        self.taper_factor_lambda = taper_factor_lambda
+        self.taper_min_fraction = taper_min_fraction
 
     def get_field(self, x, y, s_local, s_at_element=0.0):
         """Evaluate **B** at local longitudinal coordinate(s).
@@ -3287,6 +3313,201 @@ class BorisSolenoid(BeamElement):
                 **common,
             ))
         return segments
+
+    def _field_and_derivative_on_axis(self, s_local, s_at_element=0.0):
+        ds = max(1e-9, 1e-6 * float(self.length))
+
+        s0 = float(s_local)
+        s_minus = max(0.0, s0 - ds)
+        s_plus = min(float(self.length), s0 + ds)
+
+        bx0, by0, bz0 = self.get_field(
+            np.array([0.0]), np.array([0.0]), np.array([s0]),
+            s_at_element=s_at_element,
+        )
+        bx0 = float(np.asarray(bx0)[0])
+        by0 = float(np.asarray(by0)[0])
+        bz0 = float(np.asarray(bz0)[0])
+
+        if s_plus > s_minus:
+            bx_m, by_m, bz_m = self.get_field(
+                np.array([0.0]), np.array([0.0]), np.array([s_minus]),
+                s_at_element=s_at_element)
+            bx_p, by_p, bz_p = self.get_field(
+                np.array([0.0]), np.array([0.0]), np.array([s_plus]),
+                s_at_element=s_at_element)
+            bx_m = float(np.asarray(bx_m)[0])
+            by_m = float(np.asarray(by_m)[0])
+            bz_m = float(np.asarray(bz_m)[0])
+            bx_p = float(np.asarray(bx_p)[0])
+            by_p = float(np.asarray(by_p)[0])
+            bz_p = float(np.asarray(bz_p)[0])
+            inv_ds = 1.0 / (s_plus - s_minus)
+            dbx_ds = (bx_p - bx_m) * inv_ds
+            dby_ds = (by_p - by_m) * inv_ds
+            dbz_ds = (bz_p - bz_m) * inv_ds
+        else:
+            dbx_ds = 0.0
+            dby_ds = 0.0
+            dbz_ds = 0.0
+
+        return (bx0, by0, bz0), (dbx_ds, dby_ds, dbz_ds)
+
+    @staticmethod
+    def _split_steps_exact(total_n_steps, lengths):
+        lengths = [float(ll) for ll in lengths]
+        if any(ll < 0 for ll in lengths):
+            raise ValueError("lengths must be non-negative")
+        total_length = float(sum(lengths))
+        if total_length <= 0:
+            raise ValueError("sum(lengths) must be > 0")
+
+        raw = [total_n_steps * ll / total_length for ll in lengths]
+        n_steps = [max(1, int(np.floor(rr))) for rr in raw]
+        deficit = int(total_n_steps - sum(n_steps))
+
+        if deficit > 0:
+            frac = np.asarray(raw) - np.floor(raw)
+            for ii in np.argsort(-frac)[:deficit]:
+                n_steps[int(ii)] += 1
+        elif deficit < 0:
+            frac = np.asarray(raw) - np.floor(raw)
+            for ii in np.argsort(frac):
+                idx = int(ii)
+                if n_steps[idx] > 1:
+                    n_steps[idx] -= 1
+                    deficit += 1
+                    if deficit == 0:
+                        break
+
+        if sum(n_steps) != total_n_steps:
+            n_steps[-1] += total_n_steps - sum(n_steps)
+        if any(ns < 1 for ns in n_steps):
+            raise ValueError(f"Cannot split n_steps={total_n_steps} over {len(lengths)} segments")
+        return n_steps
+
+    def _compute_auto_taper_lengths(
+        self,
+        taper_left=None,
+        taper_right=None,
+        taper_factor_lambda=None,
+        taper_min_fraction=None,
+        taper_max_fraction=0.45,
+    ):
+        taper_factor_lambda = self.taper_factor_lambda if taper_factor_lambda is None else float(taper_factor_lambda)
+        taper_min_fraction = self.taper_min_fraction if taper_min_fraction is None else float(taper_min_fraction)
+        taper_left = self.taper_left if taper_left is None else taper_left
+        taper_right = self.taper_right if taper_right is None else taper_right
+
+        total_length = float(self.length)
+        l_min = max(0.0, taper_min_fraction * total_length)
+        l_max_hard = max(0.0, taper_max_fraction * total_length)
+        tiny = 1e-30
+
+        def _auto_length(s_eval):
+            (_, _, bz), (_, _, dbz_ds) = self._field_and_derivative_on_axis(s_eval)
+            if abs(dbz_ds) > tiny and abs(bz) > tiny:
+                lam = abs(bz / dbz_ds)
+            else:
+                lam = l_max_hard
+            return taper_factor_lambda * lam
+
+        left = float(taper_left) if taper_left is not None else _auto_length(0.0)
+        right = float(taper_right) if taper_right is not None else _auto_length(total_length)
+
+        left = float(np.clip(left, l_min, l_max_hard))
+        right = float(np.clip(right, l_min, l_max_hard))
+
+        if left + right >= total_length:
+            scale = (0.95 * total_length) / (left + right)
+            left *= scale
+            right *= scale
+            left = max(0.0, left)
+            right = max(0.0, right)
+
+        if left + right >= total_length:
+            raise ValueError(
+                "Invalid taper lengths: taper_left + taper_right must be smaller than length"
+            )
+
+        return left, right
+
+    def to_tapered_line(
+        self,
+        taper=None,
+        taper_left=None,
+        taper_right=None,
+        taper_factor_lambda=None,
+        taper_min_fraction=None,
+        _buffer=None,
+    ):
+        from ..line import Line
+
+        taper = self.taper if taper is None else bool(taper)
+        if not taper:
+            elem = self.copy(_buffer=_buffer) if _buffer is not None else self.copy()
+            return Line(elements=[elem], element_names=['borissolenoid'])
+
+        left_len, right_len = self._compute_auto_taper_lengths(
+            taper_left=taper_left,
+            taper_right=taper_right,
+            taper_factor_lambda=taper_factor_lambda,
+            taper_min_fraction=taper_min_fraction,
+        )
+        core_len = float(self.length) - left_len - right_len
+        if core_len <= 0:
+            raise ValueError("Computed core length is <= 0")
+
+        left_steps, core_steps, right_steps = self._split_steps_exact(
+            int(self.n_steps), [left_len, core_len, right_len])
+
+        (bx_l, by_l, bz_l), (dbx_l, dby_l, dbz_l) = self._field_and_derivative_on_axis(left_len)
+        (bx_r, by_r, bz_r), (dbx_r, dby_r, dbz_r) = self._field_and_derivative_on_axis(
+            float(self.length) - right_len
+        )
+
+        left_taper = SplineBoris(
+            bs=Spline4(0.0, 0.0, bz_l, dbz_l, 0.5 * bz_l),
+            bx=(Spline4(0.0, 0.0, bx_l, dbx_l, 0.5 * bx_l),),
+            by=(Spline4(0.0, 0.0, by_l, dby_l, 0.5 * by_l),),
+            length=left_len,
+            n_steps=left_steps,
+            shift_x=self.shift_x,
+            shift_y=self.shift_y,
+            radiation_flag=self.radiation_flag,
+            _buffer=_buffer,
+        )
+
+        core = BorisSolenoid(
+            L_coil=self.L_coil,
+            a=self.a,
+            B0=self.B0,
+            z0=self.z0,
+            length=core_len,
+            n_steps=core_steps,
+            shift_x=self.shift_x,
+            shift_y=self.shift_y,
+            radiation_flag=self.radiation_flag,
+            taper=False,
+            _buffer=_buffer,
+        )
+
+        right_taper = SplineBoris(
+            bs=Spline4(bz_r, dbz_r, 0.0, 0.0, 0.5 * bz_r),
+            bx=(Spline4(bx_r, dbx_r, 0.0, 0.0, 0.5 * bx_r),),
+            by=(Spline4(by_r, dby_r, 0.0, 0.0, 0.5 * by_r),),
+            length=right_len,
+            n_steps=right_steps,
+            shift_x=self.shift_x,
+            shift_y=self.shift_y,
+            radiation_flag=self.radiation_flag,
+            _buffer=_buffer,
+        )
+
+        return Line(
+            elements=[left_taper, core, right_taper],
+            element_names=['borissolenoid_taper_left', 'borissolenoid_core', 'borissolenoid_taper_right'],
+        )
 
 class TempRF(_HasKnlKsl, _HasModelRF, _HasIntegrator, BeamElement):
 
