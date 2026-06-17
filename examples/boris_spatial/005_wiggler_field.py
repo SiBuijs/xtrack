@@ -16,7 +16,7 @@ def construct_wiggler_field(g, B_r, length, n_periods, pole_width):
         k_y^2 = k_x^2 + k_s^2
 
         B_x = -B_0 * (k_x / k_y) * sin(k_x x) * sinh(k_y y) * sin(k_s s)
-        B_y =  B_0 *             cos(k_x x) * cosh(k_y y) * sin(k_s s)
+        B_y =  B_0 *               cos(k_x x) * cosh(k_y y) * sin(k_s s)
         B_s =  B_0 * (k_s / k_y) * cos(k_x x) * sinh(k_y y) * cos(k_s s)
 
     with
@@ -147,5 +147,17 @@ ax_twiss.set_title("Twiss through BorisSpatial wiggler")
 ax_twiss.grid(True, alpha=0.3)
 ax_twiss.legend(loc="best")
 fig_twiss.tight_layout()
+
+fig_disp, (ax_dx, ax_dy) = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+ax_dx.plot(tw.s, tw.dx, label="Dx", color="C0")
+ax_dy.plot(tw.s, tw.dy, label="Dy", color="C1")
+ax_dx.set_ylabel("Dx [m]")
+ax_dy.set_ylabel("Dy [m]")
+ax_dy.set_xlabel("s [m]")
+fig_disp.suptitle("Dispersion through BorisSpatial wiggler")
+for ax in (ax_dx, ax_dy):
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="best")
+fig_disp.tight_layout()
 
 plt.show()

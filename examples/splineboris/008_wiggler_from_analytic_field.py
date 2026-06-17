@@ -87,7 +87,7 @@ def build_wiggler_splineboris_sequence(
     The analytic model used here is
 
         B_x = -B_0 (k_x / k_y) sin(k_x x) sinh(k_y y) sin(k_s s)
-        B_y =  B_0           cos(k_x x) cosh(k_y y) sin(k_s s)
+        B_y =  B_0             cos(k_x x) cosh(k_y y) sin(k_s s)
         B_s =  B_0 (k_s / k_y) cos(k_x x) sinh(k_y y) cos(k_s s)
 
     We specialize to y = 0, so sinh(k_y y) = 0, cosh(k_y y) = 1 and only
@@ -221,6 +221,18 @@ ax_twiss.set_title("Twiss through SplineBoris wiggler (betx0=bety0=1 m)")
 ax_twiss.grid(True, alpha=0.3)
 ax_twiss.legend(loc="best")
 fig_twiss.tight_layout()
+
+fig_disp, (ax_dx, ax_dy) = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+ax_dx.plot(tw.s, tw.dx, label="Dx", color="C0")
+ax_dy.plot(tw.s, tw.dy, label="Dy", color="C1")
+ax_dx.set_ylabel("Dx [m]")
+ax_dy.set_ylabel("Dy [m]")
+ax_dy.set_xlabel("s [m]")
+fig_disp.suptitle("Dispersion through SplineBoris wiggler")
+for ax in (ax_dx, ax_dy):
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="best")
+fig_disp.tight_layout()
 
 # Simple single-particle track through the SplineBoris sequence.
 p = line.particle_ref.copy()
