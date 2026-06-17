@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import xpart as xp
 import xtrack as xt
+import xobjects as xo
 
 plt.close("all")
 
@@ -143,8 +144,8 @@ def _run_dynamic_aperture(
     )
 
     # Optional: activate multi-core CPU parallelization
-    # line.discard_tracker()
-    # line.build_tracker(_context=xo.ContextCpu(omp_num_threads='auto'))
+    line.discard_tracker()
+    line.build_tracker(_context=xo.ContextCpu(omp_num_threads='auto'))
 
     line.config.XTRACK_GLOBAL_XY_LIMIT = GLOBAL_XY_LIMIT
     line.track(particles, num_turns=N_TURNS, with_progress=with_progress)
