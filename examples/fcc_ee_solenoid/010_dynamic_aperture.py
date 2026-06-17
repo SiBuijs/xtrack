@@ -18,12 +18,12 @@ N_TURNS = 100
 NEMITT_X = 6.33e-5
 NEMITT_Y = 1.69e-7
 ENERGY_SPREAD = 3.9e-4
-GLOBAL_XY_LIMIT = 2e-2
+GLOBAL_XY_LIMIT = 5e-2
 
 # Polar DA grid: reduce NN_Y_R / NN_X_THETA if runtime is too long.
-NN_Y_R = 50
+NN_Y_R = 30
 MAX_Y_R = 40.0
-NN_X_THETA = 60
+NN_X_THETA = 50
 
 
 def _build_da_initial_conditions():

@@ -29,7 +29,7 @@ except ImportError as ee:
 
 
 IP_NAMES = ["ipa", "ipd", "ipg", "ipj"]
-N_TURNS = 1000
+N_TURNS = 100
 NEMITT_X = 6.33e-5
 NEMITT_Y = 1.69e-7
 ENERGY_SPREAD = 3.9e-4
