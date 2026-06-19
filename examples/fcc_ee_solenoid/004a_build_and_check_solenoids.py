@@ -122,8 +122,20 @@ line_compensation_solenoid = build_splineboris_line(
     field_data=comp_field_data,
     scale_b=comp_scale_b,
     **splineboris_build_kwargs)
+line_main_solenoid_varsol = build_variable_solenoid_line(
+    name='main_solenoid',
+    field_data=main_field_data,
+    scale_b=1.0,
+    rigidity0=rigidity0)
+line_compensation_solenoid_varsol = build_variable_solenoid_line(
+    name='compensation_solenoid',
+    field_data=comp_field_data,
+    scale_b=comp_scale_b,
+    rigidity0=rigidity0)
 line_main_solenoid.particle_ref = particle_ref.copy()
 line_compensation_solenoid.particle_ref = particle_ref.copy()
+line_main_solenoid_varsol.particle_ref = particle_ref.copy()
+line_compensation_solenoid_varsol.particle_ref = particle_ref.copy()
 
 if SAVE_SOLENOID_LINES_JSON:
     output_data = {
@@ -153,6 +165,9 @@ if SAVE_SOLENOID_LINES_JSON:
         'lines': {
             'main_solenoid': line_main_solenoid.to_dict(),
             'compensation_solenoid': line_compensation_solenoid.to_dict(),
+            'main_solenoid_varsol': line_main_solenoid_varsol.to_dict(),
+            'compensation_solenoid_varsol': (
+                line_compensation_solenoid_varsol.to_dict()),
         },
     }
     xt.json.dump(output_data, OUTPUT_LINES_JSON, indent=1)

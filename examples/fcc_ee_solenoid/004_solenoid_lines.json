@@ -10550,6 +10550,2156 @@
     ]
    }
   },
+  "compensation_solenoid_varsol": {
+   "__class__": "Line",
+   "_extra_config": {
+    "_beamstrahlung_model": null,
+    "_bhabha_model": null,
+    "_needs_rng": false,
+    "_radiation_model": null,
+    "_spin_model": null,
+    "_t_last_update_time_dependent_vars": null,
+    "corrector_limits_x": null,
+    "corrector_limits_y": null,
+    "dt_update_time_dependent_vars": 0.0,
+    "enable_time_dependent_vars": false,
+    "end_compose_on_reload": true,
+    "matrix_responsiveness_tol": 1e-15,
+    "matrix_stability_tol": 0.002,
+    "reset_s_at_end_turn": true,
+    "skip_end_turn_actions": false,
+    "steering_correctors_x": null,
+    "steering_correctors_y": null,
+    "steering_monitors_x": null,
+    "steering_monitors_y": null,
+    "twiss_default": {}
+   },
+   "_var_management_data": {
+    "functions": {
+     "_funcs": {}
+    },
+    "var_values": {
+     "__vary_default": {},
+     "t_turn_s": 0.0
+    }
+   },
+   "_var_manager": [],
+   "config": {
+    "XFIELDS_BB3D_NO_BEAMSTR": true,
+    "XFIELDS_BB3D_NO_BHABHA": true,
+    "XTRACK_GLOBAL_XY_LIMIT": 1.0,
+    "XTRACK_MULTIPOLE_NO_SYNRAD": true
+   },
+   "element_names": [
+    "compensation_solenoid_000",
+    "compensation_solenoid_001",
+    "compensation_solenoid_002",
+    "compensation_solenoid_003",
+    "compensation_solenoid_004",
+    "compensation_solenoid_005",
+    "compensation_solenoid_006",
+    "compensation_solenoid_007",
+    "compensation_solenoid_008",
+    "compensation_solenoid_009",
+    "compensation_solenoid_010",
+    "compensation_solenoid_011",
+    "compensation_solenoid_012",
+    "compensation_solenoid_013",
+    "compensation_solenoid_014",
+    "compensation_solenoid_015",
+    "compensation_solenoid_016",
+    "compensation_solenoid_017",
+    "compensation_solenoid_018",
+    "compensation_solenoid_019",
+    "compensation_solenoid_020",
+    "compensation_solenoid_021",
+    "compensation_solenoid_022",
+    "compensation_solenoid_023",
+    "compensation_solenoid_024",
+    "compensation_solenoid_025",
+    "compensation_solenoid_026",
+    "compensation_solenoid_027",
+    "compensation_solenoid_028",
+    "compensation_solenoid_029",
+    "compensation_solenoid_030",
+    "compensation_solenoid_031",
+    "compensation_solenoid_032",
+    "compensation_solenoid_033",
+    "compensation_solenoid_034",
+    "compensation_solenoid_035",
+    "compensation_solenoid_036",
+    "compensation_solenoid_037",
+    "compensation_solenoid_038",
+    "compensation_solenoid_039",
+    "compensation_solenoid_040",
+    "compensation_solenoid_041",
+    "compensation_solenoid_042",
+    "compensation_solenoid_043",
+    "compensation_solenoid_044",
+    "compensation_solenoid_045",
+    "compensation_solenoid_046",
+    "compensation_solenoid_047",
+    "compensation_solenoid_048",
+    "compensation_solenoid_049",
+    "compensation_solenoid_050",
+    "compensation_solenoid_051",
+    "compensation_solenoid_052",
+    "compensation_solenoid_053",
+    "compensation_solenoid_054",
+    "compensation_solenoid_055",
+    "compensation_solenoid_056",
+    "compensation_solenoid_057",
+    "compensation_solenoid_058",
+    "compensation_solenoid_059",
+    "compensation_solenoid_060",
+    "compensation_solenoid_061",
+    "compensation_solenoid_062",
+    "compensation_solenoid_063",
+    "compensation_solenoid_064",
+    "compensation_solenoid_065",
+    "compensation_solenoid_066",
+    "compensation_solenoid_067",
+    "compensation_solenoid_068",
+    "compensation_solenoid_069",
+    "compensation_solenoid_070",
+    "compensation_solenoid_071",
+    "compensation_solenoid_072",
+    "compensation_solenoid_073",
+    "compensation_solenoid_074",
+    "compensation_solenoid_075",
+    "compensation_solenoid_076",
+    "compensation_solenoid_077",
+    "compensation_solenoid_078",
+    "compensation_solenoid_079",
+    "compensation_solenoid_080",
+    "compensation_solenoid_081",
+    "compensation_solenoid_082",
+    "compensation_solenoid_083",
+    "compensation_solenoid_084",
+    "compensation_solenoid_085",
+    "compensation_solenoid_086",
+    "compensation_solenoid_087",
+    "compensation_solenoid_088",
+    "compensation_solenoid_089",
+    "compensation_solenoid_090",
+    "compensation_solenoid_091",
+    "compensation_solenoid_092",
+    "compensation_solenoid_093",
+    "compensation_solenoid_094",
+    "compensation_solenoid_095",
+    "compensation_solenoid_096",
+    "compensation_solenoid_097",
+    "compensation_solenoid_098",
+    "compensation_solenoid_099",
+    "compensation_solenoid_100",
+    "compensation_solenoid_101",
+    "compensation_solenoid_102",
+    "compensation_solenoid_103",
+    "compensation_solenoid_104",
+    "compensation_solenoid_105",
+    "compensation_solenoid_106",
+    "compensation_solenoid_107",
+    "compensation_solenoid_108",
+    "compensation_solenoid_109",
+    "compensation_solenoid_110",
+    "compensation_solenoid_111",
+    "compensation_solenoid_112",
+    "compensation_solenoid_113",
+    "compensation_solenoid_114",
+    "compensation_solenoid_115",
+    "compensation_solenoid_116",
+    "compensation_solenoid_117",
+    "compensation_solenoid_118",
+    "compensation_solenoid_119",
+    "compensation_solenoid_120",
+    "compensation_solenoid_121",
+    "compensation_solenoid_122",
+    "compensation_solenoid_123",
+    "compensation_solenoid_124",
+    "compensation_solenoid_125",
+    "compensation_solenoid_126",
+    "compensation_solenoid_127",
+    "compensation_solenoid_128",
+    "compensation_solenoid_129",
+    "compensation_solenoid_130",
+    "compensation_solenoid_131",
+    "compensation_solenoid_132",
+    "compensation_solenoid_133",
+    "compensation_solenoid_134",
+    "compensation_solenoid_135",
+    "compensation_solenoid_136",
+    "compensation_solenoid_137",
+    "compensation_solenoid_138",
+    "compensation_solenoid_139",
+    "compensation_solenoid_140",
+    "compensation_solenoid_141",
+    "compensation_solenoid_142",
+    "compensation_solenoid_143",
+    "compensation_solenoid_144",
+    "compensation_solenoid_145",
+    "compensation_solenoid_146",
+    "compensation_solenoid_147",
+    "compensation_solenoid_148",
+    "compensation_solenoid_149",
+    "compensation_solenoid_150",
+    "compensation_solenoid_151",
+    "compensation_solenoid_152",
+    "compensation_solenoid_153",
+    "compensation_solenoid_154",
+    "compensation_solenoid_155",
+    "compensation_solenoid_156",
+    "compensation_solenoid_157",
+    "compensation_solenoid_158",
+    "compensation_solenoid_159",
+    "compensation_solenoid_160",
+    "compensation_solenoid_161",
+    "compensation_solenoid_162",
+    "compensation_solenoid_163",
+    "compensation_solenoid_164",
+    "compensation_solenoid_165",
+    "compensation_solenoid_166",
+    "compensation_solenoid_167",
+    "compensation_solenoid_168",
+    "compensation_solenoid_169",
+    "compensation_solenoid_170",
+    "compensation_solenoid_171",
+    "compensation_solenoid_172",
+    "compensation_solenoid_173",
+    "compensation_solenoid_174",
+    "compensation_solenoid_175",
+    "compensation_solenoid_176",
+    "compensation_solenoid_177",
+    "compensation_solenoid_178",
+    "compensation_solenoid_179",
+    "compensation_solenoid_180",
+    "compensation_solenoid_181",
+    "compensation_solenoid_182",
+    "compensation_solenoid_183",
+    "compensation_solenoid_184",
+    "compensation_solenoid_185",
+    "compensation_solenoid_186",
+    "compensation_solenoid_187",
+    "compensation_solenoid_188",
+    "compensation_solenoid_189",
+    "compensation_solenoid_190",
+    "compensation_solenoid_191",
+    "compensation_solenoid_192",
+    "compensation_solenoid_193",
+    "compensation_solenoid_194",
+    "compensation_solenoid_195",
+    "compensation_solenoid_196",
+    "compensation_solenoid_197",
+    "compensation_solenoid_198",
+    "compensation_solenoid_199"
+   ],
+   "elements": {
+    "compensation_solenoid_000": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.0,
+      -1.0912719311320309e-07
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_001": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -1.0912719311320309e-07,
+      -8.54041376667682e-07
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_002": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -8.54041376667682e-07,
+      -2.8141178047718364e-06
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_003": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -2.8141178047718364e-06,
+      -6.498112459530045e-06
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_004": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -6.498112459530045e-06,
+      -1.2334511100330545e-05
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_005": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -1.2334511100330545e-05,
+      -2.065944399544764e-05
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_006": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -2.065944399544764e-05,
+      -3.1709596131007436e-05
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_007": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -3.1709596131007436e-05,
+      -4.5611136131469386e-05
+     ],
+     "length": 0.009999999999999898,
+     "order": 5
+    },
+    "compensation_solenoid_008": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -4.5611136131469386e-05,
+      -6.238765819509296e-05
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_009": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -6.238765819509296e-05,
+      -8.196386400364568e-05
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_010": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -8.196386400364568e-05,
+      -0.00010423146810415868
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_011": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.00010423146810415868,
+      -0.00012912082044816355
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_012": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.00012912082044816355,
+      -0.00015687454358712807
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_013": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.00015687454358712807,
+      -0.00018839464971317485
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_014": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.00018839464971317485,
+      -0.00022629478477101216
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_015": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.00022629478477101216,
+      -0.00027551698380591825
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_016": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.00027551698380591825,
+      -0.00034207426133949686
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_017": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.00034207426133949686,
+      -0.00043465410602512827
+     ],
+     "length": 0.009999999999999898,
+     "order": 5
+    },
+    "compensation_solenoid_018": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.00043465410602512827,
+      -0.0005677935669432275
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_019": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.0005677935669432275,
+      -0.0007668194727365835
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_020": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.0007668194727365835,
+      -0.0010764874127206076
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_021": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.0010764874127206076,
+      -0.0015770727043716872
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_022": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.0015770727043716872,
+      -0.0023978932172250777
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_023": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.0023978932172250777,
+      -0.0036833404577671096
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_024": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.0036833404577671096,
+      -0.005386713322347714
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_025": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.005386713322347714,
+      -0.0070900854227727165
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_026": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.0070900854227727165,
+      -0.00837553239948813
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_027": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.00837553239948813,
+      -0.009196350606193898
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_028": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.009196350606193898,
+      -0.009696935246261243
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_029": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.009696935246261243,
+      -0.010006598394140977
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_030": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010006598394140977,
+      -0.010205624738302263
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_031": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010205624738302263,
+      -0.010338754440821642
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_032": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010338754440821642,
+      -0.010431340197690313
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_033": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010431340197690313,
+      -0.010497873951034629
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_034": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010497873951034629,
+      -0.010547123563731383
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_035": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010547123563731383,
+      -0.01058447978438244
+     ],
+     "length": 0.009999999999999898,
+     "order": 5
+    },
+    "compensation_solenoid_036": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.01058447978438244,
+      -0.010613443166114135
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_037": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010613443166114135,
+      -0.010636314154992242
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_038": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010636314154992242,
+      -0.010654674927717218
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_039": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010654674927717218,
+      -0.0106696236043584
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_040": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.0106696236043584,
+      -0.01068195020280739
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_041": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.01068195020280739,
+      -0.010692227709849166
+     ],
+     "length": 0.009999999999999898,
+     "order": 5
+    },
+    "compensation_solenoid_042": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010692227709849166,
+      -0.010700883311618356
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_043": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010700883311618356,
+      -0.010708238038533694
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_044": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010708238038533694,
+      -0.010714538248241432
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_045": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010714538248241432,
+      -0.010719974501000642
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_046": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010719974501000642,
+      -0.010724696571715731
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_047": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010724696571715731,
+      -0.010728823094063119
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_048": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010728823094063119,
+      -0.010732449207809008
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_049": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010732449207809008,
+      -0.010735651773488605
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_050": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010735651773488605,
+      -0.010738493498789707
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_051": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010738493498789707,
+      -0.01074102589321327
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_052": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.01074102589321327,
+      -0.010743291608466557
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_053": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010743291608466557,
+      -0.010745326180516684
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_054": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010745326180516684,
+      -0.010747159415420073
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_055": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010747159415420073,
+      -0.010748816452597792
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_056": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010748816452597792,
+      -0.010750318616510768
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_057": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010750318616510768,
+      -0.010751684085796543
+     ],
+     "length": 0.009999999999999898,
+     "order": 5
+    },
+    "compensation_solenoid_058": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010751684085796543,
+      -0.010752928433800334
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_059": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010752928433800334,
+      -0.010754065061328227
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_060": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010754065061328227,
+      -0.01075510554946783
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_061": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.01075510554946783,
+      -0.010756059946407
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_062": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010756059946407,
+      -0.010756937003476508
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_063": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010756937003476508,
+      -0.010757744369489262
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_064": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010757744369489262,
+      -0.0107584887521392
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_065": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.0107584887521392,
+      -0.010759176052329872
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_066": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010759176052329872,
+      -0.010759811476700945
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_067": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010759811476700945,
+      -0.010760399632165766
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_068": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010760399632165766,
+      -0.010760944605743577
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_069": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010760944605743577,
+      -0.010761450032187559
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_070": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010761450032187559,
+      -0.010761919151517297
+     ],
+     "length": 0.009999999999999898,
+     "order": 5
+    },
+    "compensation_solenoid_071": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010761919151517297,
+      -0.01076235485811671
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_072": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.01076235485811671,
+      -0.010762759742785793
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_073": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010762759742785793,
+      -0.010763136128864651
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_074": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010763136128864651,
+      -0.010763486103362998
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_075": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010763486103362998,
+      -0.010763811543859312
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_076": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010763811543859312,
+      -0.010764114141808107
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_077": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010764114141808107,
+      -0.01076439542278461
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_078": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.01076439542278461,
+      -0.010764656764110885
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_079": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010764656764110885,
+      -0.010764899410234476
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_080": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010764899410234476,
+      -0.010765124486172789
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_081": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010765124486172789,
+      -0.010765333009286745
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_082": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010765333009286745,
+      -0.010765525899606998
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_083": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010765525899606998,
+      -0.010765703988902047
+     ],
+     "length": 0.009999999999999898,
+     "order": 5
+    },
+    "compensation_solenoid_084": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010765703988902047,
+      -0.01076586802864919
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_085": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.01076586802864919,
+      -0.010766018697045389
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_086": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010766018697045389,
+      -0.010766156605175114
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_087": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010766156605175114,
+      -0.010766282302435183
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_088": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010766282302435183,
+      -0.010766396281302092
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_089": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010766396281302092,
+      -0.01076649898151512
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_090": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.01076649898151512,
+      -0.010766590793737915
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_091": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010766590793737915,
+      -0.01076667206275203
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_092": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.01076667206275203,
+      -0.010766743090228303
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_093": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010766743090228303,
+      -0.010766804137114774
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_094": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010766804137114774,
+      -0.010766855425674206
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_095": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010766855425674206,
+      -0.010766897141198677
+     ],
+     "length": 0.009999999999999898,
+     "order": 5
+    },
+    "compensation_solenoid_096": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010766897141198677,
+      -0.010766929433424166
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_097": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010766929433424166,
+      -0.010766952417663796
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_098": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010766952417663796,
+      -0.010766966175674414
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_099": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010766966175674414,
+      -0.010766970756267827
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_100": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010766970756267827,
+      -0.01076696617567442
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_101": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.01076696617567442,
+      -0.010766952417663794
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_102": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010766952417663794,
+      -0.010766929433424168
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_103": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010766929433424168,
+      -0.010766897141198677
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_104": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010766897141198677,
+      -0.010766855425674203
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_105": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010766855425674203,
+      -0.010766804137114776
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_106": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010766804137114776,
+      -0.010766743090228304
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_107": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010766743090228304,
+      -0.010766672062752038
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_108": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010766672062752038,
+      -0.010766590793737913
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_109": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010766590793737913,
+      -0.01076649898151512
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_110": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.01076649898151512,
+      -0.01076639628130209
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_111": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.01076639628130209,
+      -0.010766282302435183
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_112": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010766282302435183,
+      -0.010766156605175109
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_113": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010766156605175109,
+      -0.010766018697045384
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_114": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010766018697045384,
+      -0.010765868028649195
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_115": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010765868028649195,
+      -0.010765703988902047
+     ],
+     "length": 0.009999999999999787,
+     "order": 5
+    },
+    "compensation_solenoid_116": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010765703988902047,
+      -0.010765525899606998
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_117": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010765525899606998,
+      -0.010765333009286749
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_118": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010765333009286749,
+      -0.010765124486172789
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_119": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010765124486172789,
+      -0.010764899410234471
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_120": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010764899410234471,
+      -0.010764656764110888
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_121": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010764656764110888,
+      -0.01076439542278461
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_122": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.01076439542278461,
+      -0.010764114141808102
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_123": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010764114141808102,
+      -0.01076381154385932
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_124": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.01076381154385932,
+      -0.010763486103363001
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_125": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010763486103363001,
+      -0.010763136128864651
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_126": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010763136128864651,
+      -0.010762759742785793
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_127": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010762759742785793,
+      -0.010762354858116706
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_128": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010762354858116706,
+      -0.010761919151517294
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_129": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010761919151517294,
+      -0.010761450032187555
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_130": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010761450032187555,
+      -0.010760944605743571
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_131": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010760944605743571,
+      -0.010760399632165766
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_132": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010760399632165766,
+      -0.010759811476700947
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_133": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010759811476700947,
+      -0.010759176052329868
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_134": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010759176052329868,
+      -0.010758488752139198
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_135": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010758488752139198,
+      -0.01075774436948926
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_136": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.01075774436948926,
+      -0.010756937003476505
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_137": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010756937003476505,
+      -0.010756059946407001
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_138": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010756059946407001,
+      -0.010755105549467833
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_139": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010755105549467833,
+      -0.010754065061328229
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_140": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010754065061328229,
+      -0.010752928433800336
+     ],
+     "length": 0.009999999999999787,
+     "order": 5
+    },
+    "compensation_solenoid_141": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010752928433800336,
+      -0.01075168408579654
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_142": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.01075168408579654,
+      -0.010750318616510773
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_143": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010750318616510773,
+      -0.010748816452597789
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_144": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010748816452597789,
+      -0.010747159415420067
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_145": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010747159415420067,
+      -0.010745326180516688
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_146": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010745326180516688,
+      -0.010743291608466548
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_147": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010743291608466548,
+      -0.010741025893213275
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_148": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010741025893213275,
+      -0.010738493498789707
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_149": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010738493498789707,
+      -0.010735651773488607
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_150": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010735651773488607,
+      -0.010732449207809013
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_151": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010732449207809013,
+      -0.010728823094063112
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_152": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010728823094063112,
+      -0.010724696571715726
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_153": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010724696571715726,
+      -0.010719974501000647
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_154": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010719974501000647,
+      -0.010714538248241437
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_155": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010714538248241437,
+      -0.010708238038533692
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_156": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010708238038533692,
+      -0.010700883311618354
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_157": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010700883311618354,
+      -0.010692227709849159
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_158": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010692227709849159,
+      -0.01068195020280739
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_159": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.01068195020280739,
+      -0.010669623604358396
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_160": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010669623604358396,
+      -0.010654674927717213
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_161": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010654674927717213,
+      -0.010636314154992237
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_162": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010636314154992237,
+      -0.010613443166114126
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_163": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010613443166114126,
+      -0.010584479784382437
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_164": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010584479784382437,
+      -0.01054712356373138
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_165": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.01054712356373138,
+      -0.010497873951034629
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_166": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010497873951034629,
+      -0.010431340197690316
+     ],
+     "length": 0.009999999999999787,
+     "order": 5
+    },
+    "compensation_solenoid_167": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010431340197690316,
+      -0.010338754440821645
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_168": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010338754440821645,
+      -0.010205624738302263
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_169": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010205624738302263,
+      -0.010006598394140975
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_170": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.010006598394140975,
+      -0.009696935246261243
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_171": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.009696935246261243,
+      -0.009196350606193896
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_172": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.009196350606193896,
+      -0.008375532399488125
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_173": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.008375532399488125,
+      -0.007090085422772714
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_174": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.007090085422772714,
+      -0.005386713322347713
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_175": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.005386713322347713,
+      -0.0036833404577671087
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_176": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.0036833404577671087,
+      -0.0023978932172250794
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_177": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.0023978932172250794,
+      -0.0015770727043716863
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_178": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.0015770727043716863,
+      -0.0010764874127206078
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_179": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.0010764874127206078,
+      -0.0007668194727365834
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_180": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.0007668194727365834,
+      -0.0005677935669432275
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_181": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.0005677935669432275,
+      -0.0004346541060251282
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_182": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.0004346541060251282,
+      -0.00034207426133949604
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_183": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.00034207426133949604,
+      -0.0002755169838059178
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_184": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.0002755169838059178,
+      -0.00022629478477101161
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_185": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.00022629478477101161,
+      -0.00018839464971317452
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_186": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.00018839464971317452,
+      -0.00015687454358712777
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_187": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.00015687454358712777,
+      -0.000129120820448163
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_188": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.000129120820448163,
+      -0.00010423146810415834
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_189": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -0.00010423146810415834,
+      -8.196386400364544e-05
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_190": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -8.196386400364544e-05,
+      -6.238765819509272e-05
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_191": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -6.238765819509272e-05,
+      -4.561113613146941e-05
+     ],
+     "length": 0.009999999999999787,
+     "order": 5
+    },
+    "compensation_solenoid_192": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -4.561113613146941e-05,
+      -3.170959613100752e-05
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_193": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -3.170959613100752e-05,
+      -2.0659443995447623e-05
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_194": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -2.0659443995447623e-05,
+      -1.233451110033057e-05
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_195": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -1.233451110033057e-05,
+      -6.498112459530035e-06
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_196": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -6.498112459530035e-06,
+      -2.814117804771844e-06
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_197": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -2.814117804771844e-06,
+      -8.540413766676789e-07
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_198": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -8.540413766676789e-07,
+      -1.0912719311320124e-07
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    },
+    "compensation_solenoid_199": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      -1.0912719311320124e-07,
+      -0.0
+     ],
+     "length": 0.010000000000000009,
+     "order": 5
+    }
+   },
+   "env_particles": {},
+   "metadata": {},
+   "mode": "normal",
+   "particle_ref": {
+    "_rng_s1": [
+     0
+    ],
+    "_rng_s2": [
+     0
+    ],
+    "_rng_s3": [
+     0
+    ],
+    "_rng_s4": [
+     0
+    ],
+    "anomalous_magnetic_moment": [
+     0.0
+    ],
+    "at_element": [
+     0
+    ],
+    "at_turn": [
+     0
+    ],
+    "ax": [
+     0.0
+    ],
+    "ay": [
+     0.0
+    ],
+    "beta0": [
+     0.9999999999372114
+    ],
+    "charge_ratio": [
+     1.0
+    ],
+    "chi": [
+     1.0
+    ],
+    "delta": [
+     0.0
+    ],
+    "gamma0": [
+     89236.97397029876
+    ],
+    "mass0": 510998.95,
+    "p0c": [
+     45599999997.13684
+    ],
+    "parent_particle_id": [
+     0
+    ],
+    "particle_id": [
+     0
+    ],
+    "pdg_id": [
+     -11
+    ],
+    "ptau": [
+     -2.220446049250313e-16
+    ],
+    "px": [
+     0.0
+    ],
+    "py": [
+     0.0
+    ],
+    "q0": 1.0,
+    "rpp": [
+     1.0
+    ],
+    "rvv": [
+     1.0
+    ],
+    "s": [
+     0.0
+    ],
+    "spin_x": [
+     0.0
+    ],
+    "spin_y": [
+     0.0
+    ],
+    "spin_z": [
+     0.0
+    ],
+    "start_tracking_at_element": -1,
+    "state": [
+     1
+    ],
+    "t_sim": 6.671281904381922e-09,
+    "weight": [
+     1.0
+    ],
+    "x": [
+     0.0
+    ],
+    "y": [
+     0.0
+    ],
+    "zeta": [
+     0.0
+    ]
+   }
+  },
   "main_solenoid": {
    "__class__": "Line",
    "_extra_config": {
@@ -21992,6 +24142,3756 @@
      ],
      "length": 0.02398999999999951,
      "n_steps": 10
+    }
+   },
+   "env_particles": {},
+   "metadata": {},
+   "mode": "normal",
+   "particle_ref": {
+    "_rng_s1": [
+     0
+    ],
+    "_rng_s2": [
+     0
+    ],
+    "_rng_s3": [
+     0
+    ],
+    "_rng_s4": [
+     0
+    ],
+    "anomalous_magnetic_moment": [
+     0.0
+    ],
+    "at_element": [
+     0
+    ],
+    "at_turn": [
+     0
+    ],
+    "ax": [
+     0.0
+    ],
+    "ay": [
+     0.0
+    ],
+    "beta0": [
+     0.9999999999372114
+    ],
+    "charge_ratio": [
+     1.0
+    ],
+    "chi": [
+     1.0
+    ],
+    "delta": [
+     0.0
+    ],
+    "gamma0": [
+     89236.97397029876
+    ],
+    "mass0": 510998.95,
+    "p0c": [
+     45599999997.13684
+    ],
+    "parent_particle_id": [
+     0
+    ],
+    "particle_id": [
+     0
+    ],
+    "pdg_id": [
+     -11
+    ],
+    "ptau": [
+     -2.220446049250313e-16
+    ],
+    "px": [
+     0.0
+    ],
+    "py": [
+     0.0
+    ],
+    "q0": 1.0,
+    "rpp": [
+     1.0
+    ],
+    "rvv": [
+     1.0
+    ],
+    "s": [
+     0.0
+    ],
+    "spin_x": [
+     0.0
+    ],
+    "spin_y": [
+     0.0
+    ],
+    "spin_z": [
+     0.0
+    ],
+    "start_tracking_at_element": -1,
+    "state": [
+     1
+    ],
+    "t_sim": 1.600440528861223e-08,
+    "weight": [
+     1.0
+    ],
+    "x": [
+     0.0
+    ],
+    "y": [
+     0.0
+    ],
+    "zeta": [
+     0.0
+    ]
+   }
+  },
+  "main_solenoid_varsol": {
+   "__class__": "Line",
+   "_extra_config": {
+    "_beamstrahlung_model": null,
+    "_bhabha_model": null,
+    "_needs_rng": false,
+    "_radiation_model": null,
+    "_spin_model": null,
+    "_t_last_update_time_dependent_vars": null,
+    "corrector_limits_x": null,
+    "corrector_limits_y": null,
+    "dt_update_time_dependent_vars": 0.0,
+    "enable_time_dependent_vars": false,
+    "end_compose_on_reload": true,
+    "matrix_responsiveness_tol": 1e-15,
+    "matrix_stability_tol": 0.002,
+    "reset_s_at_end_turn": true,
+    "skip_end_turn_actions": false,
+    "steering_correctors_x": null,
+    "steering_correctors_y": null,
+    "steering_monitors_x": null,
+    "steering_monitors_y": null,
+    "twiss_default": {}
+   },
+   "_var_management_data": {
+    "functions": {
+     "_funcs": {}
+    },
+    "var_values": {
+     "__vary_default": {},
+     "t_turn_s": 0.0
+    }
+   },
+   "_var_manager": [],
+   "config": {
+    "XFIELDS_BB3D_NO_BEAMSTR": true,
+    "XFIELDS_BB3D_NO_BHABHA": true,
+    "XTRACK_GLOBAL_XY_LIMIT": 1.0,
+    "XTRACK_MULTIPOLE_NO_SYNRAD": true
+   },
+   "element_names": [
+    "main_solenoid_000",
+    "main_solenoid_001",
+    "main_solenoid_002",
+    "main_solenoid_003",
+    "main_solenoid_004",
+    "main_solenoid_005",
+    "main_solenoid_006",
+    "main_solenoid_007",
+    "main_solenoid_008",
+    "main_solenoid_009",
+    "main_solenoid_010",
+    "main_solenoid_011",
+    "main_solenoid_012",
+    "main_solenoid_013",
+    "main_solenoid_014",
+    "main_solenoid_015",
+    "main_solenoid_016",
+    "main_solenoid_017",
+    "main_solenoid_018",
+    "main_solenoid_019",
+    "main_solenoid_020",
+    "main_solenoid_021",
+    "main_solenoid_022",
+    "main_solenoid_023",
+    "main_solenoid_024",
+    "main_solenoid_025",
+    "main_solenoid_026",
+    "main_solenoid_027",
+    "main_solenoid_028",
+    "main_solenoid_029",
+    "main_solenoid_030",
+    "main_solenoid_031",
+    "main_solenoid_032",
+    "main_solenoid_033",
+    "main_solenoid_034",
+    "main_solenoid_035",
+    "main_solenoid_036",
+    "main_solenoid_037",
+    "main_solenoid_038",
+    "main_solenoid_039",
+    "main_solenoid_040",
+    "main_solenoid_041",
+    "main_solenoid_042",
+    "main_solenoid_043",
+    "main_solenoid_044",
+    "main_solenoid_045",
+    "main_solenoid_046",
+    "main_solenoid_047",
+    "main_solenoid_048",
+    "main_solenoid_049",
+    "main_solenoid_050",
+    "main_solenoid_051",
+    "main_solenoid_052",
+    "main_solenoid_053",
+    "main_solenoid_054",
+    "main_solenoid_055",
+    "main_solenoid_056",
+    "main_solenoid_057",
+    "main_solenoid_058",
+    "main_solenoid_059",
+    "main_solenoid_060",
+    "main_solenoid_061",
+    "main_solenoid_062",
+    "main_solenoid_063",
+    "main_solenoid_064",
+    "main_solenoid_065",
+    "main_solenoid_066",
+    "main_solenoid_067",
+    "main_solenoid_068",
+    "main_solenoid_069",
+    "main_solenoid_070",
+    "main_solenoid_071",
+    "main_solenoid_072",
+    "main_solenoid_073",
+    "main_solenoid_074",
+    "main_solenoid_075",
+    "main_solenoid_076",
+    "main_solenoid_077",
+    "main_solenoid_078",
+    "main_solenoid_079",
+    "main_solenoid_080",
+    "main_solenoid_081",
+    "main_solenoid_082",
+    "main_solenoid_083",
+    "main_solenoid_084",
+    "main_solenoid_085",
+    "main_solenoid_086",
+    "main_solenoid_087",
+    "main_solenoid_088",
+    "main_solenoid_089",
+    "main_solenoid_090",
+    "main_solenoid_091",
+    "main_solenoid_092",
+    "main_solenoid_093",
+    "main_solenoid_094",
+    "main_solenoid_095",
+    "main_solenoid_096",
+    "main_solenoid_097",
+    "main_solenoid_098",
+    "main_solenoid_099",
+    "main_solenoid_100",
+    "main_solenoid_101",
+    "main_solenoid_102",
+    "main_solenoid_103",
+    "main_solenoid_104",
+    "main_solenoid_105",
+    "main_solenoid_106",
+    "main_solenoid_107",
+    "main_solenoid_108",
+    "main_solenoid_109",
+    "main_solenoid_110",
+    "main_solenoid_111",
+    "main_solenoid_112",
+    "main_solenoid_113",
+    "main_solenoid_114",
+    "main_solenoid_115",
+    "main_solenoid_116",
+    "main_solenoid_117",
+    "main_solenoid_118",
+    "main_solenoid_119",
+    "main_solenoid_120",
+    "main_solenoid_121",
+    "main_solenoid_122",
+    "main_solenoid_123",
+    "main_solenoid_124",
+    "main_solenoid_125",
+    "main_solenoid_126",
+    "main_solenoid_127",
+    "main_solenoid_128",
+    "main_solenoid_129",
+    "main_solenoid_130",
+    "main_solenoid_131",
+    "main_solenoid_132",
+    "main_solenoid_133",
+    "main_solenoid_134",
+    "main_solenoid_135",
+    "main_solenoid_136",
+    "main_solenoid_137",
+    "main_solenoid_138",
+    "main_solenoid_139",
+    "main_solenoid_140",
+    "main_solenoid_141",
+    "main_solenoid_142",
+    "main_solenoid_143",
+    "main_solenoid_144",
+    "main_solenoid_145",
+    "main_solenoid_146",
+    "main_solenoid_147",
+    "main_solenoid_148",
+    "main_solenoid_149",
+    "main_solenoid_150",
+    "main_solenoid_151",
+    "main_solenoid_152",
+    "main_solenoid_153",
+    "main_solenoid_154",
+    "main_solenoid_155",
+    "main_solenoid_156",
+    "main_solenoid_157",
+    "main_solenoid_158",
+    "main_solenoid_159",
+    "main_solenoid_160",
+    "main_solenoid_161",
+    "main_solenoid_162",
+    "main_solenoid_163",
+    "main_solenoid_164",
+    "main_solenoid_165",
+    "main_solenoid_166",
+    "main_solenoid_167",
+    "main_solenoid_168",
+    "main_solenoid_169",
+    "main_solenoid_170",
+    "main_solenoid_171",
+    "main_solenoid_172",
+    "main_solenoid_173",
+    "main_solenoid_174",
+    "main_solenoid_175",
+    "main_solenoid_176",
+    "main_solenoid_177",
+    "main_solenoid_178",
+    "main_solenoid_179",
+    "main_solenoid_180",
+    "main_solenoid_181",
+    "main_solenoid_182",
+    "main_solenoid_183",
+    "main_solenoid_184",
+    "main_solenoid_185",
+    "main_solenoid_186",
+    "main_solenoid_187",
+    "main_solenoid_188",
+    "main_solenoid_189",
+    "main_solenoid_190",
+    "main_solenoid_191",
+    "main_solenoid_192",
+    "main_solenoid_193",
+    "main_solenoid_194",
+    "main_solenoid_195",
+    "main_solenoid_196",
+    "main_solenoid_197",
+    "main_solenoid_198",
+    "main_solenoid_199"
+   ],
+   "elements": {
+    "main_solenoid_000": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0,
+      1.1957508482393478e-06
+     ],
+     "ksl": [
+      -2.6086574582461203e-10,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_001": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      1.1957508482393478e-06,
+      7.502218380878305e-06
+     ],
+     "ksl": [
+      -1.9240582446862293e-09,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_002": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      7.502218380878305e-06,
+      1.906865872314437e-05
+     ],
+     "ksl": [
+      -5.9609591523587764e-09,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_003": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      1.906865872314437e-05,
+      3.238139111599194e-05
+     ],
+     "ksl": [
+      -1.1720905308476534e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_004": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      3.238139111599194e-05,
+      4.2717267589941976e-05
+     ],
+     "ksl": [
+      -1.738854687795768e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_005": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      4.2717267589941976e-05,
+      4.762204614879802e-05
+     ],
+     "ksl": [
+      -2.1276222765531867e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_006": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      4.762204614879802e-05,
+      5.0043883669044515e-05
+     ],
+     "ksl": [
+      -2.3419810908953765e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_007": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      5.0043883669044515e-05,
+      5.269990473255272e-05
+     ],
+     "ksl": [
+      -2.5105926676312467e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_008": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      5.269990473255272e-05,
+      5.549646314300976e-05
+     ],
+     "ksl": [
+      -2.6956002525202287e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_009": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      5.549646314300976e-05,
+      5.854531457070299e-05
+     ],
+     "ksl": [
+      -2.8986678868989282e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_010": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      5.854531457070299e-05,
+      6.181925326532437e-05
+     ],
+     "ksl": [
+      -3.1231582792881824e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_011": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      6.181925326532437e-05,
+      6.537391988200791e-05
+     ],
+     "ksl": [
+      -3.371396865353043e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_012": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      6.537391988200791e-05,
+      6.922158459176529e-05
+     ],
+     "ksl": [
+      -3.6469186941608e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_013": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      6.922158459176529e-05,
+      7.340697517223843e-05
+     ],
+     "ksl": [
+      -3.953376329438268e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_014": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      7.340697517223843e-05,
+      7.796264750625004e-05
+     ],
+     "ksl": [
+      -4.295333270726472e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_015": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      7.796264750625004e-05,
+      8.293736260083276e-05
+     ],
+     "ksl": [
+      -4.67798941969581e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_016": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      8.293736260083276e-05,
+      8.838044468256226e-05
+     ],
+     "ksl": [
+      -5.1075950531943504e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_017": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      8.838044468256226e-05,
+      9.435322848120201e-05
+     ],
+     "ksl": [
+      -5.591508534595297e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_018": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      9.435322848120201e-05,
+      0.00010092447135683536
+     ],
+     "ksl": [
+      -6.138547917880473e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_019": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.00010092447135683536,
+      0.00010817605724945567
+     ],
+     "ksl": [
+      -6.759263962608672e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_020": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.00010817605724945567,
+      0.00011620313204546943
+     ],
+     "ksl": [
+      -7.466390675998524e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_021": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.00011620313204546943,
+      0.00012511850346178706
+     ],
+     "ksl": [
+      -8.27535740353503e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_022": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.00012511850346178706,
+      0.00013505557751381105
+     ],
+     "ksl": [
+      -9.204986518812409e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_023": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.00013505557751381105,
+      0.00014617364681521864
+     ],
+     "ksl": [
+      -1.0278373910962733e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023990000000000178,
+     "order": 5
+    },
+    "main_solenoid_024": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.00014617364681521864,
+      0.00015866365619782833
+     ],
+     "ksl": [
+      -1.1524053461135284e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_025": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.00015866365619782833,
+      0.00017275618635434137
+     ],
+     "ksl": [
+      -1.297752111641497e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023990000000000178,
+     "order": 5
+    },
+    "main_solenoid_026": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.00017275618635434137,
+      0.00018873141513197606
+     ],
+     "ksl": [
+      -1.4683263746902934e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_027": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.00018873141513197606,
+      0.00020693232697938837
+     ],
+     "ksl": [
+      -1.6697472459062975e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_028": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.00020693232697938837,
+      0.00022778195648725104
+     ],
+     "ksl": [
+      -1.9091711391227074e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_029": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.00022778195648725104,
+      0.0002518063715728258
+     ],
+     "ksl": [
+      -2.195791923079593e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_030": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0002518063715728258,
+      0.0002796654436935164
+     ],
+     "ksl": [
+      -2.5415296885651104e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_031": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0002796654436935164,
+      0.0003121945667447151
+     ],
+     "ksl": [
+      -2.961987744696295e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_032": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0003121945667447151,
+      0.00035046174421543986
+     ],
+     "ksl": [
+      -3.477795368839771e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_033": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.00035046174421543986,
+      0.00039584658312792777
+     ],
+     "ksl": [
+      -4.1165071135339675e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023990000000000178,
+     "order": 5
+    },
+    "main_solenoid_034": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.00039584658312792777,
+      0.0004501507022086751
+     ],
+     "ksl": [
+      -4.915311269625956e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_035": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0004501507022086751,
+      0.000515753622771322
+     ],
+     "ksl": [
+      -5.924909889434608e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023990000000000178,
+     "order": 5
+    },
+    "main_solenoid_036": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.000515753622771322,
+      0.0005958347191878933
+     ],
+     "ksl": [
+      -7.21508973995717e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_037": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0005958347191878933,
+      0.0006946912767684004
+     ],
+     "ksl": [
+      -8.882669955648136e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_038": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0006946912767684004,
+      0.0008181949087248988
+     ],
+     "ksl": [
+      -1.1062649032607751e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_039": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0008181949087248988,
+      0.0009744425673580093
+     ],
+     "ksl": [
+      -1.3943157051701133e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_040": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0009744425673580093,
+      0.0011746647026759755
+     ],
+     "ksl": [
+      -1.778360738449665e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_041": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0011746647026759755,
+      0.0014344271647735217
+     ],
+     "ksl": [
+      -2.2931142011439904e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023990000000000178,
+     "order": 5
+    },
+    "main_solenoid_042": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0014344271647735217,
+      0.0017750285894551647
+     ],
+     "ksl": [
+      -2.981896159287306e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_043": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0017750285894551647,
+      0.002224582382200681
+     ],
+     "ksl": [
+      -3.890294187345113e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_044": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.002224582382200681,
+      0.0028172500400563583
+     ],
+     "ksl": [
+      -5.044440727605905e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_045": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0028172500400563583,
+      0.003587230861983084
+     ],
+     "ksl": [
+      -6.4005765289127286e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_046": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.003587230861983084,
+      0.004552635806123767
+     ],
+     "ksl": [
+      -7.765652486485321e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023990000000000178,
+     "order": 5
+    },
+    "main_solenoid_047": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.004552635806123767,
+      0.005689209601707366
+     ],
+     "ksl": [
+      -8.749217257512386e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_048": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.005689209601707366,
+      0.006912218429538128
+     ],
+     "ksl": [
+      -8.883805200856067e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_049": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.006912218429538128,
+      0.00809811474690836
+     ],
+     "ksl": [
+      -7.941750708110176e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_050": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.00809811474690836,
+      0.009141360742445148
+     ],
+     "ksl": [
+      -6.151419536713921e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_051": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.009141360742445148,
+      0.009993731671582138
+     ],
+     "ksl": [
+      -4.029666178104479e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023990000000000178,
+     "order": 5
+    },
+    "main_solenoid_052": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.009993731671582138,
+      0.010658904321849343
+     ],
+     "ksl": [
+      -2.0320528309955146e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_053": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.010658904321849343,
+      0.011166442952276517
+     ],
+     "ksl": [
+      -3.818529037539334e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_054": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.011166442952276517,
+      0.011551241791393893
+     ],
+     "ksl": [
+      8.867148384048836e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_055": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.011551241791393893,
+      0.011843986911187569
+     ],
+     "ksl": [
+      1.8279996200121505e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_056": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.011843986911187569,
+      0.012068677964331113
+     ],
+     "ksl": [
+      2.5172227889968967e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023990000000000178,
+     "order": 5
+    },
+    "main_solenoid_057": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012068677964331113,
+      0.012243125086511228
+     ],
+     "ksl": [
+      3.0216687769341613e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_058": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012243125086511228,
+      0.012380261150781235
+     ],
+     "ksl": [
+      3.393362553569588e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_059": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012380261150781235,
+      0.012489423383146568
+     ],
+     "ksl": [
+      3.670111296970443e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_060": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012489423383146568,
+      0.012577372753972516
+     ],
+     "ksl": [
+      3.878682523673306e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_061": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012577372753972516,
+      0.012649041819978758
+     ],
+     "ksl": [
+      4.037877173702224e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023990000000000178,
+     "order": 5
+    },
+    "main_solenoid_062": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012649041819978758,
+      0.012708065242711635
+     ],
+     "ksl": [
+      4.16092122063125e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_063": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012708065242711635,
+      0.012757151038979625
+     ],
+     "ksl": [
+      4.257182430556643e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_064": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012757151038979625,
+      0.01279833997753171
+     ],
+     "ksl": [
+      4.333359327069367e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_065": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.01279833997753171,
+      0.01283318746125322
+     ],
+     "ksl": [
+      4.3942943409070256e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_066": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.01283318746125322,
+      0.012862892040704739
+     ],
+     "ksl": [
+      4.443528285996113e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023990000000000178,
+     "order": 5
+    },
+    "main_solenoid_067": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012862892040704739,
+      0.0128883870174938
+     ],
+     "ksl": [
+      4.483680141545547e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_068": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0128883870174938,
+      0.012910406412049992
+     ],
+     "ksl": [
+      4.516708917129316e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_069": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012910406412049992,
+      0.012929532951855581
+     ],
+     "ksl": [
+      4.5440959500027895e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_070": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012929532951855581,
+      0.01294623335042312
+     ],
+     "ksl": [
+      4.566973035018153e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_071": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.01294623335042312,
+      0.012960884503323816
+     ],
+     "ksl": [
+      4.5862134606977116e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023990000000000178,
+     "order": 5
+    },
+    "main_solenoid_072": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012960884503323816,
+      0.012973793134869077
+     ],
+     "ksl": [
+      4.602497351131528e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_073": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012973793134869077,
+      0.012985210671392536
+     ],
+     "ksl": [
+      4.616359066046121e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_074": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012985210671392536,
+      0.01299534460429335
+     ],
+     "ksl": [
+      4.628221925424244e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_075": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.01299534460429335,
+      0.013004367245875583
+     ],
+     "ksl": [
+      4.638423901492668e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_076": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013004367245875583,
+      0.013012422532085864
+     ],
+     "ksl": [
+      4.647236802731356e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023990000000000178,
+     "order": 5
+    },
+    "main_solenoid_077": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013012422532085864,
+      0.013019631348800458
+     ],
+     "ksl": [
+      4.6548807285310664e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_078": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013019631348800458,
+      0.01302609573302015
+     ],
+     "ksl": [
+      4.66153505224346e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_079": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.01302609573302015,
+      0.01303190220963624
+     ],
+     "ksl": [
+      4.667346834849346e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_080": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.01303190220963624,
+      0.013037124459089845
+     ],
+     "ksl": [
+      4.6724373195714574e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_081": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013037124459089845,
+      0.013041825463231132
+     ],
+     "ksl": [
+      4.6769069820255924e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023990000000000178,
+     "order": 5
+    },
+    "main_solenoid_082": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013041825463231132,
+      0.013046059241442254
+     ],
+     "ksl": [
+      4.680839484127778e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_083": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013046059241442254,
+      0.013049872262811195
+     ],
+     "ksl": [
+      4.684304789987997e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023990000000000178,
+     "order": 5
+    },
+    "main_solenoid_084": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013049872262811195,
+      0.013053304600526578
+     ],
+     "ksl": [
+      4.687361636349471e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_085": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013053304600526578,
+      0.013056390879832508
+     ],
+     "ksl": [
+      4.690059502495769e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_086": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013056390879832508,
+      0.01305916105963745
+     ],
+     "ksl": [
+      4.692440189322116e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_087": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.01305916105963745,
+      0.013061641079255313
+     ],
+     "ksl": [
+      4.694539091216203e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_088": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013061641079255313,
+      0.013063853395130361
+     ],
+     "ksl": [
+      4.696386224896126e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_089": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013063853395130361,
+      0.013065817427253879
+     ],
+     "ksl": [
+      4.698007064738969e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_090": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013065817427253879,
+      0.01306754993096985
+     ],
+     "ksl": [
+      4.699423222995908e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_091": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.01306754993096985,
+      0.013069065306713217
+     ],
+     "ksl": [
+      4.700653004817453e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_092": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013069065306713217,
+      0.013070375857730045
+     ],
+     "ksl": [
+      4.70171186154162e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_093": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013070375857730045,
+      0.013071492003840168
+     ],
+     "ksl": [
+      4.702612760620651e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_094": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013071492003840168,
+      0.013072422457704513
+     ],
+     "ksl": [
+      4.703366486628693e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_095": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013072422457704513,
+      0.013073174368762567
+     ],
+     "ksl": [
+      4.7039818847575695e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_096": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013073174368762567,
+      0.013073753438941715
+     ],
+     "ksl": [
+      4.704466055652699e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_097": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013073753438941715,
+      0.013074164013355519
+     ],
+     "ksl": [
+      4.704824508557612e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_098": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013074164013355519,
+      0.013074409148460557
+     ],
+     "ksl": [
+      4.705061278076193e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_099": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013074409148460557,
+      0.013074490659496198
+     ],
+     "ksl": [
+      4.705179008487327e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_100": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013074490659496198,
+      0.013074409148460562
+     ],
+     "ksl": [
+      4.7051790084872976e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_101": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013074409148460562,
+      0.013074164013355519
+     ],
+     "ksl": [
+      4.705061278076247e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_102": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013074164013355519,
+      0.013073753438941717
+     ],
+     "ksl": [
+      4.7048245085574855e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_103": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013073753438941717,
+      0.01307317436876257
+     ],
+     "ksl": [
+      4.704466055653666e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_104": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.01307317436876257,
+      0.013072422457704513
+     ],
+     "ksl": [
+      4.703981884759271e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_105": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013072422457704513,
+      0.013071492003840163
+     ],
+     "ksl": [
+      4.703366486628666e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_106": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013071492003840163,
+      0.013070375857730045
+     ],
+     "ksl": [
+      4.702612760619882e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_107": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013070375857730045,
+      0.013069065306713212
+     ],
+     "ksl": [
+      4.701711861541456e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_108": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013069065306713212,
+      0.013067549930969853
+     ],
+     "ksl": [
+      4.700653004817418e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_109": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013067549930969853,
+      0.013065817427253877
+     ],
+     "ksl": [
+      4.69942322299594e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_110": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013065817427253877,
+      0.013063853395130361
+     ],
+     "ksl": [
+      4.6980070647389515e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_111": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013063853395130361,
+      0.013061641079255322
+     ],
+     "ksl": [
+      4.696386224896139e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_112": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013061641079255322,
+      0.013059161059637453
+     ],
+     "ksl": [
+      4.6945390912161985e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_113": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013059161059637453,
+      0.013056390879832513
+     ],
+     "ksl": [
+      4.6924401893222056e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_114": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013056390879832513,
+      0.013053304600526571
+     ],
+     "ksl": [
+      4.690059502495769e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_115": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013053304600526571,
+      0.013049872262811199
+     ],
+     "ksl": [
+      4.687361636349466e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_116": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013049872262811199,
+      0.013046059241442252
+     ],
+     "ksl": [
+      4.684304789987964e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_117": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013046059241442252,
+      0.013041825463231129
+     ],
+     "ksl": [
+      4.680839484127866e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_118": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013041825463231129,
+      0.013037124459089843
+     ],
+     "ksl": [
+      4.6769069820256035e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_119": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013037124459089843,
+      0.013031902209636235
+     ],
+     "ksl": [
+      4.672437319571448e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_120": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013031902209636235,
+      0.013026095733020153
+     ],
+     "ksl": [
+      4.667346834849347e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_121": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013026095733020153,
+      0.013019631348800464
+     ],
+     "ksl": [
+      4.661535052243459e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_122": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013019631348800464,
+      0.013012422532085873
+     ],
+     "ksl": [
+      4.654880728531074e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_123": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013012422532085873,
+      0.013004367245875573
+     ],
+     "ksl": [
+      4.6472368027313795e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_124": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.013004367245875573,
+      0.012995344604293335
+     ],
+     "ksl": [
+      4.638423901492516e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_125": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012995344604293335,
+      0.01298521067139254
+     ],
+     "ksl": [
+      4.628221925424144e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_126": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.01298521067139254,
+      0.012973793134869079
+     ],
+     "ksl": [
+      4.61635906604617e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_127": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012973793134869079,
+      0.012960884503323816
+     ],
+     "ksl": [
+      4.602497351131554e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_128": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012960884503323816,
+      0.012946233350423114
+     ],
+     "ksl": [
+      4.586213460697665e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_129": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012946233350423114,
+      0.012929532951855578
+     ],
+     "ksl": [
+      4.566973035018153e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_130": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012929532951855578,
+      0.012910406412049998
+     ],
+     "ksl": [
+      4.544095950002788e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_131": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012910406412049998,
+      0.012888387017493804
+     ],
+     "ksl": [
+      4.516708917129338e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_132": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012888387017493804,
+      0.012862892040704734
+     ],
+     "ksl": [
+      4.483680141545732e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_133": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012862892040704734,
+      0.012833187461253214
+     ],
+     "ksl": [
+      4.4435282859961284e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_134": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012833187461253214,
+      0.012798339977531704
+     ],
+     "ksl": [
+      4.394294340907007e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_135": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012798339977531704,
+      0.01275715103897962
+     ],
+     "ksl": [
+      4.333359327069395e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_136": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.01275715103897962,
+      0.012708065242711637
+     ],
+     "ksl": [
+      4.25718243055657e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_137": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012708065242711637,
+      0.012649041819978758
+     ],
+     "ksl": [
+      4.160921220631135e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_138": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012649041819978758,
+      0.012577372753972513
+     ],
+     "ksl": [
+      4.037877173702168e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_139": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012577372753972513,
+      0.012489423383146563
+     ],
+     "ksl": [
+      3.87868252367331e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_140": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012489423383146563,
+      0.012380261150781242
+     ],
+     "ksl": [
+      3.670111296970439e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_141": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012380261150781242,
+      0.012243125086511228
+     ],
+     "ksl": [
+      3.393362553569591e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_142": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012243125086511228,
+      0.012068677964331113
+     ],
+     "ksl": [
+      3.0216687769342164e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_143": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.012068677964331113,
+      0.011843986911187567
+     ],
+     "ksl": [
+      2.517222788996812e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_144": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.011843986911187567,
+      0.011551241791393883
+     ],
+     "ksl": [
+      1.8279996200120577e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_145": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.011551241791393883,
+      0.011166442952276517
+     ],
+     "ksl": [
+      8.867148384048119e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_146": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.011166442952276517,
+      0.010658904321849329
+     ],
+     "ksl": [
+      -3.818529037539696e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_147": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.010658904321849329,
+      0.009993731671582124
+     ],
+     "ksl": [
+      -2.032052830995519e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_148": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.009993731671582124,
+      0.00914136074244514
+     ],
+     "ksl": [
+      -4.029666178104445e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_149": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.00914136074244514,
+      0.008098114746908353
+     ],
+     "ksl": [
+      -6.151419536713918e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_150": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.008098114746908353,
+      0.006912218429538132
+     ],
+     "ksl": [
+      -7.941750708110171e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_151": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.006912218429538132,
+      0.005689209601707365
+     ],
+     "ksl": [
+      -8.883805200856065e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_152": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.005689209601707365,
+      0.004552635806123746
+     ],
+     "ksl": [
+      -8.749217257512538e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_153": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.004552635806123746,
+      0.0035872308619830746
+     ],
+     "ksl": [
+      -7.765652486485243e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_154": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0035872308619830746,
+      0.0028172500400563505
+     ],
+     "ksl": [
+      -6.400576528912725e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_155": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0028172500400563505,
+      0.0022245823822006775
+     ],
+     "ksl": [
+      -5.044440727605886e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_156": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0022245823822006775,
+      0.0017750285894551601
+     ],
+     "ksl": [
+      -3.890294187345068e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_157": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0017750285894551601,
+      0.001434427164773519
+     ],
+     "ksl": [
+      -2.981896159287294e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_158": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.001434427164773519,
+      0.0011746647026759736
+     ],
+     "ksl": [
+      -2.2931142011439823e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_159": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0011746647026759736,
+      0.0009744425673580092
+     ],
+     "ksl": [
+      -1.7783607384496664e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_160": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0009744425673580092,
+      0.0008181949087248989
+     ],
+     "ksl": [
+      -1.394315705170109e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_161": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0008181949087248989,
+      0.0006946912767684005
+     ],
+     "ksl": [
+      -1.106264903260791e-06,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_162": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0006946912767684005,
+      0.0005958347191878915
+     ],
+     "ksl": [
+      -8.882669955648666e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_163": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0005958347191878915,
+      0.0005157536227713197
+     ],
+     "ksl": [
+      -7.215089739957155e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_164": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0005157536227713197,
+      0.0004501507022086734
+     ],
+     "ksl": [
+      -5.924909889434422e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_165": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0004501507022086734,
+      0.00039584658312792723
+     ],
+     "ksl": [
+      -4.91531126962578e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_166": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.00039584658312792723,
+      0.00035046174421543954
+     ],
+     "ksl": [
+      -4.1165071135337637e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.023989999999999956,
+     "order": 5
+    },
+    "main_solenoid_167": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.00035046174421543954,
+      0.000312194566744714
+     ],
+     "ksl": [
+      -3.4777953688401585e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_168": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.000312194566744714,
+      0.0002796654436935165
+     ],
+     "ksl": [
+      -2.9619877446966555e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.02398999999999951,
+     "order": 5
+    },
+    "main_solenoid_169": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0002796654436935165,
+      0.00025180637157282555
+     ],
+     "ksl": [
+      -2.5415296885656546e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_170": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.00025180637157282555,
+      0.0002277819564872513
+     ],
+     "ksl": [
+      -2.1957919230799007e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.02398999999999951,
+     "order": 5
+    },
+    "main_solenoid_171": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0002277819564872513,
+      0.00020693232697938723
+     ],
+     "ksl": [
+      -1.9091711391226266e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_172": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.00020693232697938723,
+      0.0001887314151319761
+     ],
+     "ksl": [
+      -1.669747245906063e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.02398999999999951,
+     "order": 5
+    },
+    "main_solenoid_173": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0001887314151319761,
+      0.0001727561863543418
+     ],
+     "ksl": [
+      -1.46832637469001e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_174": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0001727561863543418,
+      0.00015866365619782844
+     ],
+     "ksl": [
+      -1.2977521116414954e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.02398999999999951,
+     "order": 5
+    },
+    "main_solenoid_175": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.00015866365619782844,
+      0.0001461736468152186
+     ],
+     "ksl": [
+      -1.1524053461135954e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_176": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0001461736468152186,
+      0.00013505557751381138
+     ],
+     "ksl": [
+      -1.0278373910962784e-07,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.02398999999999951,
+     "order": 5
+    },
+    "main_solenoid_177": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.00013505557751381138,
+      0.0001251185034617873
+     ],
+     "ksl": [
+      -9.204986518815781e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_178": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.0001251185034617873,
+      0.00011620313204546946
+     ],
+     "ksl": [
+      -8.275357403535598e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_179": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.00011620313204546946,
+      0.00010817605724945588
+     ],
+     "ksl": [
+      -7.466390676001314e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.02398999999999951,
+     "order": 5
+    },
+    "main_solenoid_180": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.00010817605724945588,
+      0.00010092447135683509
+     ],
+     "ksl": [
+      -6.759263962613512e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_181": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      0.00010092447135683509,
+      9.435322848120155e-05
+     ],
+     "ksl": [
+      -6.138547917883225e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.02398999999999951,
+     "order": 5
+    },
+    "main_solenoid_182": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      9.435322848120155e-05,
+      8.838044468256221e-05
+     ],
+     "ksl": [
+      -5.591508534598249e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_183": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      8.838044468256221e-05,
+      8.293736260083267e-05
+     ],
+     "ksl": [
+      -5.107595053195616e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.02398999999999951,
+     "order": 5
+    },
+    "main_solenoid_184": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      8.293736260083267e-05,
+      7.796264750625004e-05
+     ],
+     "ksl": [
+      -4.677989419695618e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_185": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      7.796264750625004e-05,
+      7.340697517223788e-05
+     ],
+     "ksl": [
+      -4.295333270727159e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.02398999999999951,
+     "order": 5
+    },
+    "main_solenoid_186": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      7.340697517223788e-05,
+      6.922158459176526e-05
+     ],
+     "ksl": [
+      -3.953376329440835e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_187": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      6.922158459176526e-05,
+      6.537391988200828e-05
+     ],
+     "ksl": [
+      -3.64691869416338e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_188": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      6.537391988200828e-05,
+      6.181925326532371e-05
+     ],
+     "ksl": [
+      -3.371396865353026e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.02398999999999951,
+     "order": 5
+    },
+    "main_solenoid_189": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      6.181925326532371e-05,
+      5.854531457070264e-05
+     ],
+     "ksl": [
+      -3.1231582792861985e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_190": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      5.854531457070264e-05,
+      5.549646314300997e-05
+     ],
+     "ksl": [
+      -2.898667886898558e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.02398999999999951,
+     "order": 5
+    },
+    "main_solenoid_191": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      5.549646314300997e-05,
+      5.2699904732553095e-05
+     ],
+     "ksl": [
+      -2.6956002525202968e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_192": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      5.2699904732553095e-05,
+      5.004388366904439e-05
+     ],
+     "ksl": [
+      -2.5105926676316722e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.02398999999999951,
+     "order": 5
+    },
+    "main_solenoid_193": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      5.004388366904439e-05,
+      4.762204614879796e-05
+     ],
+     "ksl": [
+      -2.3419810908964413e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_194": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      4.762204614879796e-05,
+      4.271726758994225e-05
+     ],
+     "ksl": [
+      -2.127622276552023e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.02398999999999951,
+     "order": 5
+    },
+    "main_solenoid_195": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      4.271726758994225e-05,
+      3.238139111599196e-05
+     ],
+     "ksl": [
+      -1.738854687794726e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_196": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      3.238139111599196e-05,
+      1.906865872314405e-05
+     ],
+     "ksl": [
+      -1.172090530847762e-08,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_197": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      1.906865872314405e-05,
+      7.502218380878298e-06
+     ],
+     "ksl": [
+      -5.960959152360501e-09,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.02398999999999951,
+     "order": 5
+    },
+    "main_solenoid_198": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      7.502218380878298e-06,
+      1.1957508482392598e-06
+     ],
+     "ksl": [
+      -1.9240582446879544e-09,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.0239900000000004,
+     "order": 5
+    },
+    "main_solenoid_199": {
+     "__class__": "VariableSolenoid",
+     "ks_profile": [
+      1.1957508482392598e-06,
+      0.0
+     ],
+     "ksl": [
+      -2.6086574582560035e-10,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "length": 0.02398999999999951,
+     "order": 5
     }
    },
    "env_particles": {},

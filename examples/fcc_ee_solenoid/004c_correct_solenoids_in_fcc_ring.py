@@ -5,9 +5,19 @@ import xtrack as xt
 
 
 HERE = Path(__file__).parent
-INPUT_LATTICE_JSON = HERE / 'temp_fcc_ee_lcc_splineboris_solenoids.json'
-OUTPUT_LATTICE_JSON = (
-    HERE / 'fccee_z_lcc_splineboris_solenoids_coupling_corrected.json')
+SOLENOID_MODEL = 'splineboris'  # or 'varsol'
+_MODEL_LATTICE_PATHS = {
+    'splineboris': (
+        'temp_fcc_ee_lcc_splineboris_solenoids.json',
+        'fccee_z_lcc_splineboris_solenoids_coupling_corrected.json',
+    ),
+    'varsol': (
+        'temp_fcc_ee_lcc_varsol_solenoids.json',
+        'fccee_z_lcc_varsol_solenoids_coupling_corrected.json',
+    ),
+}
+INPUT_LATTICE_JSON = HERE / _MODEL_LATTICE_PATHS[SOLENOID_MODEL][0]
+OUTPUT_LATTICE_JSON = HERE / _MODEL_LATTICE_PATHS[SOLENOID_MODEL][1]
 
 IP_NAMES = ['ipa', 'ipd', 'ipg', 'ipj']
 
@@ -31,7 +41,7 @@ def measure_ksol_l_main_solenoid(line, env, ip_name):
 
 
 #####################################
-# Load installed SplineBoris lattice #
+# Load installed solenoid lattice #
 #####################################
 
 env = xt.load(INPUT_LATTICE_JSON)
