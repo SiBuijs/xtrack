@@ -16,7 +16,7 @@ INPUT_LATTICE_JSON = (
 )
 
 IP_NAMES = ["ipa", "ipd", "ipg", "ipj"]
-N_TURNS = 200
+N_TURNS = 10_000
 NEMITT_X = 6.33e-5
 NEMITT_Y = 1.69e-7  # flat beam: y_norm is scaled in _build_da_initial_conditions
 ENERGY_SPREAD = 3.9e-4
@@ -27,9 +27,9 @@ GLOBAL_XY_LIMIT = 1.0
 # Asymmetric DA grid (flat beam): amplitudes on both axes are in horizontal-sigma
 # units so x and y probe comparable physical excursions. Reduce NN_Y_R / NN_X_THETA
 # if runtime is too long.
-NN_Y_R = 30
+NN_Y_R = 25
 MAX_AMP_SIGMA_X = 40.0
-NN_X_THETA = 50
+NN_X_THETA = 30.0
 
 
 def _compute_beam_sizes(line):
@@ -224,7 +224,7 @@ _run_dynamic_aperture(
 )
 _run_dynamic_aperture(
     lattice_json=INPUT_LATTICE_JSON,
-    with_solenoids=True,
+    with_solenoids=False,
     with_correctors=False,
     title="SplineBoris: solenoids unpowered",
     with_progress=1,
