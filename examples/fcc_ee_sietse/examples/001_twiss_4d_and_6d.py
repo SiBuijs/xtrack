@@ -44,4 +44,6 @@ pp = tw4d.plot(yl='wx_chrom wy_chrom', yr='ddx')
 pp.ylim(left_lo=0, left_hi=10_000, right_lo=-200)
 pp.xlim(30_000, 60_000)
 
+tw6d.plot("delta", lattice=True)
+
 plt.show()
