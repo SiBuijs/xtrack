@@ -1,9 +1,10 @@
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-import xtrack as xt
-import xpart as xp
 import numpy as np
+import xobjects as xo
+import xpart as xp
+import xtrack as xt
 
 plt.close("all")
 
@@ -16,6 +17,10 @@ INPUT_LATTICE_JSON = (
 )
 
 IP_NAMES = ["ipa", "ipd", "ipg", "ipj"]
+N_TURNS = 100
+# Use the xtrack default (1 m), not the 5 cm limit from 009_momentum_acceptance.py:
+# large beta functions amplify amplitudes well beyond 5 cm for sigma-levels ~ O(30).
+GLOBAL_XY_LIMIT = 1.0
 
 
 def _set_solenoid_knobs(line, *, with_solenoids, with_correctors):
@@ -36,6 +41,25 @@ def _set_solenoid_knobs(line, *, with_solenoids, with_correctors):
                 line[corr_knob] = float(with_correctors)
 
 
+def _plot_bunch_phase_space(particles, title):
+    fig = plt.figure(figsize=(6.4, 7))
+    ax_x = fig.add_subplot(3, 1, 1)
+    ax_y = fig.add_subplot(3, 1, 2)
+    ax_z = fig.add_subplot(3, 1, 3)
+    ax_x.plot(particles.x * 1000, particles.px, ".", markersize=1)
+    ax_x.set_xlabel(r"x [mm]")
+    ax_x.set_ylabel(r"px [-]")
+    ax_y.plot(particles.y * 1000, particles.py, ".", markersize=1)
+    ax_y.set_xlabel(r"y [mm]")
+    ax_y.set_ylabel(r"py [-]")
+    ax_z.plot(particles.zeta, particles.delta * 1000, ".", markersize=1)
+    ax_z.set_xlabel(r"z [-]")
+    ax_z.set_ylabel(r"$\delta$ [1e-3]")
+    fig.suptitle(title)
+    fig.subplots_adjust(bottom=0.08, top=0.93, hspace=0.33, left=0.18, right=0.96)
+    return fig
+
+
 print(f"\n=== SplineBoris: solenoids powered + correction scheme ===")
 print(f"Loading lattice: {INPUT_LATTICE_JSON.name}")
 env = xt.load(INPUT_LATTICE_JSON)
@@ -47,7 +71,8 @@ _set_solenoid_knobs(
     with_correctors=True,
 )
 
-line.configure_radiation(model='mean')
+line.particle_ref.anomalous_magnetic_moment = 0.00115965218128
+line.configure_radiation(model="mean")
 line.compensate_radiation_energy_loss()
 
 tw = line.twiss6d(radiation_analysis=True, strengths=True)
@@ -74,7 +99,7 @@ print(
 )
 
 bunch_intensity = 1e11
-n_part = 1000000
+n_part = 100
 
 nemitt_x = 6.33e-5
 nemitt_y = 1.69e-7
@@ -128,21 +153,29 @@ py_off = 0
 delta_off = 0
 zeta_off = 0
 
-import matplotlib.pyplot as plt
-plt.close('all')
-fig1 = plt.figure(1, figsize=(6.4, 7))
-ax21 = fig1.add_subplot(3,1,1)
-ax22 = fig1.add_subplot(3,1,2)
-ax23 = fig1.add_subplot(3,1,3)
-ax21.plot(particles.x*1000, particles.px, '.', markersize=1)
-ax21.set_xlabel(r'x [mm]')
-ax21.set_ylabel(r'px [-]')
-ax22.plot(particles.y*1000, particles.py, '.', markersize=1)
-ax22.set_xlabel(r'y [mm]')
-ax22.set_ylabel(r'py [-]')
-ax23.plot(particles.zeta, particles.delta*1000, '.', markersize=1)
-ax23.set_xlabel(r'z [-]')
-ax23.set_ylabel(r'$\delta$ [1e-3]')
-fig1.subplots_adjust(bottom=.08, top=.93, hspace=.33, left=.18,
-                     right=.96, wspace=.33)
+particles.x += x_off
+particles.px += px_off
+particles.y += y_off
+particles.py += py_off
+particles.delta += delta_off
+particles.zeta += zeta_off
+
+particles_init = particles.copy()
+_plot_bunch_phase_space(particles_init, "Initial bunch")
+
+line.discard_tracker()
+line.build_tracker(_context=xo.ContextCpu(omp_num_threads="auto"))
+
+print(f"Tracking {n_part} particles for {N_TURNS} turns")
+line.config.XTRACK_GLOBAL_XY_LIMIT = GLOBAL_XY_LIMIT
+line.track(particles, num_turns=N_TURNS, with_progress=1)
+particles.sort(interleave_lost_particles=True)
+
+lost = particles.state <= 0
+frac_lost = lost.sum() / len(lost)
+at_turn_mean = particles.at_turn.mean()
+print(f"frac_lost={frac_lost:.6g}, at_turn_mean={at_turn_mean:.6g}")
+
+_plot_bunch_phase_space(particles, f"After {N_TURNS} turns")
 plt.show()
+

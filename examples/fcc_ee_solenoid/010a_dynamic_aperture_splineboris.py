@@ -222,6 +222,9 @@ _run_dynamic_aperture(
     title="SplineBoris: solenoids powered + correction scheme",
     with_progress=1,
 )
+
+plt.show(block=False)
+
 _run_dynamic_aperture(
     lattice_json=INPUT_LATTICE_JSON,
     with_solenoids=False,
@@ -229,4 +232,5 @@ _run_dynamic_aperture(
     title="SplineBoris: solenoids unpowered",
     with_progress=1,
 )
+
 plt.show()
