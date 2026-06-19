@@ -18,6 +18,7 @@ INPUT_LATTICE_JSON = (
 
 IP_NAMES = ["ipa", "ipd", "ipg", "ipj"]
 N_TURNS = 100
+N_PLOT = 100  # plot every N_PLOT turns (N_TURNS // N_PLOT plots)
 # Use the xtrack default (1 m), not the 5 cm limit from 009_momentum_acceptance.py:
 # large beta functions amplify amplitudes well beyond 5 cm for sigma-levels ~ O(30).
 GLOBAL_XY_LIMIT = 1.0
@@ -168,14 +169,17 @@ line.build_tracker(_context=xo.ContextCpu(omp_num_threads="auto"))
 
 print(f"Tracking {n_part} particles for {N_TURNS} turns")
 line.config.XTRACK_GLOBAL_XY_LIMIT = GLOBAL_XY_LIMIT
-line.track(particles, num_turns=N_TURNS, with_progress=1)
-particles.sort(interleave_lost_particles=True)
+for turn_start in range(0, N_TURNS, N_PLOT):
+    n_chunk = min(N_PLOT, N_TURNS - turn_start)
+    line.track(particles, num_turns=n_chunk, with_progress=1)
+    turn = turn_start + n_chunk
+    particles.sort(interleave_lost_particles=True)
+    _plot_bunch_phase_space(particles, f"After {turn} turns")
 
 lost = particles.state <= 0
 frac_lost = lost.sum() / len(lost)
 at_turn_mean = particles.at_turn.mean()
 print(f"frac_lost={frac_lost:.6g}, at_turn_mean={at_turn_mean:.6g}")
 
-_plot_bunch_phase_space(particles, f"After {N_TURNS} turns")
 plt.show()
 
