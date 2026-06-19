@@ -9,7 +9,7 @@ import xtrack as xt
 plt.close("all")
 
 HERE = Path(__file__).resolve().parent
-# Same SplineBoris lattice as 010a_dynamic_aperture_splineboris.py
+# Same SplineBoris lattice as 010_dynamic_aperture.py
 # (from 004b_install_solenoids_in_fcc_ring.py and
 # 004c_correct_solenoids_in_fcc_ring.py).
 INPUT_LATTICE_JSON = (

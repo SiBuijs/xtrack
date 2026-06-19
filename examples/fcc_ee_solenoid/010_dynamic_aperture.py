@@ -1,35 +1,68 @@
 from pathlib import Path
+import argparse
 
 import matplotlib.pyplot as plt
 import numpy as np
+import xobjects as xo
 import xpart as xp
 import xtrack as xt
-import xobjects as xo
+
+from aperture_study_io import save_da_study
 
 plt.close("all")
 
 HERE = Path(__file__).resolve().parent
-# Produced by 004b_install_solenoids_in_fcc_ring.py and
-# 004c_correct_solenoids_in_fcc_ring.py.
-INPUT_LATTICE_JSON = (
+SPLINEBORIS_LATTICE_JSON = (
     HERE / "fccee_z_lcc_splineboris_solenoids_coupling_corrected.json"
+)
+VARSOL_LATTICE_JSON = (
+    HERE / "fccee_z_lcc_varsol_solenoids_coupling_corrected.json"
 )
 
 IP_NAMES = ["ipa", "ipd", "ipg", "ipj"]
-N_TURNS = 10_000
 NEMITT_X = 6.33e-5
 NEMITT_Y = 1.69e-7  # flat beam: y_norm is scaled in _build_da_initial_conditions
-ENERGY_SPREAD = 3.9e-4
 # Use the xtrack default (1 m), not the 5 cm limit from 009_momentum_acceptance.py:
 # large beta functions amplify amplitudes well beyond 5 cm for sigma-levels ~ O(30).
 GLOBAL_XY_LIMIT = 1.0
-
-# Asymmetric DA grid (flat beam): amplitudes on both axes are in horizontal-sigma
-# units so x and y probe comparable physical excursions. Reduce NN_Y_R / NN_X_THETA
-# if runtime is too long.
-NN_Y_R = 25
 MAX_AMP_SIGMA_X = 40.0
-NN_X_THETA = 30.0
+N_TURNS = 10_000
+
+# Each case can use its own grid resolution.
+DA_CASES = [
+    dict(
+        name="sb_on",
+        model="SB",
+        lattice_json=SPLINEBORIS_LATTICE_JSON,
+        with_solenoids=True,
+        with_correctors=True,
+        title="SplineBoris: solenoids powered + correction scheme",
+        nn_y_r=25,
+        nn_x_theta=30,
+    ),
+    dict(
+        name="varsol_on",
+        model="VarSol",
+        lattice_json=VARSOL_LATTICE_JSON,
+        with_solenoids=True,
+        with_correctors=True,
+        title="VariableSolenoid: solenoids powered + correction scheme",
+        nn_y_r=30,
+        nn_x_theta=50,
+    ),
+    dict(
+        name="sb_off",
+        model="SB",
+        lattice_json=SPLINEBORIS_LATTICE_JSON,
+        with_solenoids=False,
+        with_correctors=False,
+        title="SplineBoris: solenoids unpowered",
+        nn_y_r=25,
+        nn_x_theta=30,
+    ),
+]
+
+DA_CASES_BY_NAME = {case["name"]: case for case in DA_CASES}
 
 
 def _compute_beam_sizes(line):
@@ -44,17 +77,17 @@ def _compute_beam_sizes(line):
     return sigma_x, sigma_y
 
 
-def _build_da_initial_conditions(sigma_x_over_sigma_y):
+def _build_da_initial_conditions(*, nn_y_r, nn_x_theta, sigma_x_over_sigma_y):
     # Polar grid with radius in horizontal-sigma units; on-momentum DA at delta=0.
     # Uses xpart directly (fcc_92 gen_grid has a column-length bug for single delta).
     x_hat, y_hat, _, _ = xp.generate_2D_polar_grid(
         r_range=(0, MAX_AMP_SIGMA_X),
         theta_range=(0, np.pi / 2),
-        nr=NN_Y_R,
-        ntheta=NN_X_THETA,
+        nr=nn_y_r,
+        ntheta=nn_x_theta,
     )
     # build_particles expects true vertical sigma units for y_norm.
-    y_norm = y_hat * 5.0#sigma_x_over_sigma_y
+    y_norm = y_hat * 5.0  # sigma_x_over_sigma_y
     return xt.Table(
         dict(
             id=np.arange(len(x_hat), dtype=int),
@@ -91,7 +124,9 @@ def _configure_radiative_tracking(line):
     line.compensate_radiation_energy_loss()
 
 
-def _plot_dynamic_aperture_figure(out, tt_init, title, *, sigma_x, sigma_y):
+def _plot_dynamic_aperture_figure(
+    out, tt_init, title, *, sigma_x, sigma_y, nn_y_r, nn_x_theta
+):
     fig, axes = plt.subplots(1, 2, figsize=(12.0, 5.0))
     particles = out["particles"]
     x_hat = tt_init.x_hat
@@ -112,9 +147,9 @@ def _plot_dynamic_aperture_figure(out, tt_init, title, *, sigma_x, sigma_y):
     fig.colorbar(sc, ax=axes[0], label="lost at turn")
 
     pcm = axes[1].pcolormesh(
-        x_hat.reshape(NN_Y_R, NN_X_THETA),
-        y_hat.reshape(NN_Y_R, NN_X_THETA),
-        at_turn.reshape(NN_Y_R, NN_X_THETA),
+        x_hat.reshape(nn_y_r, nn_x_theta),
+        y_hat.reshape(nn_y_r, nn_x_theta),
+        at_turn.reshape(nn_y_r, nn_x_theta),
         shading="gouraud",
     )
     axes[1].set_xlabel(r"$\hat{x}\,[\sigma_x]$")
@@ -135,14 +170,12 @@ def _plot_dynamic_aperture_figure(out, tt_init, title, *, sigma_x, sigma_y):
     return fig
 
 
-def _run_dynamic_aperture(
-    *,
-    lattice_json,
-    with_solenoids,
-    with_correctors,
-    title,
-    with_progress,
-):
+def _run_dynamic_aperture(case, *, with_progress):
+    lattice_json = case["lattice_json"]
+    title = case["title"]
+    nn_y_r = case["nn_y_r"]
+    nn_x_theta = case["nn_x_theta"]
+
     print(f"\n=== {title} ===")
     print(f"Loading lattice: {lattice_json.name}")
     env = xt.load(lattice_json)
@@ -150,8 +183,8 @@ def _run_dynamic_aperture(
     line.cycle("ipa")
     _set_solenoid_knobs(
         line,
-        with_solenoids=with_solenoids,
-        with_correctors=with_correctors,
+        with_solenoids=case["with_solenoids"],
+        with_correctors=case["with_correctors"],
     )
 
     line.discard_tracker()
@@ -171,7 +204,11 @@ def _run_dynamic_aperture(
 
     # On-momentum DA: scan (x_hat, y_hat) in horizontal-sigma units at delta=0.
     # For off-momentum DA, repeat with delta set to selected momentum offsets.
-    tt_init = _build_da_initial_conditions(sigma_x_over_sigma_y)
+    tt_init = _build_da_initial_conditions(
+        nn_y_r=nn_y_r,
+        nn_x_theta=nn_x_theta,
+        sigma_x_over_sigma_y=sigma_x_over_sigma_y,
+    )
     num_particles = len(tt_init)
     print(f"Tracking {num_particles} particles for {N_TURNS} turns")
 
@@ -204,8 +241,31 @@ def _run_dynamic_aperture(
         "at_turn_mean": at_turn_mean,
         "tt_init": tt_init,
     }
-    _plot_dynamic_aperture_figure(
-        out, tt_init, title, sigma_x=sigma_x, sigma_y=sigma_y
+    fig = _plot_dynamic_aperture_figure(
+        out,
+        tt_init,
+        title,
+        sigma_x=sigma_x,
+        sigma_y=sigma_y,
+        nn_y_r=nn_y_r,
+        nn_x_theta=nn_x_theta,
+    )
+    save_da_study(
+        out=out,
+        tt_init=tt_init,
+        fig=fig,
+        model=case["model"],
+        with_solenoids=case["with_solenoids"],
+        with_correctors=case["with_correctors"],
+        n_turns=N_TURNS,
+        global_xy_limit=GLOBAL_XY_LIMIT,
+        sigma_x=sigma_x,
+        sigma_y=sigma_y,
+        nn_y_r=nn_y_r,
+        nn_x_theta=nn_x_theta,
+        max_amp_sigma_x=MAX_AMP_SIGMA_X,
+        nemitt_x=NEMITT_X,
+        nemitt_y=NEMITT_Y,
     )
     print(
         f"[{title}] Dynamic aperture run complete:"
@@ -215,22 +275,54 @@ def _run_dynamic_aperture(
     return out
 
 
-_run_dynamic_aperture(
-    lattice_json=INPUT_LATTICE_JSON,
-    with_solenoids=True,
-    with_correctors=True,
-    title="SplineBoris: solenoids powered + correction scheme",
-    with_progress=1,
-)
+def _select_cases(case_names):
+    if not case_names:
+        return DA_CASES
 
-plt.show(block=False)
+    unknown = [name for name in case_names if name not in DA_CASES_BY_NAME]
+    if unknown:
+        valid = ", ".join(DA_CASES_BY_NAME)
+        raise SystemExit(f"Unknown case(s): {', '.join(unknown)}. Choose from: {valid}")
 
-_run_dynamic_aperture(
-    lattice_json=INPUT_LATTICE_JSON,
-    with_solenoids=False,
-    with_correctors=False,
-    title="SplineBoris: solenoids unpowered",
-    with_progress=1,
-)
+    return [DA_CASES_BY_NAME[name] for name in case_names]
 
-plt.show()
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Run dynamic-aperture studies for FCC-ee solenoid lattices."
+    )
+    parser.add_argument(
+        "--cases",
+        nargs="+",
+        metavar="CASE",
+        help=(
+            "Cases to run (default: all). "
+            "Available: sb_on, varsol_on, sb_off"
+        ),
+    )
+    parser.add_argument(
+        "--list-cases",
+        action="store_true",
+        help="List available cases and exit.",
+    )
+    parser.add_argument(
+        "--no-show",
+        action="store_true",
+        help="Skip interactive figure display (data and PDFs are still saved).",
+    )
+    args = parser.parse_args()
+
+    if args.list_cases:
+        for case in DA_CASES:
+            print(f"{case['name']}: {case['title']}")
+        return
+
+    for case in _select_cases(args.cases):
+        _run_dynamic_aperture(case, with_progress=1)
+
+    if not args.no_show:
+        plt.show()
+
+
+if __name__ == "__main__":
+    main()

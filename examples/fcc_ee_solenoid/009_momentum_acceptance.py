@@ -1,17 +1,21 @@
 from pathlib import Path
+import argparse
 import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
-import xtrack as xt
 import xobjects as xo
+import xtrack as xt
 
 plt.close("all")
 
 HERE = Path(__file__).resolve().parent
 XSUITE_ROOT = HERE.parent.parent.parent
-INPUT_LATTICE_JSON = (
+SPLINEBORIS_LATTICE_JSON = (
     HERE / "fccee_z_lcc_splineboris_solenoids_coupling_corrected.json"
+)
+VARSOL_LATTICE_JSON = (
+    HERE / "fccee_z_lcc_varsol_solenoids_coupling_corrected.json"
 )
 
 FCC92_TUTORIAL_DIR = XSUITE_ROOT / "fcc_92" / "004_tutorial_cap_meeting"
@@ -20,8 +24,9 @@ if str(FCC92_TUTORIAL_DIR) not in sys.path:
 
 from gen_grid import initial_conditions_grid
 
+from aperture_study_io import save_ma_study
+
 IP_NAMES = ["ipa", "ipd", "ipg", "ipj"]
-N_TURNS = 100
 NEMITT_X = 6.33e-5
 NEMITT_Y = 1.69e-7
 ENERGY_SPREAD = 3.9e-4
@@ -29,6 +34,36 @@ NN_Y_R = 15
 MAX_Y_R = 15
 GLOBAL_XY_LIMIT = 5e-2
 DELTA_INITIAL_VALUES = np.linspace(-35 * ENERGY_SPREAD, 35 * ENERGY_SPREAD, 51)
+N_TURNS = 10_000
+
+MA_CASES = [
+    dict(
+        name="sb_on",
+        model="SB",
+        lattice_json=SPLINEBORIS_LATTICE_JSON,
+        with_solenoids=True,
+        with_correctors=True,
+        title="SplineBoris: solenoids powered + correction scheme",
+    ),
+    dict(
+        name="varsol_on",
+        model="VarSol",
+        lattice_json=VARSOL_LATTICE_JSON,
+        with_solenoids=True,
+        with_correctors=True,
+        title="VariableSolenoid: solenoids powered + correction scheme",
+    ),
+    dict(
+        name="sb_off",
+        model="SB",
+        lattice_json=SPLINEBORIS_LATTICE_JSON,
+        with_solenoids=False,
+        with_correctors=False,
+        title="SplineBoris: solenoids unpowered",
+    ),
+]
+
+MA_CASES_BY_NAME = {case["name"]: case for case in MA_CASES}
 
 
 def _set_solenoid_knobs(line, *, with_solenoids, with_correctors):
@@ -85,14 +120,10 @@ def _plot_momentum_acceptance_figure(out, tt_init, title):
     return fig
 
 
-def _run_momentum_acceptance(
-    *,
-    lattice_json,
-    with_solenoids,
-    with_correctors,
-    title,
-    with_progress,
-):
+def _run_momentum_acceptance(case, *, with_progress):
+    lattice_json = case["lattice_json"]
+    title = case["title"]
+
     print(f"\n=== {title} ===")
     print(f"Loading lattice: {lattice_json.name}")
     env = xt.load(lattice_json)
@@ -100,8 +131,8 @@ def _run_momentum_acceptance(
     line.cycle("ipa")
     _set_solenoid_knobs(
         line,
-        with_solenoids=with_solenoids,
-        with_correctors=with_correctors,
+        with_solenoids=case["with_solenoids"],
+        with_correctors=case["with_correctors"],
     )
 
     line.discard_tracker()
@@ -140,7 +171,7 @@ def _run_momentum_acceptance(
     lost = particles.state <= 0
     frac_lost = lost.sum() / len(lost)
     at_turn_mean = particles.at_turn.mean()
-    
+
     out = {
         "particles": particles,
         "lost": lost,
@@ -148,27 +179,79 @@ def _run_momentum_acceptance(
         "at_turn_mean": at_turn_mean,
         "tt_init": tt_init,
     }
-    _plot_momentum_acceptance_figure(out, tt_init, title)
+    fig = _plot_momentum_acceptance_figure(out, tt_init, title)
+    save_ma_study(
+        out=out,
+        tt_init=tt_init,
+        fig=fig,
+        model=case["model"],
+        with_solenoids=case["with_solenoids"],
+        with_correctors=case["with_correctors"],
+        n_turns=N_TURNS,
+        global_xy_limit=GLOBAL_XY_LIMIT,
+        nemitt_x=NEMITT_X,
+        nemitt_y=NEMITT_Y,
+        nn_y_r=NN_Y_R,
+        max_y_r=MAX_Y_R,
+        energy_spread=ENERGY_SPREAD,
+        delta_initial_values=DELTA_INITIAL_VALUES,
+    )
     print(
         f"[{title}] Momentum acceptance run complete:"
-        f" frac_lost={out['frac_lost']:.6g},"
-        f" at_turn_mean={out['at_turn_mean']:.6g}"
+        f" frac_lost={frac_lost:.6g},"
+        f" at_turn_mean={at_turn_mean:.6g}"
     )
     return out
 
 
-_run_momentum_acceptance(
-    lattice_json=INPUT_LATTICE_JSON,
-    with_solenoids=True,
-    with_correctors=True,
-    title="Solenoids powered + correction scheme",
-    with_progress=1,
-)
-_run_momentum_acceptance(
-    lattice_json=INPUT_LATTICE_JSON,
-    with_solenoids=False,
-    with_correctors=False,
-    title="Solenoids unpowered",
-    with_progress=1,
-)
-plt.show()
+def _select_cases(case_names):
+    if not case_names:
+        return MA_CASES
+
+    unknown = [name for name in case_names if name not in MA_CASES_BY_NAME]
+    if unknown:
+        valid = ", ".join(MA_CASES_BY_NAME)
+        raise SystemExit(f"Unknown case(s): {', '.join(unknown)}. Choose from: {valid}")
+
+    return [MA_CASES_BY_NAME[name] for name in case_names]
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Run momentum-acceptance studies for FCC-ee solenoid lattices."
+    )
+    parser.add_argument(
+        "--cases",
+        nargs="+",
+        metavar="CASE",
+        help=(
+            "Cases to run (default: all). "
+            "Available: sb_on, varsol_on, sb_off"
+        ),
+    )
+    parser.add_argument(
+        "--list-cases",
+        action="store_true",
+        help="List available cases and exit.",
+    )
+    parser.add_argument(
+        "--no-show",
+        action="store_true",
+        help="Skip interactive figure display (data and PDFs are still saved).",
+    )
+    args = parser.parse_args()
+
+    if args.list_cases:
+        for case in MA_CASES:
+            print(f"{case['name']}: {case['title']}")
+        return
+
+    for case in _select_cases(args.cases):
+        _run_momentum_acceptance(case, with_progress=1)
+
+    if not args.no_show:
+        plt.show()
+
+
+if __name__ == "__main__":
+    main()
