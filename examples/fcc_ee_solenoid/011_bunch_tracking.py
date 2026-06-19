@@ -45,7 +45,7 @@ _set_solenoid_knobs(
     with_correctors=True,
 )
 
-tw = line.twiss6d(strengths=True)
+tw = line.twiss6d(eneloss_and_damping=True, strengths=True)
 
 print(
     f"Tune: Qx={tw['qx']:.6f}, Qy={tw['qy']:.6f}, "
