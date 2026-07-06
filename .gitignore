@@ -8,6 +8,7 @@ norepository_*
 build
 CyFPPS.cpp
 examples/*/res/*
+examples/fcc_ee_solenoid/data/
 *.egg-info
 __pycache__
 .pytest_cache
