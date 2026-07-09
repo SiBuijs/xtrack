@@ -1,10 +1,20 @@
+from pathlib import Path
+
 import xtrack as xt
 import numpy as np
 from scipy.constants import e as qe
 from scipy.constants import c as clight
 
-# env = xt.load('fccee_z_lcc_local_solenoid.json')
-env = xt.load('fccee_z_lcc_non_local_solenoid.json')
+HERE = Path(__file__).resolve().parent
+# LATTICE_JSON = HERE / 'fccee_z_lcc_local_solenoid.json'
+LATTICE_JSON = HERE / 'fccee_z_lcc_non_local_solenoid.json'
+if not LATTICE_JSON.is_file():
+    raise FileNotFoundError(
+        f'{LATTICE_JSON.name} not found. '
+        'Run 001a_non_local_install_solenoids_and_correctors.py and '
+        '001b_non_local_correction.py first.'
+    )
+env = xt.load(LATTICE_JSON)
 
 # work on a copy of the line for slicing
 line = env.fccee_p_ring.copy(shallow=True)
