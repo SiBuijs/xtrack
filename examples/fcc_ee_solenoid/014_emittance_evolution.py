@@ -100,6 +100,12 @@ def _compute_geometric_emittances(mon, tw, n_turns):
     alfy = float(tw["alfy"][i0])
     gamy = (1.0 + alfy**2) / bety
     bets0 = float(tw["bets0"])
+    x_co = float(tw["x"][i0])
+    px_co = float(tw["px"][i0])
+    y_co = float(tw["y"][i0])
+    py_co = float(tw["py"][i0])
+    zeta_co = float(tw["zeta"][i0])
+    delta_co = float(tw["delta"][i0])
 
     has_state = hasattr(mon, "state") and mon.state is not None
 
@@ -118,12 +124,13 @@ def _compute_geometric_emittances(mon, tw, n_turns):
         else:
             alive = slice(None)
 
-        x = mon.x[alive, t]
-        px = mon.px[alive, t]
-        y = mon.y[alive, t]
-        py = mon.py[alive, t]
-        zeta = mon.zeta[alive, t]
-        delta = mon.delta[alive, t]
+        # Compute second moments around the closed orbit, not around zero.
+        x = mon.x[alive, t] - x_co
+        px = mon.px[alive, t] - px_co
+        y = mon.y[alive, t] - y_co
+        py = mon.py[alive, t] - py_co
+        zeta = mon.zeta[alive, t] - zeta_co
+        delta = mon.delta[alive, t] - delta_co
 
         gemitt_x[t] = 0.5 * np.mean(gamx * x**2 + 2 * alfx * x * px + betx * px**2)
         gemitt_y[t] = 0.5 * np.mean(gamy * y**2 + 2 * alfy * y * py + bety * py**2)
