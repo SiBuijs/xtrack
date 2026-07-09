@@ -1,16 +1,17 @@
 from pathlib import Path
 import argparse
-import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
 import xobjects as xo
 import xtrack as xt
 
+from aperture_grid import initial_conditions_grid
+from aperture_study_io import save_ma_study
+
 plt.close("all")
 
 HERE = Path(__file__).resolve().parent
-XSUITE_ROOT = HERE.parent.parent.parent
 SPLINEBORIS_LATTICE_JSON = (
     HERE / "fccee_z_lcc_splineboris_solenoids_coupling_corrected.json"
 )
@@ -18,20 +19,12 @@ VARSOL_LATTICE_JSON = (
     HERE / "fccee_z_lcc_varsol_solenoids_coupling_corrected.json"
 )
 
-FCC92_TUTORIAL_DIR = XSUITE_ROOT / "fcc_92" / "004_tutorial_cap_meeting"
-if str(FCC92_TUTORIAL_DIR) not in sys.path:
-    sys.path.append(str(FCC92_TUTORIAL_DIR))
-
-from gen_grid import initial_conditions_grid
-
-from aperture_study_io import save_ma_study
-
 IP_NAMES = ["ipa", "ipd", "ipg", "ipj"]
 NEMITT_X = 6.33e-5
 NEMITT_Y = 1.69e-7
 ENERGY_SPREAD = 3.9e-4
-NN_Y_R = 15
-MAX_Y_R = 15
+NN_Y_R = 25
+MAX_Y_R = 25
 GLOBAL_XY_LIMIT = 5e-2
 DELTA_INITIAL_VALUES = np.linspace(-35 * ENERGY_SPREAD, 35 * ENERGY_SPREAD, 51)
 N_TURNS = 10_000
@@ -120,7 +113,7 @@ def _plot_momentum_acceptance_figure(out, tt_init, title):
     return fig
 
 
-def _run_momentum_acceptance(case, *, with_progress):
+def _run_momentum_acceptance(case, *, n_turns, with_progress):
     lattice_json = case["lattice_json"]
     title = case["title"]
 
@@ -165,7 +158,7 @@ def _run_momentum_acceptance(case, *, with_progress):
     line.build_tracker(_context=xo.ContextCpu(omp_num_threads="auto"))
 
     line.config.XTRACK_GLOBAL_XY_LIMIT = GLOBAL_XY_LIMIT
-    line.track(particles, num_turns=N_TURNS, with_progress=with_progress)
+    line.track(particles, num_turns=n_turns, with_progress=with_progress)
     particles.sort(interleave_lost_particles=True)
 
     lost = particles.state <= 0
@@ -187,7 +180,7 @@ def _run_momentum_acceptance(case, *, with_progress):
         model=case["model"],
         with_solenoids=case["with_solenoids"],
         with_correctors=case["with_correctors"],
-        n_turns=N_TURNS,
+        n_turns=n_turns,
         global_xy_limit=GLOBAL_XY_LIMIT,
         nemitt_x=NEMITT_X,
         nemitt_y=NEMITT_Y,
@@ -235,6 +228,13 @@ def main():
         help="List available cases and exit.",
     )
     parser.add_argument(
+        "--n-turns",
+        type=int,
+        default=N_TURNS,
+        metavar="N",
+        help=f"Number of turns to track (default: {N_TURNS}).",
+    )
+    parser.add_argument(
         "--no-show",
         action="store_true",
         help="Skip interactive figure display (data and PDFs are still saved).",
@@ -247,7 +247,7 @@ def main():
         return
 
     for case in _select_cases(args.cases):
-        _run_momentum_acceptance(case, with_progress=1)
+        _run_momentum_acceptance(case, n_turns=args.n_turns, with_progress=1)
 
     if not args.no_show:
         plt.show()

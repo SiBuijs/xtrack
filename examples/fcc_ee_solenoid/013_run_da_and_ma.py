@@ -1,4 +1,4 @@
-"""Run dynamic-aperture (010) and momentum-acceptance (009) studies in sequence."""
+"""Run DA, MA, and emittance-evolution studies in sequence."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 DA_SCRIPT = HERE / "010_dynamic_aperture.py"
 MA_SCRIPT = HERE / "009_momentum_acceptance.py"
+EMITT_SCRIPT = HERE / "014_emittance_evolution.py"
 
 
 def _run_script(script: Path, extra_args: list[str]) -> None:
@@ -23,8 +24,8 @@ def _run_script(script: Path, extra_args: list[str]) -> None:
 def main():
     parser = argparse.ArgumentParser(
         description=(
-            "Run DA (010_dynamic_aperture.py) and MA (009_momentum_acceptance.py) "
-            "studies in sequence."
+            "Run DA (010_dynamic_aperture.py), MA (009_momentum_acceptance.py), "
+            "and emittance-evolution (014_emittance_evolution.py) studies in sequence."
         )
     )
     parser.add_argument(
@@ -36,6 +37,11 @@ def main():
         "--ma-only",
         action="store_true",
         help="Run only momentum-acceptance studies.",
+    )
+    parser.add_argument(
+        "--emitt-only",
+        action="store_true",
+        help="Run only emittance-evolution studies.",
     )
     parser.add_argument(
         "--da-cases",
@@ -50,10 +56,28 @@ def main():
         help="MA cases for 009 (default: all). Available: sb_on, varsol_on, sb_off",
     )
     parser.add_argument(
+        "--emitt-cases",
+        nargs="+",
+        metavar="CASE",
+        help="Emittance cases for 014 (default: all). Available: sb_on, varsol_on, sb_off",
+    )
+    parser.add_argument(
         "--cases",
         nargs="+",
         metavar="CASE",
         help="Shortcut for --da-cases (DA only).",
+    )
+    parser.add_argument(
+        "--n-turns",
+        type=int,
+        metavar="N",
+        help="Number of turns for MA and emittance-evolution studies.",
+    )
+    parser.add_argument(
+        "--n-part",
+        type=int,
+        metavar="N",
+        help="Number of macroparticles for emittance-evolution studies.",
     )
     parser.add_argument(
         "--show",
@@ -62,27 +86,41 @@ def main():
     )
     args = parser.parse_args()
 
-    if args.da_only and args.ma_only:
-        raise SystemExit("Choose at most one of --da-only and --ma-only.")
+    only_flags = sum([args.da_only, args.ma_only, args.emitt_only])
+    if only_flags > 1:
+        raise SystemExit("Choose at most one of --da-only, --ma-only, and --emitt-only.")
 
     da_cases = args.da_cases or args.cases
+    emitt_cases = args.emitt_cases or args.cases
     da_args: list[str] = []
     ma_args: list[str] = []
+    emitt_args: list[str] = []
     if da_cases:
         da_args.extend(["--cases", *da_cases])
     if args.ma_cases:
         ma_args.extend(["--cases", *args.ma_cases])
+    if emitt_cases:
+        emitt_args.extend(["--cases", *emitt_cases])
+    if args.n_turns is not None:
+        ma_args.extend(["--n-turns", str(args.n_turns)])
+        emitt_args.extend(["--n-turns", str(args.n_turns)])
+    if args.n_part is not None:
+        emitt_args.extend(["--n-part", str(args.n_part)])
     if not args.show:
         da_args.append("--no-show")
         ma_args.append("--no-show")
+        emitt_args.append("--no-show")
 
-    run_da = not args.ma_only
-    run_ma = not args.da_only
+    run_da = not args.ma_only and not args.emitt_only
+    run_ma = not args.da_only and not args.emitt_only
+    run_emitt = not args.da_only and not args.ma_only
 
     if run_da:
         _run_script(DA_SCRIPT, da_args)
     if run_ma:
         _run_script(MA_SCRIPT, ma_args)
+    if run_emitt:
+        _run_script(EMITT_SCRIPT, emitt_args)
 
     print("\nAll requested studies finished.")
 

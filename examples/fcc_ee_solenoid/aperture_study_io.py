@@ -13,7 +13,7 @@ DATA_DIR = HERE / "data"
 PLOT_DIR = Path("/home/simonfan/cernbox/Pictures/FCC_Solenoid_Studies")
 
 ModelTag = Literal["SB", "VarSol"]
-StudyTag = Literal["DA", "MA"]
+StudyTag = Literal["DA", "MA", "EMIT"]
 
 
 def global_xy_limit_tag(global_xy_limit: float) -> str:
@@ -164,6 +164,61 @@ def save_ma_study(
     npz_path = _study_npz_path("MA", basename)
     np.savez(npz_path, **arrays)
     print(f"Saved MA data: {npz_path}")
+
+    pdf_path = save_figure_pdf(fig, basename)
+    return npz_path, pdf_path
+
+
+def save_emitt_study(
+    *,
+    fig: plt.Figure,
+    model: ModelTag,
+    with_solenoids: bool,
+    with_correctors: bool,
+    n_turns: int,
+    global_xy_limit: float,
+    n_part: int,
+    turns: np.ndarray,
+    gemitt_x: np.ndarray,
+    gemitt_y: np.ndarray,
+    gemitt_z: np.ndarray,
+    eq_gemitt_x: float,
+    eq_gemitt_y: float,
+    eq_gemitt_zeta: float,
+    damping_constants_turns: np.ndarray,
+    fit_a: np.ndarray,
+    fit_eps_init: np.ndarray,
+) -> tuple[Path, Path]:
+    basename = make_basename(
+        with_solenoids=with_solenoids,
+        with_correctors=with_correctors,
+        model=model,
+        n_turns=n_turns,
+        global_xy_limit=global_xy_limit,
+    )
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+    arrays = dict(
+        turns=np.asarray(turns),
+        gemitt_x=np.asarray(gemitt_x),
+        gemitt_y=np.asarray(gemitt_y),
+        gemitt_z=np.asarray(gemitt_z),
+        eq_gemitt_x=float(eq_gemitt_x),
+        eq_gemitt_y=float(eq_gemitt_y),
+        eq_gemitt_zeta=float(eq_gemitt_zeta),
+        damping_constants_turns=np.asarray(damping_constants_turns),
+        fit_a=np.asarray(fit_a),
+        fit_eps_init=np.asarray(fit_eps_init),
+        n_part=int(n_part),
+        n_turns=int(n_turns),
+        global_xy_limit=float(global_xy_limit),
+        with_solenoids=with_solenoids,
+        with_correctors=with_correctors,
+        model=model,
+    )
+    npz_path = _study_npz_path("EMIT", basename)
+    np.savez(npz_path, **arrays)
+    print(f"Saved EMIT data: {npz_path}")
 
     pdf_path = save_figure_pdf(fig, basename)
     return npz_path, pdf_path
