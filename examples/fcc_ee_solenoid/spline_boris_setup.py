@@ -377,7 +377,8 @@ def build_splineboris_line(
         *, name, field_data, scale_b,
         max_transverse_derivative_order_for_spline,
         spline_steps_per_point,
-        use_near_axis_simplified_model):
+        use_near_axis_simplified_model,
+        sextupole_amplification_factor=1.0):
     s_axis = field_data['s_axis']
     elements = []
     element_names = []
@@ -473,6 +474,19 @@ def build_splineboris_line(
                 by_der_end = by_spline_data['der_end'][ii]
                 by_integral_average = (
                     by_spline_data['integral_average'][ii])
+
+            if order == 2 and sextupole_amplification_factor != 1.0:
+                bx_val_start *= sextupole_amplification_factor
+                bx_der_start *= sextupole_amplification_factor
+                bx_val_end *= sextupole_amplification_factor
+                bx_der_end *= sextupole_amplification_factor
+                bx_integral_average *= sextupole_amplification_factor
+
+                by_val_start *= sextupole_amplification_factor
+                by_der_start *= sextupole_amplification_factor
+                by_val_end *= sextupole_amplification_factor
+                by_der_end *= sextupole_amplification_factor
+                by_integral_average *= sextupole_amplification_factor
 
             bx.append(xt.Spline4(
                 val_start=bx_val_start,

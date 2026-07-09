@@ -116,11 +116,13 @@ line_main_solenoid = build_splineboris_line(
     name='main_solenoid',
     field_data=main_field_data,
     scale_b=1.0,
+    sextupole_amplification_factor=10.0,
     **splineboris_build_kwargs)
 line_compensation_solenoid = build_splineboris_line(
     name='compensation_solenoid',
     field_data=comp_field_data,
     scale_b=comp_scale_b,
+    sextupole_amplification_factor=10.0,
     **splineboris_build_kwargs)
 line_main_solenoid_varsol = build_variable_solenoid_line(
     name='main_solenoid',
