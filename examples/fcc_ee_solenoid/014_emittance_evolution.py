@@ -122,22 +122,28 @@ def _compute_geometric_emittances(mon, tw, n_turns):
     return gemitt_x, gemitt_y, gemitt_z
 
 
-def _fit_damping_rate(turns, gemitt, eps_eq, eps_init):
-    def model(turns_arr, a):
-        return (eps_init - eps_eq) * np.exp(a * turns_arr) + eps_eq
+def _fit_damping_rate(turns, gemitt, eps_eq_guess, eps_init):
+    """Fit eps_eq and the damping rate alpha, with the initial emittance
+    fixed to the value observed at the start of tracking.
+
+    Model: eps(n) = (eps_init - eps_eq) * exp(-alpha * n) + eps_eq
+    """
+
+    def model(turns_arr, eps_eq, alpha):
+        return (eps_init - eps_eq) * np.exp(-alpha * turns_arr) + eps_eq
 
     mask = np.isfinite(gemitt)
     if mask.sum() < 3:
-        return np.nan
+        return np.nan, np.nan
 
     popt, _ = curve_fit(
         model,
         turns[mask],
         gemitt[mask],
-        p0=[-2.0 * 1e-3],
+        p0=[eps_eq_guess, 2.0 * 1e-3],
         maxfev=10_000,
     )
-    return float(popt[0])
+    return float(popt[0]), float(popt[1])
 
 
 def _analytic_emittance(turns, eps_init, eps_eq, damp_turn):
@@ -154,23 +160,24 @@ def _plot_emittance_evolution_figure(
     eq_y,
     eq_z,
     damp_turns,
-    fit_a,
+    fit_eps_eq,
+    fit_alpha,
     title,
 ):
     fig, axes = plt.subplots(3, 1, figsize=(6.4, 7.2), sharex=True)
     series = [
-        (gemitt_x, eq_x, damp_turns[0], fit_a[0], r"$\varepsilon_x$ [m·rad]"),
-        (gemitt_y, eq_y, damp_turns[1], fit_a[1], r"$\varepsilon_y$ [m·rad]"),
-        (gemitt_z, eq_z, damp_turns[2], fit_a[2], r"$\varepsilon_\zeta$ [m·rad]"),
+        (gemitt_x, eq_x, damp_turns[0], fit_eps_eq[0], fit_alpha[0], r"$\varepsilon_x$ [m·rad]"),
+        (gemitt_y, eq_y, damp_turns[1], fit_eps_eq[1], fit_alpha[1], r"$\varepsilon_y$ [m·rad]"),
+        (gemitt_z, eq_z, damp_turns[2], fit_eps_eq[2], fit_alpha[2], r"$\varepsilon_\zeta$ [m·rad]"),
     ]
 
-    for ax, (gemitt, eq, damp, a_fit, ylabel) in zip(axes, series):
+    for ax, (gemitt, eq, damp, eps_eq_fit, alpha_fit, ylabel) in zip(axes, series):
         eps_init = gemitt[0]
         ax.plot(turns, gemitt, label="tracked")
         ax.axhline(eq, linestyle="--", color="C2", label=r"$\varepsilon_\mathrm{eq}$ (Twiss)")
 
-        if np.isfinite(a_fit):
-            fit_curve = (eps_init - eq) * np.exp(a_fit * turns) + eq
+        if np.isfinite(alpha_fit):
+            fit_curve = (eps_init - eps_eq_fit) * np.exp(-alpha_fit * turns) + eps_eq_fit
             ax.plot(turns, fit_curve, "--", color="C3", label="fit")
 
         analytic = _analytic_emittance(turns, eps_init, eq, damp)
@@ -249,17 +256,31 @@ def _run_emittance_evolution(case, *, n_turns, n_part, with_progress, sexamp):
     gemitt_x, gemitt_y, gemitt_z = _compute_geometric_emittances(mon, tw, n_turns)
     turns = np.arange(n_turns)
 
-    fit_a = np.array(
-        [
-            _fit_damping_rate(turns, gemitt_x, eq_x, gemitt_x[0]),
-            _fit_damping_rate(turns, gemitt_y, eq_y, gemitt_y[0]),
-            _fit_damping_rate(turns, gemitt_z, eq_z, gemitt_z[0]),
-        ]
-    )
-    for plane, a_fit, damp in zip(["x", "y", "zeta"], fit_a, damp_turns):
+    fit_eps_init = np.array([gemitt_x[0], gemitt_y[0], gemitt_z[0]])
+    fit_results = [
+        _fit_damping_rate(turns, gemitt_x, eq_x, fit_eps_init[0]),
+        _fit_damping_rate(turns, gemitt_y, eq_y, fit_eps_init[1]),
+        _fit_damping_rate(turns, gemitt_z, eq_z, fit_eps_init[2]),
+    ]
+    fit_eps_eq = np.array([r[0] for r in fit_results])
+    fit_alpha = np.array([r[1] for r in fit_results])
+    fit_tau = 1.0 / fit_alpha
+
+    plane_symbols = ["x", "y", "ζ"]
+    eq_twiss = [eq_x, eq_y, eq_z]
+    for symbol, eps0, eps_eq_fit, alpha_fit, tau_fit, eq_tw, damp_tw in zip(
+        plane_symbols, fit_eps_init, fit_eps_eq, fit_alpha, fit_tau, eq_twiss, damp_turns
+    ):
+        print(f"  Plane {symbol}:")
+        print(f"    ε_{symbol},0  = {eps0:.6e} m·rad  (initial, from tracking)")
         print(
-            f"  plane {plane}: fitted a = {a_fit:.6e}, "
-            f"-2*damp_turn = {-2 * damp:.6e}"
+            f"    ε_{symbol},eq = {eps_eq_fit:.6e} m·rad  (fit)   "
+            f"[Twiss: {eq_tw:.6e}]"
+        )
+        print(f"    α_{symbol}    = {alpha_fit:.6e} 1/turn  (fit)")
+        print(
+            f"    τ_{symbol}    = {tau_fit:.6e} turns  (fit)   "
+            f"[Twiss damp_turns: {damp_tw:.6e}]"
         )
 
     fig = _plot_emittance_evolution_figure(
@@ -271,7 +292,8 @@ def _run_emittance_evolution(case, *, n_turns, n_part, with_progress, sexamp):
         eq_y=eq_y,
         eq_z=eq_z,
         damp_turns=damp_turns,
-        fit_a=fit_a,
+        fit_eps_eq=fit_eps_eq,
+        fit_alpha=fit_alpha,
         title=title,
     )
     save_emitt_study(
@@ -290,8 +312,10 @@ def _run_emittance_evolution(case, *, n_turns, n_part, with_progress, sexamp):
         eq_gemitt_y=eq_y,
         eq_gemitt_zeta=eq_z,
         damping_constants_turns=damp_turns,
-        fit_a=fit_a,
-        fit_eps_init=np.array([gemitt_x[0], gemitt_y[0], gemitt_z[0]]),
+        fit_eps_eq=fit_eps_eq,
+        fit_alpha=fit_alpha,
+        fit_tau=fit_tau,
+        fit_eps_init=fit_eps_init,
         variant=variant_suffix(sexamp=sexamp),
         sexamp=sexamp,
     )
@@ -301,7 +325,9 @@ def _run_emittance_evolution(case, *, n_turns, n_part, with_progress, sexamp):
         gemitt_x=gemitt_x,
         gemitt_y=gemitt_y,
         gemitt_z=gemitt_z,
-        fit_a=fit_a,
+        fit_eps_eq=fit_eps_eq,
+        fit_alpha=fit_alpha,
+        fit_tau=fit_tau,
     )
 
 
