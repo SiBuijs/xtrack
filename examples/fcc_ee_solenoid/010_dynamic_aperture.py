@@ -7,7 +7,8 @@ import xobjects as xo
 import xpart as xp
 import xtrack as xt
 
-from aperture_study_io import save_da_study
+from aperture_study_io import save_da_study, variant_suffix
+from lattice_knobs import set_lattice_knobs
 
 plt.close("all")
 
@@ -100,24 +101,6 @@ def _build_da_initial_conditions(*, nn_y_r, nn_x_theta, sigma_x_over_sigma_y):
     )
 
 
-def _set_solenoid_knobs(line, *, with_solenoids, with_correctors):
-    for ip_name in IP_NAMES:
-        if f"on_sol_{ip_name}" in line.vars:
-            line[f"on_sol_{ip_name}"] = float(with_solenoids)
-
-        for corr_knob in (
-            f"on_sol_corr_{ip_name}",
-            f"on_comp_sol_{ip_name}",
-            f"on_rot_doublet_left_{ip_name}",
-            f"on_rot_doublet_right_{ip_name}",
-            f"on_sol_orbit_corr_{ip_name}",
-            f"on_sol_optics_corr_{ip_name}",
-            f"on_sol_coupling_corr_{ip_name}",
-        ):
-            if corr_knob in line.vars:
-                line[corr_knob] = float(with_correctors)
-
-
 def _configure_radiative_tracking(line):
     line.particle_ref.anomalous_magnetic_moment = 0.00115965218128
     line.configure_radiation(model="mean")
@@ -170,7 +153,7 @@ def _plot_dynamic_aperture_figure(
     return fig
 
 
-def _run_dynamic_aperture(case, *, with_progress):
+def _run_dynamic_aperture(case, *, n_turns, with_progress, sexamp):
     lattice_json = case["lattice_json"]
     title = case["title"]
     nn_y_r = case["nn_y_r"]
@@ -181,10 +164,11 @@ def _run_dynamic_aperture(case, *, with_progress):
     env = xt.load(lattice_json)
     line = env.fccee_p_ring
     line.cycle("ipa")
-    _set_solenoid_knobs(
+    set_lattice_knobs(
         line,
         with_solenoids=case["with_solenoids"],
         with_correctors=case["with_correctors"],
+        sext_amp=sexamp,
     )
 
     line.discard_tracker()
@@ -210,7 +194,7 @@ def _run_dynamic_aperture(case, *, with_progress):
         sigma_x_over_sigma_y=sigma_x_over_sigma_y,
     )
     num_particles = len(tt_init)
-    print(f"Tracking {num_particles} particles for {N_TURNS} turns")
+    print(f"Tracking {num_particles} particles for {n_turns} turns")
 
     particles = line.build_particles(
         method="6d",
@@ -227,7 +211,7 @@ def _run_dynamic_aperture(case, *, with_progress):
     line.build_tracker(_context=xo.ContextCpu(omp_num_threads="auto"))
 
     line.config.XTRACK_GLOBAL_XY_LIMIT = GLOBAL_XY_LIMIT
-    line.track(particles, num_turns=N_TURNS, with_progress=with_progress)
+    line.track(particles, num_turns=n_turns, with_progress=with_progress)
     particles.sort(interleave_lost_particles=True)
 
     lost = particles.state <= 0
@@ -257,7 +241,7 @@ def _run_dynamic_aperture(case, *, with_progress):
         model=case["model"],
         with_solenoids=case["with_solenoids"],
         with_correctors=case["with_correctors"],
-        n_turns=N_TURNS,
+        n_turns=n_turns,
         global_xy_limit=GLOBAL_XY_LIMIT,
         sigma_x=sigma_x,
         sigma_y=sigma_y,
@@ -266,6 +250,9 @@ def _run_dynamic_aperture(case, *, with_progress):
         max_amp_sigma_x=MAX_AMP_SIGMA_X,
         nemitt_x=NEMITT_X,
         nemitt_y=NEMITT_Y,
+        n_part=num_particles,
+        variant=variant_suffix(sexamp=sexamp),
+        sexamp=sexamp,
     )
     print(
         f"[{title}] Dynamic aperture run complete:"
@@ -306,6 +293,20 @@ def main():
         help="List available cases and exit.",
     )
     parser.add_argument(
+        "--n-turns",
+        type=int,
+        default=N_TURNS,
+        metavar="N",
+        help=f"Number of turns to track (default: {N_TURNS}).",
+    )
+    parser.add_argument(
+        "--sexamp",
+        type=float,
+        default=1.0,
+        metavar="FACTOR",
+        help="Sextupole amplification knob (default: 1.0).",
+    )
+    parser.add_argument(
         "--no-show",
         action="store_true",
         help="Skip interactive figure display (data and PDFs are still saved).",
@@ -318,7 +319,9 @@ def main():
         return
 
     for case in _select_cases(args.cases):
-        _run_dynamic_aperture(case, with_progress=1)
+        _run_dynamic_aperture(
+            case, n_turns=args.n_turns, with_progress=1, sexamp=args.sexamp
+        )
 
     if not args.no_show:
         plt.show()

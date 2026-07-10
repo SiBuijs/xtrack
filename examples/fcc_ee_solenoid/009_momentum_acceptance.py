@@ -7,7 +7,8 @@ import xobjects as xo
 import xtrack as xt
 
 from aperture_grid import initial_conditions_grid
-from aperture_study_io import save_ma_study
+from aperture_study_io import save_ma_study, variant_suffix
+from lattice_knobs import set_lattice_knobs
 
 plt.close("all")
 
@@ -59,24 +60,6 @@ MA_CASES = [
 MA_CASES_BY_NAME = {case["name"]: case for case in MA_CASES}
 
 
-def _set_solenoid_knobs(line, *, with_solenoids, with_correctors):
-    for ip_name in IP_NAMES:
-        if f"on_sol_{ip_name}" in line.vars:
-            line[f"on_sol_{ip_name}"] = float(with_solenoids)
-
-        for corr_knob in (
-            f"on_sol_corr_{ip_name}",
-            f"on_comp_sol_{ip_name}",
-            f"on_rot_doublet_left_{ip_name}",
-            f"on_rot_doublet_right_{ip_name}",
-            f"on_sol_orbit_corr_{ip_name}",
-            f"on_sol_optics_corr_{ip_name}",
-            f"on_sol_coupling_corr_{ip_name}",
-        ):
-            if corr_knob in line.vars:
-                line[corr_knob] = float(with_correctors)
-
-
 def _configure_radiative_tracking(line):
     line.particle_ref.anomalous_magnetic_moment = 0.00115965218128
     line.configure_radiation(model="mean")
@@ -113,7 +96,7 @@ def _plot_momentum_acceptance_figure(out, tt_init, title):
     return fig
 
 
-def _run_momentum_acceptance(case, *, n_turns, with_progress):
+def _run_momentum_acceptance(case, *, n_turns, with_progress, sexamp):
     lattice_json = case["lattice_json"]
     title = case["title"]
 
@@ -122,10 +105,11 @@ def _run_momentum_acceptance(case, *, n_turns, with_progress):
     env = xt.load(lattice_json)
     line = env.fccee_p_ring
     line.cycle("ipa")
-    _set_solenoid_knobs(
+    set_lattice_knobs(
         line,
         with_solenoids=case["with_solenoids"],
         with_correctors=case["with_correctors"],
+        sext_amp=sexamp,
     )
 
     line.discard_tracker()
@@ -188,6 +172,9 @@ def _run_momentum_acceptance(case, *, n_turns, with_progress):
         max_y_r=MAX_Y_R,
         energy_spread=ENERGY_SPREAD,
         delta_initial_values=DELTA_INITIAL_VALUES,
+        n_part=len(tt_init),
+        variant=variant_suffix(sexamp=sexamp),
+        sexamp=sexamp,
     )
     print(
         f"[{title}] Momentum acceptance run complete:"
@@ -235,6 +222,13 @@ def main():
         help=f"Number of turns to track (default: {N_TURNS}).",
     )
     parser.add_argument(
+        "--sexamp",
+        type=float,
+        default=1.0,
+        metavar="FACTOR",
+        help="Sextupole amplification knob (default: 1.0).",
+    )
+    parser.add_argument(
         "--no-show",
         action="store_true",
         help="Skip interactive figure display (data and PDFs are still saved).",
@@ -247,7 +241,9 @@ def main():
         return
 
     for case in _select_cases(args.cases):
-        _run_momentum_acceptance(case, n_turns=args.n_turns, with_progress=1)
+        _run_momentum_acceptance(
+            case, n_turns=args.n_turns, with_progress=1, sexamp=args.sexamp
+        )
 
     if not args.no_show:
         plt.show()

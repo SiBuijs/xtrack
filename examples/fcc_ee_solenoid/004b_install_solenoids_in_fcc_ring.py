@@ -46,6 +46,8 @@ comp_solenoid_template = solenoid_templates['compensation_solenoid']
 # Install independent SplineBoris solenoid clones at IPs #
 #########################################################
 
+env['sext_amp'] = 1.0
+
 for ip_name in IP_NAMES:
 
     # Use the same local line orientation around each IP as in the original
@@ -88,6 +90,17 @@ for ip_name in IP_NAMES:
 
             env.elements[element_name] = cloned_element
             env.ref[element_name].scale_b = float(saved_scale_b) * knob_ref
+
+            if (
+                isinstance(cloned_element, xt.SplineBoris)
+                and cloned_element.multipole_order >= 3
+            ):
+                sext_ref = env.ref['sext_amp']
+                ref = env.ref[element_name]
+                for k in range(5):
+                    ref.bx[2, k] = float(cloned_element.bx[2, k]) * sext_ref
+                    ref.by[2, k] = float(cloned_element.by[2, k]) * sext_ref
+
             element_names.append(element_name)
 
         solenoid_lines[clone_name] = env.new_line(components=element_names)

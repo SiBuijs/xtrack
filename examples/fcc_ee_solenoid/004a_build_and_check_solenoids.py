@@ -42,6 +42,10 @@ Y_FIELD_COMPARISON = 0
 PLOT_MAIN_SOLENOID = True
 PLOT_COMPENSATION_SOLENOID = False
 
+SEXTUPOLE_AMPLIFICATION_FACTOR = 1.0
+# Sextupole amplification is applied at study time via the runtime sext_amp knob
+# on the installed SplineBoris lattice (004b), not at template build time.
+
 MIXED_DERIVATIVE_SPECS = [
     {
         'component': 'bx',
@@ -116,13 +120,13 @@ line_main_solenoid = build_splineboris_line(
     name='main_solenoid',
     field_data=main_field_data,
     scale_b=1.0,
-    sextupole_amplification_factor=10.0,
+    sextupole_amplification_factor=SEXTUPOLE_AMPLIFICATION_FACTOR,
     **splineboris_build_kwargs)
 line_compensation_solenoid = build_splineboris_line(
     name='compensation_solenoid',
     field_data=comp_field_data,
     scale_b=comp_scale_b,
-    sextupole_amplification_factor=10.0,
+    sextupole_amplification_factor=SEXTUPOLE_AMPLIFICATION_FACTOR,
     **splineboris_build_kwargs)
 line_main_solenoid_varsol = build_variable_solenoid_line(
     name='main_solenoid',
@@ -163,6 +167,7 @@ if SAVE_SOLENOID_LINES_JSON:
             'main_bs_integral': main_bs_integral,
             'comp_bs_integral_unscaled': comp_bs_integral_unscaled,
             'comp_scale_b': comp_scale_b,
+            'sextupole_amplification_factor': SEXTUPOLE_AMPLIFICATION_FACTOR,
         },
         'lines': {
             'main_solenoid': line_main_solenoid.to_dict(),

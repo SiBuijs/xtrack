@@ -20,7 +20,8 @@ import xpart as xp
 import xtrack as xt
 from scipy.optimize import curve_fit
 
-from aperture_study_io import save_emitt_study
+from aperture_study_io import save_emitt_study, variant_suffix
+from lattice_knobs import set_lattice_knobs
 
 plt.close("all")
 
@@ -65,24 +66,6 @@ EMITT_CASES = [
 ]
 
 EMITT_CASES_BY_NAME = {case["name"]: case for case in EMITT_CASES}
-
-
-def _set_solenoid_knobs(line, *, with_solenoids, with_correctors):
-    for ip_name in IP_NAMES:
-        if f"on_sol_{ip_name}" in line.vars:
-            line[f"on_sol_{ip_name}"] = float(with_solenoids)
-
-        for corr_knob in (
-            f"on_sol_corr_{ip_name}",
-            f"on_comp_sol_{ip_name}",
-            f"on_rot_doublet_left_{ip_name}",
-            f"on_rot_doublet_right_{ip_name}",
-            f"on_sol_orbit_corr_{ip_name}",
-            f"on_sol_optics_corr_{ip_name}",
-            f"on_sol_coupling_corr_{ip_name}",
-        ):
-            if corr_knob in line.vars:
-                line[corr_knob] = float(with_correctors)
 
 
 def _configure_radiative_tracking(line):
@@ -203,7 +186,7 @@ def _plot_emittance_evolution_figure(
     return fig
 
 
-def _run_emittance_evolution(case, *, n_turns, n_part, with_progress):
+def _run_emittance_evolution(case, *, n_turns, n_part, with_progress, sexamp):
     lattice_json = case["lattice_json"]
     title = case["title"]
 
@@ -212,10 +195,11 @@ def _run_emittance_evolution(case, *, n_turns, n_part, with_progress):
     env = xt.load(lattice_json)
     line = env.fccee_p_ring
     line.cycle("ipa")
-    _set_solenoid_knobs(
+    set_lattice_knobs(
         line,
         with_solenoids=case["with_solenoids"],
         with_correctors=case["with_correctors"],
+        sext_amp=sexamp,
     )
 
     line.discard_tracker()
@@ -308,6 +292,8 @@ def _run_emittance_evolution(case, *, n_turns, n_part, with_progress):
         damping_constants_turns=damp_turns,
         fit_a=fit_a,
         fit_eps_init=np.array([gemitt_x[0], gemitt_y[0], gemitt_z[0]]),
+        variant=variant_suffix(sexamp=sexamp),
+        sexamp=sexamp,
     )
     print(f"[{title}] Emittance evolution run complete.")
     return dict(
@@ -364,6 +350,13 @@ def main():
         help=f"Number of macroparticles (default: {N_PART}).",
     )
     parser.add_argument(
+        "--sexamp",
+        type=float,
+        default=1.0,
+        metavar="FACTOR",
+        help="Sextupole amplification knob (default: 1.0).",
+    )
+    parser.add_argument(
         "--no-show",
         action="store_true",
         help="Skip interactive figure display (data and PDFs are still saved).",
@@ -381,6 +374,7 @@ def main():
             n_turns=args.n_turns,
             n_part=args.n_part,
             with_progress=1,
+            sexamp=args.sexamp,
         )
 
     if not args.no_show:

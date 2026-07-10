@@ -1,11 +1,11 @@
 from pathlib import Path
+import argparse
 
 import matplotlib.pyplot as plt
 import xtrack as xt
 
 
 HERE = Path(__file__).parent
-SOLENOID_MODEL = 'splineboris'  # or 'varsol'
 _MODEL_LATTICE_PATHS = {
     'splineboris': (
         'temp_fcc_ee_lcc_splineboris_solenoids.json',
@@ -16,8 +16,20 @@ _MODEL_LATTICE_PATHS = {
         'fccee_z_lcc_varsol_solenoids_coupling_corrected.json',
     ),
 }
-INPUT_LATTICE_JSON = HERE / _MODEL_LATTICE_PATHS[SOLENOID_MODEL][0]
-OUTPUT_LATTICE_JSON = HERE / _MODEL_LATTICE_PATHS[SOLENOID_MODEL][1]
+
+parser = argparse.ArgumentParser(
+    description='Correct solenoids in the FCC ring lattice.'
+)
+parser.add_argument(
+    '--model',
+    choices=['splineboris', 'varsol'],
+    default='splineboris',
+    help='Solenoid model to correct (default: splineboris).',
+)
+args = parser.parse_args()
+
+INPUT_LATTICE_JSON = HERE / _MODEL_LATTICE_PATHS[args.model][0]
+OUTPUT_LATTICE_JSON = HERE / _MODEL_LATTICE_PATHS[args.model][1]
 
 IP_NAMES = ['ipa', 'ipd', 'ipg', 'ipj']
 

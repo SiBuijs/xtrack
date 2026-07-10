@@ -71,13 +71,42 @@ def main():
         "--n-turns",
         type=int,
         metavar="N",
-        help="Number of turns for MA and emittance-evolution studies.",
+        help="Number of turns for DA, MA, and emittance-evolution studies.",
+    )
+    parser.add_argument(
+        "--da-n-turns",
+        type=int,
+        metavar="N",
+        help="Number of turns for DA studies (overrides --n-turns).",
+    )
+    parser.add_argument(
+        "--ma-n-turns",
+        type=int,
+        metavar="N",
+        help="Number of turns for MA studies (overrides --n-turns).",
+    )
+    parser.add_argument(
+        "--emitt-n-turns",
+        type=int,
+        metavar="N",
+        help="Number of turns for emittance-evolution studies (overrides --n-turns).",
     )
     parser.add_argument(
         "--n-part",
         type=int,
         metavar="N",
         help="Number of macroparticles for emittance-evolution studies.",
+    )
+    parser.add_argument(
+        "--no-emitt",
+        action="store_true",
+        help="Skip emittance-evolution studies (run DA and/or MA only).",
+    )
+    parser.add_argument(
+        "--sexamp",
+        type=float,
+        metavar="FACTOR",
+        help="Sextupole amplification knob forwarded to DA/MA/emittance scripts.",
     )
     parser.add_argument(
         "--show",
@@ -89,6 +118,8 @@ def main():
     only_flags = sum([args.da_only, args.ma_only, args.emitt_only])
     if only_flags > 1:
         raise SystemExit("Choose at most one of --da-only, --ma-only, and --emitt-only.")
+    if args.no_emitt and args.emitt_only:
+        raise SystemExit("Choose at most one of --no-emitt and --emitt-only.")
 
     da_cases = args.da_cases or args.cases
     emitt_cases = args.emitt_cases or args.cases
@@ -101,11 +132,21 @@ def main():
         ma_args.extend(["--cases", *args.ma_cases])
     if emitt_cases:
         emitt_args.extend(["--cases", *emitt_cases])
-    if args.n_turns is not None:
-        ma_args.extend(["--n-turns", str(args.n_turns)])
-        emitt_args.extend(["--n-turns", str(args.n_turns)])
+    da_n_turns = args.da_n_turns if args.da_n_turns is not None else args.n_turns
+    ma_n_turns = args.ma_n_turns if args.ma_n_turns is not None else args.n_turns
+    emitt_n_turns = args.emitt_n_turns if args.emitt_n_turns is not None else args.n_turns
+    if da_n_turns is not None:
+        da_args.extend(["--n-turns", str(da_n_turns)])
+    if ma_n_turns is not None:
+        ma_args.extend(["--n-turns", str(ma_n_turns)])
+    if emitt_n_turns is not None:
+        emitt_args.extend(["--n-turns", str(emitt_n_turns)])
     if args.n_part is not None:
         emitt_args.extend(["--n-part", str(args.n_part)])
+    if args.sexamp is not None:
+        da_args.extend(["--sexamp", str(args.sexamp)])
+        ma_args.extend(["--sexamp", str(args.sexamp)])
+        emitt_args.extend(["--sexamp", str(args.sexamp)])
     if not args.show:
         da_args.append("--no-show")
         ma_args.append("--no-show")
@@ -113,7 +154,7 @@ def main():
 
     run_da = not args.ma_only and not args.emitt_only
     run_ma = not args.da_only and not args.emitt_only
-    run_emitt = not args.da_only and not args.ma_only
+    run_emitt = not args.da_only and not args.ma_only and not args.no_emitt
 
     if run_da:
         _run_script(DA_SCRIPT, da_args)

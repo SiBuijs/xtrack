@@ -15,6 +15,31 @@ PLOT_DIR = Path("/home/simonfan/cernbox/Pictures/FCC_Solenoid_Studies")
 ModelTag = Literal["SB", "VarSol"]
 StudyTag = Literal["DA", "MA", "EMIT"]
 
+BUILD_DEFAULTS = {
+    "sexamp": 1.0,
+    "theta": -0.015,
+}
+
+
+def format_tag_float(value: float) -> str:
+    """Format a float for filename tags, e.g. 2.0 -> '2p0'."""
+    if value == int(value):
+        text = f"{int(value)}.0"
+    else:
+        text = f"{value:g}"
+    return text.replace(".", "p").replace("-", "m")
+
+
+def variant_suffix(**overrides: float) -> str:
+    """Return '' or a double-underscore variant tag for non-default build knobs."""
+    tags: list[str] = []
+    sexamp = overrides.get("sexamp", BUILD_DEFAULTS["sexamp"])
+    if sexamp != BUILD_DEFAULTS["sexamp"]:
+        tags.append(f"sexamp{format_tag_float(sexamp)}")
+    if not tags:
+        return ""
+    return "__" + tags[0] if len(tags) == 1 else "__" + "__".join(tags)
+
 
 def global_xy_limit_tag(global_xy_limit: float) -> str:
     if global_xy_limit >= 1.0:
@@ -30,27 +55,37 @@ def make_basename(
     with_solenoids: bool,
     with_correctors: bool,
     model: ModelTag,
+    n_part: int,
     n_turns: int,
     global_xy_limit: float,
+    variant: str = "",
 ) -> str:
-    """Build a filename stem matching existing CERNbox PDF titles."""
+    """Build a filename stem (without study prefix) for NPZ/PDF outputs."""
     sol = "Sol_On" if with_solenoids else "Sol_Off"
     if with_solenoids and not with_correctors:
         sol += "_Cor_Off"
-    return f"{sol}_{model}_{n_turns}t_{global_xy_limit_tag(global_xy_limit)}"
+    return (
+        f"{sol}_{model}_{n_part}p_{n_turns}t_"
+        f"{global_xy_limit_tag(global_xy_limit)}{variant}"
+    )
 
 
-def _study_npz_path(study: StudyTag, basename: str) -> Path:
-    return DATA_DIR / f"{study}_{basename}.npz"
+def make_study_stem(study: StudyTag, **basename_kwargs) -> str:
+    """Return full filename stem, e.g. DA_Sol_On_SB_750p_10000t_xylim1m."""
+    return f"{study}_{make_basename(**basename_kwargs)}"
 
 
-def _study_pdf_path(basename: str) -> Path:
-    return PLOT_DIR / f"{basename}.pdf"
+def _study_npz_path(stem: str) -> Path:
+    return DATA_DIR / f"{stem}.npz"
 
 
-def save_figure_pdf(fig: plt.Figure, basename: str) -> Path:
+def _study_pdf_path(stem: str) -> Path:
+    return PLOT_DIR / f"{stem}.pdf"
+
+
+def save_figure_pdf(fig: plt.Figure, stem: str) -> Path:
     PLOT_DIR.mkdir(parents=True, exist_ok=True)
-    pdf_path = _study_pdf_path(basename)
+    pdf_path = _study_pdf_path(stem)
     fig.savefig(pdf_path, bbox_inches="tight")
     print(f"Saved plot: {pdf_path}")
     return pdf_path
@@ -73,13 +108,19 @@ def save_da_study(
     max_amp_sigma_x: float,
     nemitt_x: float,
     nemitt_y: float,
+    n_part: int,
+    variant: str = "",
+    sexamp: float = BUILD_DEFAULTS["sexamp"],
 ) -> tuple[Path, Path]:
-    basename = make_basename(
+    stem = make_study_stem(
+        "DA",
         with_solenoids=with_solenoids,
         with_correctors=with_correctors,
         model=model,
+        n_part=n_part,
         n_turns=n_turns,
         global_xy_limit=global_xy_limit,
+        variant=variant,
     )
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -104,12 +145,14 @@ def save_da_study(
         with_solenoids=with_solenoids,
         with_correctors=with_correctors,
         model=model,
+        n_part=int(n_part),
+        sexamp=float(sexamp),
     )
-    npz_path = _study_npz_path("DA", basename)
+    npz_path = _study_npz_path(stem)
     np.savez(npz_path, **arrays)
     print(f"Saved DA data: {npz_path}")
 
-    pdf_path = save_figure_pdf(fig, basename)
+    pdf_path = save_figure_pdf(fig, stem)
     return npz_path, pdf_path
 
 
@@ -129,13 +172,19 @@ def save_ma_study(
     max_y_r: float,
     energy_spread: float,
     delta_initial_values: np.ndarray,
+    n_part: int,
+    variant: str = "",
+    sexamp: float = BUILD_DEFAULTS["sexamp"],
 ) -> tuple[Path, Path]:
-    basename = make_basename(
+    stem = make_study_stem(
+        "MA",
         with_solenoids=with_solenoids,
         with_correctors=with_correctors,
         model=model,
+        n_part=n_part,
         n_turns=n_turns,
         global_xy_limit=global_xy_limit,
+        variant=variant,
     )
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -160,12 +209,14 @@ def save_ma_study(
         with_solenoids=with_solenoids,
         with_correctors=with_correctors,
         model=model,
+        n_part=int(n_part),
+        sexamp=float(sexamp),
     )
-    npz_path = _study_npz_path("MA", basename)
+    npz_path = _study_npz_path(stem)
     np.savez(npz_path, **arrays)
     print(f"Saved MA data: {npz_path}")
 
-    pdf_path = save_figure_pdf(fig, basename)
+    pdf_path = save_figure_pdf(fig, stem)
     return npz_path, pdf_path
 
 
@@ -188,13 +239,18 @@ def save_emitt_study(
     damping_constants_turns: np.ndarray,
     fit_a: np.ndarray,
     fit_eps_init: np.ndarray,
+    variant: str = "",
+    sexamp: float = BUILD_DEFAULTS["sexamp"],
 ) -> tuple[Path, Path]:
-    basename = make_basename(
+    stem = make_study_stem(
+        "EMIT",
         with_solenoids=with_solenoids,
         with_correctors=with_correctors,
         model=model,
+        n_part=n_part,
         n_turns=n_turns,
         global_xy_limit=global_xy_limit,
+        variant=variant,
     )
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -215,12 +271,13 @@ def save_emitt_study(
         with_solenoids=with_solenoids,
         with_correctors=with_correctors,
         model=model,
+        sexamp=float(sexamp),
     )
-    npz_path = _study_npz_path("EMIT", basename)
+    npz_path = _study_npz_path(stem)
     np.savez(npz_path, **arrays)
     print(f"Saved EMIT data: {npz_path}")
 
-    pdf_path = save_figure_pdf(fig, basename)
+    pdf_path = save_figure_pdf(fig, stem)
     return npz_path, pdf_path
 
 
@@ -329,8 +386,7 @@ def replot_from_npz(npz_path: Path | str, *, show: bool = False) -> Path:
         else:
             raise ValueError(f"Unrecognized study prefix in {npz_path.name}")
 
-        basename = npz_path.stem.split("_", 1)[1]
-        pdf_path = save_figure_pdf(fig, basename)
+        pdf_path = save_figure_pdf(fig, npz_path.stem)
 
     if show:
         plt.show()
