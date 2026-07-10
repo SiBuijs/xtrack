@@ -162,16 +162,17 @@ def _plot_emittance_evolution_figure(
     damp_turns,
     fit_eps_eq,
     fit_alpha,
+    twiss_eps_init,
     title,
 ):
     fig, axes = plt.subplots(3, 1, figsize=(6.4, 7.2), sharex=True)
     series = [
-        (gemitt_x, eq_x, damp_turns[0], fit_eps_eq[0], fit_alpha[0], r"$\varepsilon_x$ [m·rad]"),
-        (gemitt_y, eq_y, damp_turns[1], fit_eps_eq[1], fit_alpha[1], r"$\varepsilon_y$ [m·rad]"),
-        (gemitt_z, eq_z, damp_turns[2], fit_eps_eq[2], fit_alpha[2], r"$\varepsilon_\zeta$ [m·rad]"),
+        (gemitt_x, eq_x, damp_turns[0], fit_eps_eq[0], fit_alpha[0], twiss_eps_init[0], "x", r"$\varepsilon_x$ [m·rad]"),
+        (gemitt_y, eq_y, damp_turns[1], fit_eps_eq[1], fit_alpha[1], twiss_eps_init[1], "y", r"$\varepsilon_y$ [m·rad]"),
+        (gemitt_z, eq_z, damp_turns[2], fit_eps_eq[2], fit_alpha[2], twiss_eps_init[2], r"\zeta", r"$\varepsilon_\zeta$ [m·rad]"),
     ]
 
-    for ax, (gemitt, eq, damp, eps_eq_fit, alpha_fit, ylabel) in zip(axes, series):
+    for ax, (gemitt, eq, damp, eps_eq_fit, alpha_fit, eps_init_tw, sym, ylabel) in zip(axes, series):
         eps_init = gemitt[0]
         ax.plot(turns, gemitt, label="tracked")
         ax.axhline(eq, linestyle="--", color="C2", label=r"$\varepsilon_\mathrm{eq}$ (Twiss)")
@@ -185,7 +186,40 @@ def _plot_emittance_evolution_figure(
 
         ax.set_ylabel(ylabel)
         ax.set_ylim(bottom=0)
-        ax.legend(loc="best", fontsize=8)
+        ax.legend(loc="upper left", fontsize=8)
+
+        alpha_tw = 2.0 * damp
+        tau_tw = 1.0 / alpha_tw
+        fit_lines = ["fit:"]
+        if np.isfinite(alpha_fit):
+            tau_fit = 1.0 / alpha_fit
+            fit_lines += [
+                fr"  $\varepsilon_{{{sym},0}} = {eps_init:.3e}$",
+                fr"  $\varepsilon_{{{sym},\mathrm{{eq}}}} = {eps_eq_fit:.3e}$",
+                fr"  $\alpha_{{{sym}}} = {alpha_fit:.3e}\ \mathrm{{turn}}^{{-1}}$",
+                fr"  $\tau_{{{sym}}} = {tau_fit:.3e}\ \mathrm{{turns}}$",
+            ]
+        else:
+            fit_lines += ["  (failed)"]
+        twiss_lines = [
+            "Twiss:",
+            fr"  $\varepsilon_{{{sym},0}} = {eps_init_tw:.3e}$",
+            fr"  $\varepsilon_{{{sym},\mathrm{{eq}}}} = {eq:.3e}$",
+            fr"  $\alpha_{{{sym}}} = {alpha_tw:.3e}\ \mathrm{{turn}}^{{-1}}$",
+            fr"  $\tau_{{{sym}}} = {tau_tw:.3e}\ \mathrm{{turns}}$",
+        ]
+        info_text = "\n".join(fit_lines + twiss_lines)
+        ax.text(
+            0.98,
+            0.03,
+            info_text,
+            transform=ax.transAxes,
+            ha="right",
+            va="bottom",
+            fontsize=6.5,
+            linespacing=1.4,
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.85, edgecolor="0.7"),
+        )
 
     axes[-1].set_xlabel("turn")
     fig.suptitle(title)
@@ -283,6 +317,11 @@ def _run_emittance_evolution(case, *, n_turns, n_part, with_progress, sexamp):
             f"[Twiss damp_turns: {damp_tw:.6e}]"
         )
 
+    # The bunch is generated with 1/3 of the Twiss equilibrium emittance
+    # (see generate_matched_gaussian_bunch call above), so that is the
+    # Twiss-predicted initial emittance for the fit comparison box.
+    twiss_eps_init = np.array([eq_x, eq_y, eq_z]) / 3.0
+
     fig = _plot_emittance_evolution_figure(
         turns=turns,
         gemitt_x=gemitt_x,
@@ -294,6 +333,7 @@ def _run_emittance_evolution(case, *, n_turns, n_part, with_progress, sexamp):
         damp_turns=damp_turns,
         fit_eps_eq=fit_eps_eq,
         fit_alpha=fit_alpha,
+        twiss_eps_init=twiss_eps_init,
         title=title,
     )
     save_emitt_study(
