@@ -25,7 +25,14 @@ NEMITT_X = 6.33e-5
 NEMITT_Y = 1.69e-7
 ENERGY_SPREAD = 3.9e-4
 NN_Y_R = 25
-MAX_Y_R = 25
+MAX_Y_R = 35
+# Same self-chosen (not sigma_x/sigma_y-derived) amplification used for
+# 010_dynamic_aperture.py's y-axis: sigma_y is far smaller than sigma_x, so a
+# y_only scan capped at the same amplitude (in sigma units) as x_only would
+# under-explore where the real y aperture boundary sits. Applied only to the
+# y_only direction's amplitude cap via MA_DIRECTIONS below; x_only is
+# unaffected.
+Y_AXIS_SCAN_FACTOR = 6.0
 GLOBAL_XY_LIMIT = 5e-2
 DELTA_INITIAL_VALUES = np.linspace(-35 * ENERGY_SPREAD, 35 * ENERGY_SPREAD, 51)
 N_TURNS = 10_000
@@ -62,8 +69,15 @@ MA_CASES_BY_NAME = {case["name"]: case for case in MA_CASES}
 # Pure-plane MA scans: theta=0 is on-axis x (y_normalized=0), theta=pi/2 is
 # on-axis y (x_normalized=0). Run in succession by default (see --directions).
 MA_DIRECTIONS = {
-    "x_only": dict(theta=0.0, axis_key="x_normalized", axis_symbol=r"\hat{x}"),
-    "y_only": dict(theta=np.pi / 2, axis_key="y_normalized", axis_symbol=r"\hat{y}"),
+    "x_only": dict(
+        theta=0.0, axis_key="x_normalized", axis_symbol=r"\hat{x}", max_y_r_factor=1.0
+    ),
+    "y_only": dict(
+        theta=np.pi / 2,
+        axis_key="y_normalized",
+        axis_symbol=r"\hat{y}",
+        max_y_r_factor=Y_AXIS_SCAN_FACTOR,
+    ),
 }
 
 
@@ -110,9 +124,11 @@ def _run_momentum_acceptance(case, direction, *, n_turns, with_progress, sexamp)
     lattice_json = case["lattice_json"]
     title = case["title"]
     theta = MA_DIRECTIONS[direction]["theta"]
+    max_y_r = MAX_Y_R * MA_DIRECTIONS[direction]["max_y_r_factor"]
 
     print(f"\n=== {title} ({direction}) ===")
     print(f"Loading lattice: {lattice_json.name}")
+    print(f"Amplitude range: max_y_r={max_y_r:g} (in the scanned plane's own sigma units)")
     env = xt.load(lattice_json)
     line = env.fccee_p_ring
     line.cycle("ipa")
@@ -135,7 +151,7 @@ def _run_momentum_acceptance(case, direction, *, n_turns, with_progress, sexamp)
     tt_init = initial_conditions_grid(
         study="MA",
         nn_y_r=NN_Y_R,
-        max_y_r=MAX_Y_R,
+        max_y_r=max_y_r,
         energy_spread=ENERGY_SPREAD,
         delta_initial_values=DELTA_INITIAL_VALUES,
         min_x_theta=theta,
@@ -183,7 +199,7 @@ def _run_momentum_acceptance(case, direction, *, n_turns, with_progress, sexamp)
         nemitt_x=NEMITT_X,
         nemitt_y=NEMITT_Y,
         nn_y_r=NN_Y_R,
-        max_y_r=MAX_Y_R,
+        max_y_r=max_y_r,
         energy_spread=ENERGY_SPREAD,
         delta_initial_values=DELTA_INITIAL_VALUES,
         n_part=len(tt_init),

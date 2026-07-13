@@ -22,11 +22,19 @@ VARSOL_LATTICE_JSON = (
 
 IP_NAMES = ["ipa", "ipd", "ipg", "ipj"]
 NEMITT_X = 6.33e-5
-NEMITT_Y = 1.69e-7  # flat beam: y_norm is scaled in _build_da_initial_conditions
+NEMITT_Y = 1.69e-7  # flat beam: sigma_x/sigma_y ~ 220 at the IP
 # Use the xtrack default (1 m), not the 5 cm limit from 009_momentum_acceptance.py:
 # large beta functions amplify amplitudes well beyond 5 cm for sigma-levels ~ O(30).
 GLOBAL_XY_LIMIT = 1.0
+# Elliptical scan: y's amplitude cap is a self-chosen multiple of x's, NOT the
+# true sigma_x/sigma_y (~219) physical ratio -- using the real ratio stretches
+# the y-extent out to ~MAX_AMP_SIGMA_X*sigma_x/sigma_y ~ 8800 sigma_y, so far
+# beyond where the DA boundary actually sits that the plotted shape collapses
+# to an unreadable sliver near y=0. This factor is picked purely to keep the
+# plot readable; the axis still reports the true (scaled) sigma_y value.
 MAX_AMP_SIGMA_X = 40.0
+Y_AXIS_SCAN_FACTOR = 6.0
+MAX_AMP_SIGMA_Y = MAX_AMP_SIGMA_X * Y_AXIS_SCAN_FACTOR
 N_TURNS = 10_000
 
 # Each case can use its own grid resolution.
@@ -78,25 +86,27 @@ def _compute_beam_sizes(line):
     return sigma_x, sigma_y
 
 
-def _build_da_initial_conditions(*, nn_y_r, nn_x_theta, sigma_x_over_sigma_y):
-    # Polar grid with radius in horizontal-sigma units; on-momentum DA at delta=0.
+def _build_da_initial_conditions(*, nn_y_r, nn_x_theta):
+    # Unit polar grid (r in [0, 1]); on-momentum DA at delta=0.
     # Uses xpart directly (fcc_92 gen_grid has a column-length bug for single delta).
-    x_hat, y_hat, _, _ = xp.generate_2D_polar_grid(
-        r_range=(0, MAX_AMP_SIGMA_X),
+    x_unit, y_unit, _, _ = xp.generate_2D_polar_grid(
+        r_range=(0, 1.0),
         theta_range=(0, np.pi / 2),
         nr=nn_y_r,
         ntheta=nn_x_theta,
     )
-    # y_hat is in units of sigma_x (physical y = y_hat * sigma_x); build_particles
-    # expects true sigma_y units, so convert using the actual beam aspect ratio.
-    y_norm = y_hat * sigma_x_over_sigma_y
+    # Scale each plane independently by its own sigma-amplitude cap, so the
+    # scan is a genuine ellipse in normalized (sigma_x, sigma_y) units rather
+    # than a physical-radius circle. See MAX_AMP_SIGMA_X/Y comment above.
+    x_hat = x_unit * MAX_AMP_SIGMA_X
+    y_hat = y_unit * MAX_AMP_SIGMA_Y
     return xt.Table(
         dict(
             id=np.arange(len(x_hat), dtype=int),
             x_hat=x_hat,
             y_hat=y_hat,
             x_normalized=x_hat,
-            y_normalized=y_norm,
+            y_normalized=y_hat,
         ),
         index="id",
     )
@@ -178,19 +188,18 @@ def _run_dynamic_aperture(case, *, n_turns, with_progress, sexamp):
     line.discard_tracker()
     line.build_tracker()
     sigma_x, sigma_y = _compute_beam_sizes(line)
-    sigma_x_over_sigma_y = sigma_x / sigma_y
     print(
         f"Beam sizes at start: sigma_x={sigma_x*1e6:.3f} um, "
         f"sigma_y={sigma_y*1e6:.3f} um "
-        f"(sigma_x/sigma_y={sigma_x_over_sigma_y:.1f})"
+        f"(sigma_x/sigma_y={sigma_x/sigma_y:.1f})"
     )
 
-    # On-momentum DA: scan (x_hat, y_hat) in horizontal-sigma units at delta=0.
-    # For off-momentum DA, repeat with delta set to selected momentum offsets.
+    # On-momentum DA: scan (x_hat, y_hat), each in its own plane's sigma units,
+    # at delta=0. For off-momentum DA, repeat with delta set to selected
+    # momentum offsets.
     tt_init = _build_da_initial_conditions(
         nn_y_r=nn_y_r,
         nn_x_theta=nn_x_theta,
-        sigma_x_over_sigma_y=sigma_x_over_sigma_y,
     )
     num_particles = len(tt_init)
     print(f"Tracking {num_particles} particles for {n_turns} turns")
@@ -247,6 +256,7 @@ def _run_dynamic_aperture(case, *, n_turns, with_progress, sexamp):
         nn_y_r=nn_y_r,
         nn_x_theta=nn_x_theta,
         max_amp_sigma_x=MAX_AMP_SIGMA_X,
+        max_amp_sigma_y=MAX_AMP_SIGMA_Y,
         nemitt_x=NEMITT_X,
         nemitt_y=NEMITT_Y,
         n_part=num_particles,
