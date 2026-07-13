@@ -56,6 +56,13 @@ def main():
         help="MA cases for 009 (default: all). Available: sb_on, varsol_on, sb_off",
     )
     parser.add_argument(
+        "--ma-directions",
+        nargs="+",
+        metavar="DIRECTION",
+        choices=["x_only", "y_only"],
+        help="MA directions for 009 (default: both, in succession).",
+    )
+    parser.add_argument(
         "--emitt-cases",
         nargs="+",
         metavar="CASE",
@@ -130,6 +137,8 @@ def main():
         da_args.extend(["--cases", *da_cases])
     if args.ma_cases:
         ma_args.extend(["--cases", *args.ma_cases])
+    if args.ma_directions:
+        ma_args.extend(["--directions", *args.ma_directions])
     if emitt_cases:
         emitt_args.extend(["--cases", *emitt_cases])
     da_n_turns = args.da_n_turns if args.da_n_turns is not None else args.n_turns

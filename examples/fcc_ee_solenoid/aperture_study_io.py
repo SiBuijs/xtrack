@@ -70,9 +70,10 @@ def make_basename(
     )
 
 
-def make_study_stem(study: StudyTag, **basename_kwargs) -> str:
+def make_study_stem(study: StudyTag, *, tag: str = "", **basename_kwargs) -> str:
     """Return full filename stem, e.g. DA_Sol_On_SB_750p_10000t_xylim1m."""
-    return f"{study}_{make_basename(**basename_kwargs)}"
+    prefix = f"{study}_{tag}" if tag else study
+    return f"{prefix}_{make_basename(**basename_kwargs)}"
 
 
 def _study_npz_path(stem: str) -> Path:
@@ -128,6 +129,7 @@ def save_da_study(
     arrays = dict(
         x_hat=np.asarray(tt_init.x_hat),
         y_hat=np.asarray(tt_init.y_hat),
+        y_normalized=np.asarray(tt_init.y_normalized),
         at_turn=np.asarray(particles.at_turn),
         state=np.asarray(particles.state),
         lost=np.asarray(out["lost"]),
@@ -156,12 +158,18 @@ def save_da_study(
     return npz_path, pdf_path
 
 
+MaDirection = Literal["x_only", "y_only"]
+
+MA_DIRECTION_TAGS: dict[str, str] = {"x_only": "X", "y_only": "Y"}
+
+
 def save_ma_study(
     *,
     out: dict[str, Any],
     tt_init,
     fig: plt.Figure,
     model: ModelTag,
+    direction: MaDirection,
     with_solenoids: bool,
     with_correctors: bool,
     n_turns: int,
@@ -178,6 +186,7 @@ def save_ma_study(
 ) -> tuple[Path, Path]:
     stem = make_study_stem(
         "MA",
+        tag=MA_DIRECTION_TAGS[direction],
         with_solenoids=with_solenoids,
         with_correctors=with_correctors,
         model=model,
@@ -190,6 +199,7 @@ def save_ma_study(
 
     particles = out["particles"]
     arrays = dict(
+        direction=direction,
         delta_init=np.asarray(tt_init.delta_init),
         x_normalized=np.asarray(tt_init.x_normalized),
         y_normalized=np.asarray(tt_init.y_normalized),
@@ -287,7 +297,7 @@ def save_emitt_study(
 
 def _plot_da_from_arrays(data: np.lib.npyio.NpzFile) -> plt.Figure:
     x_hat = data["x_hat"]
-    y_hat = data["y_hat"]
+    y_hat = data["y_normalized"]
     at_turn = data["at_turn"]
     nn_y_r = int(data["nn_y_r"])
     nn_x_theta = int(data["nn_x_theta"])
@@ -308,9 +318,8 @@ def _plot_da_from_arrays(data: np.lib.npyio.NpzFile) -> plt.Figure:
     fig, axes = plt.subplots(1, 2, figsize=(12.0, 5.0))
     sc = axes[0].scatter(x_hat, y_hat, c=at_turn, s=8, marker="o")
     axes[0].set_xlabel(r"$\hat{x}\,[\sigma_x]$")
-    axes[0].set_ylabel(r"$\hat{y}\,[\sigma_x]$")
+    axes[0].set_ylabel(r"$\hat{y}\,[\sigma_y]$")
     axes[0].set_title("scatter")
-    axes[0].set_aspect("equal", adjustable="box")
     fig.colorbar(sc, ax=axes[0], label="lost at turn")
 
     pcm = axes[1].pcolormesh(
@@ -320,9 +329,8 @@ def _plot_da_from_arrays(data: np.lib.npyio.NpzFile) -> plt.Figure:
         shading="gouraud",
     )
     axes[1].set_xlabel(r"$\hat{x}\,[\sigma_x]$")
-    axes[1].set_ylabel(r"$\hat{y}\,[\sigma_x]$")
+    axes[1].set_ylabel(r"$\hat{y}\,[\sigma_y]$")
     axes[1].set_title("pcolormesh")
-    axes[1].set_aspect("equal", adjustable="box")
     fig.colorbar(pcm, ax=axes[1], label="lost at turn")
 
     fig.suptitle(
@@ -338,7 +346,12 @@ def _plot_da_from_arrays(data: np.lib.npyio.NpzFile) -> plt.Figure:
 
 def _plot_ma_from_arrays(data: np.lib.npyio.NpzFile) -> plt.Figure:
     delta_init = data["delta_init"]
-    x_normalized = data["x_normalized"]
+    # Older MA files (pre direction-split) only ever scanned x_only.
+    direction = str(data["direction"]) if "direction" in data.files else "x_only"
+    amp_key, amp_symbol = (
+        ("y_normalized", r"\hat{y}") if direction == "y_only" else ("x_normalized", r"\hat{x}")
+    )
+    amplitude = data[amp_key]
     at_turn = data["at_turn"]
     lost = data["lost"].astype(bool)
     frac_lost = float(data["frac_lost"])
@@ -352,25 +365,26 @@ def _plot_ma_from_arrays(data: np.lib.npyio.NpzFile) -> plt.Figure:
         title = f"{model}: solenoids powered + correction scheme"
     else:
         title = f"{model}: solenoids unpowered"
+    title = f"{title} ({'y' if direction == 'y_only' else 'x'}-only)"
 
     fig, ax = plt.subplots(figsize=(6.4, 4.8))
     ax.plot(
         delta_init[~lost],
-        x_normalized[~lost],
+        amplitude[~lost],
         ".",
         ms=3,
         label="survived",
     )
     sc = ax.scatter(
         delta_init[lost],
-        x_normalized[lost],
+        amplitude[lost],
         c=at_turn[lost],
         marker="o",
         s=18,
         label="lost",
     )
     ax.set_xlabel(r"$\delta$")
-    ax.set_ylabel(r"$\hat{x}$")
+    ax.set_ylabel(fr"${amp_symbol}$")
     ax.set_title(
         f"{title}\n"
         f"frac_lost={frac_lost:.4g}, at_turn_mean={at_turn_mean:.4g}"

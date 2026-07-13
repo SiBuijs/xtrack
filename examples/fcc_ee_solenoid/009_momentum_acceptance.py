@@ -59,6 +59,13 @@ MA_CASES = [
 
 MA_CASES_BY_NAME = {case["name"]: case for case in MA_CASES}
 
+# Pure-plane MA scans: theta=0 is on-axis x (y_normalized=0), theta=pi/2 is
+# on-axis y (x_normalized=0). Run in succession by default (see --directions).
+MA_DIRECTIONS = {
+    "x_only": dict(theta=0.0, axis_key="x_normalized", axis_symbol=r"\hat{x}"),
+    "y_only": dict(theta=np.pi / 2, axis_key="y_normalized", axis_symbol=r"\hat{y}"),
+}
+
 
 def _configure_radiative_tracking(line):
     line.particle_ref.anomalous_magnetic_moment = 0.00115965218128
@@ -66,29 +73,32 @@ def _configure_radiative_tracking(line):
     line.compensate_radiation_energy_loss()
 
 
-def _plot_momentum_acceptance_figure(out, tt_init, title):
+def _plot_momentum_acceptance_figure(out, tt_init, title, direction):
+    info = MA_DIRECTIONS[direction]
+    amplitude = getattr(tt_init, info["axis_key"])
+
     fig, ax = plt.subplots(figsize=(6.4, 4.8))
     lost = out["lost"]
     particles = out["particles"]
     ax.plot(
         tt_init.delta_init[~lost],
-        tt_init.x_normalized[~lost],
+        amplitude[~lost],
         ".",
         ms=3,
         label="survived",
     )
     sc = ax.scatter(
         tt_init.delta_init[lost],
-        tt_init.x_normalized[lost],
+        amplitude[lost],
         c=particles.at_turn[lost],
         marker="o",
         s=18,
         label="lost",
     )
     ax.set_xlabel(r"$\delta$")
-    ax.set_ylabel(r"$\hat{x}$")
+    ax.set_ylabel(fr"${info['axis_symbol']}$")
     ax.set_title(
-        f"{title}\n"
+        f"{title} ({'y' if direction == 'y_only' else 'x'}-only)\n"
         f"frac_lost={out['frac_lost']:.4g}, "
         f"at_turn_mean={out['at_turn_mean']:.4g}"
     )
@@ -96,11 +106,12 @@ def _plot_momentum_acceptance_figure(out, tt_init, title):
     return fig
 
 
-def _run_momentum_acceptance(case, *, n_turns, with_progress, sexamp):
+def _run_momentum_acceptance(case, direction, *, n_turns, with_progress, sexamp):
     lattice_json = case["lattice_json"]
     title = case["title"]
+    theta = MA_DIRECTIONS[direction]["theta"]
 
-    print(f"\n=== {title} ===")
+    print(f"\n=== {title} ({direction}) ===")
     print(f"Loading lattice: {lattice_json.name}")
     env = xt.load(lattice_json)
     line = env.fccee_p_ring
@@ -127,6 +138,8 @@ def _run_momentum_acceptance(case, *, n_turns, with_progress, sexamp):
         max_y_r=MAX_Y_R,
         energy_spread=ENERGY_SPREAD,
         delta_initial_values=DELTA_INITIAL_VALUES,
+        min_x_theta=theta,
+        max_x_theta=theta,
     )
 
     particles = line.build_particles(
@@ -156,12 +169,13 @@ def _run_momentum_acceptance(case, *, n_turns, with_progress, sexamp):
         "at_turn_mean": at_turn_mean,
         "tt_init": tt_init,
     }
-    fig = _plot_momentum_acceptance_figure(out, tt_init, title)
+    fig = _plot_momentum_acceptance_figure(out, tt_init, title, direction)
     save_ma_study(
         out=out,
         tt_init=tt_init,
         fig=fig,
         model=case["model"],
+        direction=direction,
         with_solenoids=case["with_solenoids"],
         with_correctors=case["with_correctors"],
         n_turns=n_turns,
@@ -177,7 +191,7 @@ def _run_momentum_acceptance(case, *, n_turns, with_progress, sexamp):
         sexamp=sexamp,
     )
     print(
-        f"[{title}] Momentum acceptance run complete:"
+        f"[{title} ({direction})] Momentum acceptance run complete:"
         f" frac_lost={frac_lost:.6g},"
         f" at_turn_mean={at_turn_mean:.6g}"
     )
@@ -194,6 +208,20 @@ def _select_cases(case_names):
         raise SystemExit(f"Unknown case(s): {', '.join(unknown)}. Choose from: {valid}")
 
     return [MA_CASES_BY_NAME[name] for name in case_names]
+
+
+def _select_directions(direction_names):
+    if not direction_names:
+        return list(MA_DIRECTIONS)
+
+    unknown = [name for name in direction_names if name not in MA_DIRECTIONS]
+    if unknown:
+        valid = ", ".join(MA_DIRECTIONS)
+        raise SystemExit(
+            f"Unknown direction(s): {', '.join(unknown)}. Choose from: {valid}"
+        )
+
+    return list(direction_names)
 
 
 def main():
@@ -213,6 +241,16 @@ def main():
         "--list-cases",
         action="store_true",
         help="List available cases and exit.",
+    )
+    parser.add_argument(
+        "--directions",
+        nargs="+",
+        metavar="DIRECTION",
+        choices=list(MA_DIRECTIONS),
+        help=(
+            "Momentum-acceptance directions to run (default: both, in "
+            "succession). Available: x_only, y_only"
+        ),
     )
     parser.add_argument(
         "--n-turns",
@@ -241,9 +279,14 @@ def main():
         return
 
     for case in _select_cases(args.cases):
-        _run_momentum_acceptance(
-            case, n_turns=args.n_turns, with_progress=1, sexamp=args.sexamp
-        )
+        for direction in _select_directions(args.directions):
+            _run_momentum_acceptance(
+                case,
+                direction,
+                n_turns=args.n_turns,
+                with_progress=1,
+                sexamp=args.sexamp,
+            )
 
     if not args.no_show:
         plt.show()

@@ -87,8 +87,9 @@ def _build_da_initial_conditions(*, nn_y_r, nn_x_theta, sigma_x_over_sigma_y):
         nr=nn_y_r,
         ntheta=nn_x_theta,
     )
-    # build_particles expects true vertical sigma units for y_norm.
-    y_norm = y_hat * 5.0  # sigma_x_over_sigma_y
+    # y_hat is in units of sigma_x (physical y = y_hat * sigma_x); build_particles
+    # expects true sigma_y units, so convert using the actual beam aspect ratio.
+    y_norm = y_hat * sigma_x_over_sigma_y
     return xt.Table(
         dict(
             id=np.arange(len(x_hat), dtype=int),
@@ -112,8 +113,8 @@ def _plot_dynamic_aperture_figure(
 ):
     fig, axes = plt.subplots(1, 2, figsize=(12.0, 5.0))
     particles = out["particles"]
-    x_hat = tt_init.x_hat
-    y_hat = tt_init.y_hat
+    x_hat = tt_init.x_normalized
+    y_hat = tt_init.y_normalized
     at_turn = particles.at_turn
 
     sc = axes[0].scatter(
@@ -124,9 +125,8 @@ def _plot_dynamic_aperture_figure(
         marker="o",
     )
     axes[0].set_xlabel(r"$\hat{x}\,[\sigma_x]$")
-    axes[0].set_ylabel(r"$\hat{y}\,[\sigma_x]$")
+    axes[0].set_ylabel(r"$\hat{y}\,[\sigma_y]$")
     axes[0].set_title("scatter")
-    axes[0].set_aspect("equal", adjustable="box")
     fig.colorbar(sc, ax=axes[0], label="lost at turn")
 
     pcm = axes[1].pcolormesh(
@@ -136,9 +136,8 @@ def _plot_dynamic_aperture_figure(
         shading="gouraud",
     )
     axes[1].set_xlabel(r"$\hat{x}\,[\sigma_x]$")
-    axes[1].set_ylabel(r"$\hat{y}\,[\sigma_x]$")
+    axes[1].set_ylabel(r"$\hat{y}\,[\sigma_y]$")
     axes[1].set_title("pcolormesh")
-    axes[1].set_aspect("equal", adjustable="box")
     fig.colorbar(pcm, ax=axes[1], label="lost at turn")
 
     fig.suptitle(
