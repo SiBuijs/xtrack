@@ -28,6 +28,10 @@ def _transverse_kick_momentum(px, py, P):
 
 
 def verlet_step(B, q, m, x_0, v_0, dt):
+    """
+    Magnetic velocity Verlet (Stormer-Verlet) step, eqs. (10.2)-(10.11)
+    of Wolski, "Beam Dynamics in High Energy Particle Accelerators".
+    """
     x_0 = np.asarray(x_0, dtype=float)
     v_0 = np.asarray(v_0, dtype=float)
 
@@ -41,13 +45,13 @@ def verlet_step(B, q, m, x_0, v_0, dt):
 
     a_0 = (q / (gamma * m)) * np.cross(v_0, B(x_0))
 
-    x_h = x_0 + 0.5 * v_0 * dt
-    v_h = v_0 + 0.5 * a_0 * dt
+    v_h = v_0 + 0.5 * a_0 * dt         # (10.2)
+    x_1 = x_0 + v_h * dt               # (10.4)
 
-    a_h = (q / (gamma * m)) * np.cross(v_h, B(x_h))
-
-    x_1 = x_0 + v_0 * dt + 0.5 * a_0 * dt**2
-    v_1 = v_0 + a_h * dt
+    B_1 = np.asarray(B(x_1))
+    alpha = q * dt / (2 * gamma * m)   # (10.7)
+    v_1 = (v_h + alpha * np.cross(v_h, B_1)
+           + alpha**2 * np.dot(v_h, B_1) * B_1) / (1 + alpha**2 * np.dot(B_1, B_1))  # (10.11)
 
     p_1 = on_shell_momentum(gamma * m * v_1, P)
     v_1 = p_1 / (gamma * m)
@@ -177,15 +181,19 @@ def compare_symplectic_integrators():
     Track an electron through a nonlinear quadrupole field and compare
     Verlet vs Boris phase-space trajectories (p_x vs x) for several
     initial transverse momenta.
-    """
-    n_steps = 100_000
 
+    Reproduces Fig. 10.1 of Wolski, "Beam Dynamics in High Energy
+    Particle Accelerators": k1 = 10 m^-2, k2 = 450 m^-3, x0 = y0 = 0,
+    px0/P0 = 0.03, 0.0425, 0.052, step size cdt = 0.1 m (first two) or
+    0.05 m (last), tracked over a total distance of about 25 m
+    (~12 betatron periods).
+    """
     q = qe
     m = m_e
     B_quad = 10   # T/m
     B_sext = 450   # T/m^2
 
-    x0 = np.array([1.0e-6, 0.5e-6, 0.0])
+    x0 = np.array([0.0, 0.0, 0.0])
     vz = 0.99 * c_light
     v0_ref = np.array([0.001 * vz, 0.0, vz])
     gamma0 = 1 / np.sqrt(1 - (np.linalg.norm(v0_ref) / c_light)**2)
@@ -193,8 +201,8 @@ def compare_symplectic_integrators():
 
     B_fn = lambda x: B(x, B_quad, B_sext, P, q)
 
-    cdt = 0.05
-    dt = cdt / c_light
+    total_distance = 25.0  # m, ~12 betatron periods
+    cdt_values = np.array([0.1, 0.1, 0.05])  # m
 
     px0_values = np.array([0.03, 0.0425, 0.052]) * P
     to_mev_c = lambda px: px * c_light / qe / 1e6
@@ -202,7 +210,10 @@ def compare_symplectic_integrators():
 
     fig, (ax_verlet, ax_boris) = plt.subplots(1, 2, figsize=(14, 6), sharey=True)
 
-    for i, px0 in enumerate(px0_values):
+    for i, (px0, cdt) in enumerate(zip(px0_values, cdt_values)):
+        dt = cdt / c_light
+        n_steps = round(total_distance / cdt)
+
         pz0 = np.sqrt(P**2 - px0**2)
         v0 = np.array([px0 / (gamma0 * m), 0.0, pz0 / (gamma0 * m)])
         color = cmap(i / (len(px0_values) - 1))
@@ -228,7 +239,7 @@ def compare_symplectic_integrators():
 
     ax_verlet.set_ylabel(r'$p_x$ [MeV/$c$]')
     fig.suptitle(
-        f'Symplectic comparison: $p_x$ vs $x$ ({n_steps} steps, '
+        f'Symplectic comparison: $p_x$ vs $x$ ({total_distance:.0f} m tracked, '
         f'{len(px0_values)} initial $p_x$)',
         y=1.02)
     fig.tight_layout()
