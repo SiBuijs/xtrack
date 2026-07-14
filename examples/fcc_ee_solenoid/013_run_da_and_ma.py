@@ -116,6 +116,18 @@ def main():
         help="Sextupole amplification knob forwarded to DA/MA/emittance scripts.",
     )
     parser.add_argument(
+        "--x-offset",
+        type=float,
+        metavar="M",
+        help="Main detector solenoid x-offset in meters, forwarded to DA/MA scripts.",
+    )
+    parser.add_argument(
+        "--y-offset",
+        type=float,
+        metavar="M",
+        help="Main detector solenoid y-offset in meters, forwarded to DA/MA scripts.",
+    )
+    parser.add_argument(
         "--show",
         action="store_true",
         help="Show figures interactively after each script (default: save only).",
@@ -156,6 +168,12 @@ def main():
         da_args.extend(["--sexamp", str(args.sexamp)])
         ma_args.extend(["--sexamp", str(args.sexamp)])
         emitt_args.extend(["--sexamp", str(args.sexamp)])
+    if args.x_offset is not None:
+        da_args.extend(["--x-offset", str(args.x_offset)])
+        ma_args.extend(["--x-offset", str(args.x_offset)])
+    if args.y_offset is not None:
+        da_args.extend(["--y-offset", str(args.y_offset)])
+        ma_args.extend(["--y-offset", str(args.y_offset)])
     if not args.show:
         da_args.append("--no-show")
         ma_args.append("--no-show")

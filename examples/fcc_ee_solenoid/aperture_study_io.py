@@ -18,6 +18,8 @@ StudyTag = Literal["DA", "MA", "EMIT"]
 BUILD_DEFAULTS = {
     "sexamp": 1.0,
     "theta": -0.015,
+    "x_offset": 0.0,
+    "y_offset": 0.0,
 }
 
 
@@ -36,9 +38,15 @@ def variant_suffix(**overrides: float) -> str:
     sexamp = overrides.get("sexamp", BUILD_DEFAULTS["sexamp"])
     if sexamp != BUILD_DEFAULTS["sexamp"]:
         tags.append(f"sexamp{format_tag_float(sexamp)}")
+    x_offset = overrides.get("x_offset", BUILD_DEFAULTS["x_offset"])
+    if x_offset != BUILD_DEFAULTS["x_offset"]:
+        tags.append(f"xoff{format_tag_float(x_offset)}")
+    y_offset = overrides.get("y_offset", BUILD_DEFAULTS["y_offset"])
+    if y_offset != BUILD_DEFAULTS["y_offset"]:
+        tags.append(f"yoff{format_tag_float(y_offset)}")
     if not tags:
         return ""
-    return "__" + tags[0] if len(tags) == 1 else "__" + "__".join(tags)
+    return "__" + "__".join(tags)
 
 
 def global_xy_limit_tag(global_xy_limit: float) -> str:
@@ -113,6 +121,8 @@ def save_da_study(
     n_part: int,
     variant: str = "",
     sexamp: float = BUILD_DEFAULTS["sexamp"],
+    x_offset: float = BUILD_DEFAULTS["x_offset"],
+    y_offset: float = BUILD_DEFAULTS["y_offset"],
 ) -> tuple[Path, Path]:
     stem = make_study_stem(
         "DA",
@@ -151,6 +161,8 @@ def save_da_study(
         model=model,
         n_part=int(n_part),
         sexamp=float(sexamp),
+        x_offset=float(x_offset),
+        y_offset=float(y_offset),
     )
     npz_path = _study_npz_path(stem)
     np.savez(npz_path, **arrays)
@@ -185,6 +197,8 @@ def save_ma_study(
     n_part: int,
     variant: str = "",
     sexamp: float = BUILD_DEFAULTS["sexamp"],
+    x_offset: float = BUILD_DEFAULTS["x_offset"],
+    y_offset: float = BUILD_DEFAULTS["y_offset"],
 ) -> tuple[Path, Path]:
     stem = make_study_stem(
         "MA",
@@ -223,6 +237,8 @@ def save_ma_study(
         model=model,
         n_part=int(n_part),
         sexamp=float(sexamp),
+        x_offset=float(x_offset),
+        y_offset=float(y_offset),
     )
     npz_path = _study_npz_path(stem)
     np.savez(npz_path, **arrays)

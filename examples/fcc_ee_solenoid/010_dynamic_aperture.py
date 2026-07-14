@@ -8,7 +8,7 @@ import xpart as xp
 import xtrack as xt
 
 from aperture_study_io import save_da_study, variant_suffix
-from lattice_knobs import set_lattice_knobs
+from lattice_knobs import set_lattice_knobs, set_solenoid_offset
 
 plt.close("all")
 
@@ -162,7 +162,7 @@ def _plot_dynamic_aperture_figure(
     return fig
 
 
-def _run_dynamic_aperture(case, *, n_turns, with_progress, sexamp):
+def _run_dynamic_aperture(case, *, n_turns, with_progress, sexamp, x_offset, y_offset):
     lattice_json = case["lattice_json"]
     title = case["title"]
     nn_y_r = case["nn_y_r"]
@@ -179,6 +179,7 @@ def _run_dynamic_aperture(case, *, n_turns, with_progress, sexamp):
         with_correctors=case["with_correctors"],
         sext_amp=sexamp,
     )
+    set_solenoid_offset(line, x_offset=x_offset, y_offset=y_offset)
 
     line.discard_tracker()
     line.build_tracker()
@@ -260,8 +261,10 @@ def _run_dynamic_aperture(case, *, n_turns, with_progress, sexamp):
         nemitt_x=NEMITT_X,
         nemitt_y=NEMITT_Y,
         n_part=num_particles,
-        variant=variant_suffix(sexamp=sexamp),
+        variant=variant_suffix(sexamp=sexamp, x_offset=x_offset, y_offset=y_offset),
         sexamp=sexamp,
+        x_offset=x_offset,
+        y_offset=y_offset,
     )
     print(
         f"[{title}] Dynamic aperture run complete:"
@@ -316,6 +319,20 @@ def main():
         help="Sextupole amplification knob (default: 1.0).",
     )
     parser.add_argument(
+        "--x-offset",
+        type=float,
+        default=0.0,
+        metavar="M",
+        help="Main detector solenoid x-offset in meters (default: 0.0).",
+    )
+    parser.add_argument(
+        "--y-offset",
+        type=float,
+        default=0.0,
+        metavar="M",
+        help="Main detector solenoid y-offset in meters (default: 0.0).",
+    )
+    parser.add_argument(
         "--no-show",
         action="store_true",
         help="Skip interactive figure display (data and PDFs are still saved).",
@@ -329,7 +346,12 @@ def main():
 
     for case in _select_cases(args.cases):
         _run_dynamic_aperture(
-            case, n_turns=args.n_turns, with_progress=1, sexamp=args.sexamp
+            case,
+            n_turns=args.n_turns,
+            with_progress=1,
+            sexamp=args.sexamp,
+            x_offset=args.x_offset,
+            y_offset=args.y_offset,
         )
 
     if not args.no_show:

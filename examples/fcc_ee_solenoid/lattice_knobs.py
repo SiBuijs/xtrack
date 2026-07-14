@@ -30,3 +30,28 @@ def set_lattice_knobs(
 
     if "sext_amp" in line.vars:
         line["sext_amp"] = float(sext_amp)
+
+
+def set_solenoid_offset(
+    line,
+    *,
+    x_offset: float = 0.0,
+    y_offset: float = 0.0,
+    ip_names: list[str] = IP_NAMES,
+) -> None:
+    """Rigidly displace each IP's main detector solenoid by (x_offset, y_offset).
+
+    Only the main solenoid slices (element names `sol_slice_{ip}_*`) are
+    shifted; the compensation solenoids (ring hardware, not part of the
+    detector) are left at their nominal position.
+    """
+    if x_offset == 0.0 and y_offset == 0.0:
+        return
+
+    prefixes = tuple(f"sol_slice_{ip_name}_" for ip_name in ip_names)
+    for name in line.element_names:
+        if name.startswith(prefixes):
+            element = line[name]
+            element.allow_rot_and_shift = True
+            element.shift_x = x_offset
+            element.shift_y = y_offset

@@ -8,7 +8,7 @@ import xtrack as xt
 
 from aperture_grid import initial_conditions_grid
 from aperture_study_io import save_ma_study, variant_suffix
-from lattice_knobs import set_lattice_knobs
+from lattice_knobs import set_lattice_knobs, set_solenoid_offset
 
 plt.close("all")
 
@@ -120,7 +120,9 @@ def _plot_momentum_acceptance_figure(out, tt_init, title, direction):
     return fig
 
 
-def _run_momentum_acceptance(case, direction, *, n_turns, with_progress, sexamp):
+def _run_momentum_acceptance(
+    case, direction, *, n_turns, with_progress, sexamp, x_offset, y_offset
+):
     lattice_json = case["lattice_json"]
     title = case["title"]
     theta = MA_DIRECTIONS[direction]["theta"]
@@ -138,6 +140,7 @@ def _run_momentum_acceptance(case, direction, *, n_turns, with_progress, sexamp)
         with_correctors=case["with_correctors"],
         sext_amp=sexamp,
     )
+    set_solenoid_offset(line, x_offset=x_offset, y_offset=y_offset)
 
     line.discard_tracker()
     line.build_tracker()
@@ -203,8 +206,10 @@ def _run_momentum_acceptance(case, direction, *, n_turns, with_progress, sexamp)
         energy_spread=ENERGY_SPREAD,
         delta_initial_values=DELTA_INITIAL_VALUES,
         n_part=len(tt_init),
-        variant=variant_suffix(sexamp=sexamp),
+        variant=variant_suffix(sexamp=sexamp, x_offset=x_offset, y_offset=y_offset),
         sexamp=sexamp,
+        x_offset=x_offset,
+        y_offset=y_offset,
     )
     print(
         f"[{title} ({direction})] Momentum acceptance run complete:"
@@ -283,6 +288,20 @@ def main():
         help="Sextupole amplification knob (default: 1.0).",
     )
     parser.add_argument(
+        "--x-offset",
+        type=float,
+        default=0.0,
+        metavar="M",
+        help="Main detector solenoid x-offset in meters (default: 0.0).",
+    )
+    parser.add_argument(
+        "--y-offset",
+        type=float,
+        default=0.0,
+        metavar="M",
+        help="Main detector solenoid y-offset in meters (default: 0.0).",
+    )
+    parser.add_argument(
         "--no-show",
         action="store_true",
         help="Skip interactive figure display (data and PDFs are still saved).",
@@ -302,6 +321,8 @@ def main():
                 n_turns=args.n_turns,
                 with_progress=1,
                 sexamp=args.sexamp,
+                x_offset=args.x_offset,
+                y_offset=args.y_offset,
             )
 
     if not args.no_show:
