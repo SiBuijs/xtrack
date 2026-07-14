@@ -134,3 +134,9 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   scripts.
 - `03_aperture_emittance_studies_009_014.md` — 009/010/011/012/013/014 +
   `aperture_grid.py` + `aperture_study_io.py` + `lattice_knobs.py`.
+- `04_bz_ramp_coupling_amplification.md` — `bz_ramp_field.py`,
+  `004a2_build_solenoid_bz_ramp.py`, `004b2_install_solenoid_bz_ramp_in_fcc_ring.py`,
+  `scan_bz_ramp_amp.py`: a Maxwell-consistent linear-Bz-ramp perturbation used
+  to probe whether the detector solenoid's x-y coupling is genuinely small or
+  a fragile cancellation, plus raw-coupling and phase-advance (`dmux`/`dmuy`)
+  scan findings.
