@@ -8,7 +8,11 @@ import xtrack as xt
 
 from aperture_grid import initial_conditions_grid
 from aperture_study_io import save_ma_study, variant_suffix
-from lattice_knobs import set_lattice_knobs, set_solenoid_offset
+from lattice_knobs import (
+    install_extra_sextupole,
+    set_lattice_knobs,
+    set_solenoid_offset,
+)
 
 plt.close("all")
 
@@ -70,7 +74,8 @@ MA_CASES_BY_NAME = {case["name"]: case for case in MA_CASES}
 DEFAULT_MA_CASE_NAMES = [name for name in MA_CASES_BY_NAME if name != "sb_off"]
 
 # Pure-plane MA scans: theta=0 is on-axis x (y_normalized=0), theta=pi/2 is
-# on-axis y (x_normalized=0). Run in succession by default (see --directions).
+# on-axis y (x_normalized=0). x_only runs by default; y_only must be opted
+# into via --directions (see --directions).
 MA_DIRECTIONS = {
     "x_only": dict(
         theta=0.0, axis_key="x_normalized", axis_symbol=r"\hat{x}", max_y_r_factor=1.0
@@ -125,6 +130,7 @@ def _plot_momentum_acceptance_figure(out, tt_init, title, direction):
 
 def _run_momentum_acceptance(
     case, direction, *, n_turns, with_progress, sexamp, x_offset, y_offset,
+    extra_sext_strength=0.0,
 ):
     lattice_json = case["lattice_json"]
     title = case["title"]
@@ -144,6 +150,7 @@ def _run_momentum_acceptance(
         sext_amp=sexamp,
     )
     set_solenoid_offset(line, x_offset=x_offset, y_offset=y_offset)
+    install_extra_sextupole(line, k2l=extra_sext_strength)
 
     line.discard_tracker()
     line.build_tracker()
@@ -211,10 +218,12 @@ def _run_momentum_acceptance(
         n_part=len(tt_init),
         variant=variant_suffix(
             sexamp=sexamp, x_offset=x_offset, y_offset=y_offset,
+            extra_sext_strength=extra_sext_strength,
         ),
         sexamp=sexamp,
         x_offset=x_offset,
         y_offset=y_offset,
+        extra_sext_strength=extra_sext_strength,
     )
     print(
         f"[{title} ({direction})] Momentum acceptance run complete:"
@@ -238,7 +247,7 @@ def _select_cases(case_names):
 
 def _select_directions(direction_names):
     if not direction_names:
-        return list(MA_DIRECTIONS)
+        return ["x_only"]
 
     unknown = [name for name in direction_names if name not in MA_DIRECTIONS]
     if unknown:
@@ -276,8 +285,9 @@ def main():
         metavar="DIRECTION",
         choices=list(MA_DIRECTIONS),
         help=(
-            "Momentum-acceptance directions to run (default: both, in "
-            "succession). Available: x_only, y_only"
+            "Momentum-acceptance directions to run (default: x_only only -- "
+            "pass --directions y_only or --directions x_only y_only to "
+            "include the y_only scan). Available: x_only, y_only"
         ),
     )
     parser.add_argument(
@@ -309,6 +319,18 @@ def main():
         help="Main detector solenoid y-offset in meters (default: 0.0).",
     )
     parser.add_argument(
+        "--extra-sext-strength",
+        type=float,
+        default=0.0,
+        metavar="K2L",
+        help=(
+            "Integrated strength (k2*L, in m^-2) of an extra thin sextupole "
+            "inserted into each IP's main detector solenoid, between two "
+            "SplineBoris slices at s ~= -1.223 m from the IP (default: 0.0, "
+            "i.e. off -- the lattice is unmodified unless this is nonzero)."
+        ),
+    )
+    parser.add_argument(
         "--no-show",
         action="store_true",
         help="Skip interactive figure display (data and PDFs are still saved).",
@@ -330,6 +352,7 @@ def main():
                 sexamp=args.sexamp,
                 x_offset=args.x_offset,
                 y_offset=args.y_offset,
+                extra_sext_strength=args.extra_sext_strength,
             )
 
     if not args.no_show:

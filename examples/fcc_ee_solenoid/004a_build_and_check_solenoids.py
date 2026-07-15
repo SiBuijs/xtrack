@@ -16,6 +16,9 @@ from spline_boris_setup import (
 )
 from tilted_solenoid import TiltedSolenoid
 from xtrack._temp.boris_and_solenoid_map.solenoid_field import SolenoidField
+from xtrack.beam_elements.splineboris_src.spline_B_field_eval_python import (
+    hermite_to_polynomial,
+)
 
 
 HERE = Path(__file__).parent
@@ -55,6 +58,10 @@ MIXED_DERIVATIVE_SPECS = [
     },
 ]
 
+# Transverse-x derivative order for the d^2 Bx / dx^2 integral-over-s printout
+# further below.
+D2BX_DX2_ORDER = 2
+
 BETX = 0.09
 BETY = 0.0007
 
@@ -64,6 +71,8 @@ COMP_SOLENOID_DISTANCE_FROM_IP = 12.0
 
 assert MAX_TRANSVERSE_DERIVATIVE_ORDER_FOR_SPLINE <= xt.SplineBoris._SB_MAX_MULTIPOLE_ORDER - 1
 assert MAX_TRANSVERSE_DERIVATIVE_ORDER <= 5
+assert D2BX_DX2_ORDER <= MAX_TRANSVERSE_DERIVATIVE_ORDER
+assert D2BX_DX2_ORDER <= MAX_TRANSVERSE_DERIVATIVE_ORDER_FOR_SPLINE
 assert S_DERIVATIVE_SPLINE_ORDER == 4
 assert MAX_S_DERIVATIVE_PLOT_ORDER <= 5
 for spec in MIXED_DERIVATIVE_SPECS:
@@ -268,6 +277,35 @@ if PLOT_COMPENSATION_SOLENOID:
         'field_model': comp_field_model,
         'line': line_compensation_solenoid,
         'scale_b': comp_scale_b,
+    }
+
+# Integral of d^2 Bx / dx^2 over s in [-2.4, 2.4] m (the full main-solenoid
+# s-range), computed two ways: directly from the tapered field-map samples,
+# and "straight from SplineBoris" by reading the order-D2BX_DX2_ORDER Hermite
+# row (bx[D2BX_DX2_ORDER, :]) of each installed slice element -- this is the
+# raw (non-1/n!-normalized) d^2Bx/dx^2(s) polynomial already stored in the
+# element, reconstructed and integrated analytically per slice, with no
+# finite-differencing in x needed.
+d2bx_dx2_integrals = {}
+for name, item in comparison_fields.items():
+    field_data = item['field_data']
+    scale_b = item['scale_b']
+    line = item['line']
+
+    field_map_integral = scale_b * np.trapezoid(
+        field_data['bx'][D2BX_DX2_ORDER], field_data['s_axis'])
+
+    splineboris_integral = 0.0
+    for element in line.elements:
+        bx_hermite = np.array(element.bx[D2BX_DX2_ORDER])
+        poly = hermite_to_polynomial(0.0, element.length, bx_hermite)
+        integral_poly = poly.integ()
+        splineboris_integral += element.scale_b * (
+            integral_poly(element.length) - integral_poly(0.0))
+
+    d2bx_dx2_integrals[name] = {
+        'field_map': field_map_integral,
+        'splineboris': splineboris_integral,
     }
 
 sampled_lines = {}
@@ -784,5 +822,14 @@ for label, tw in twiss_results.items():
     print(
         f'    betx2_end = {tw.betx2[-1]:+.12e} m, '
         f'bety1_end = {tw.bety1[-1]:+.12e} m')
+
+print(
+    f'  Integral of d^{D2BX_DX2_ORDER} Bx / dx^{D2BX_DX2_ORDER} ds over '
+    f's in [{MAIN_SOLENOID_S_AXIS[0]:.3f}, {MAIN_SOLENOID_S_AXIS[-1]:.3f}] m '
+    '(units: T/m):')
+for name, values in d2bx_dx2_integrals.items():
+    print(f'    {name}:')
+    print(f'      field-map data = {values["field_map"]:+.12e} T/m')
+    print(f'      SplineBoris    = {values["splineboris"]:+.12e} T/m')
 
 plt.show()

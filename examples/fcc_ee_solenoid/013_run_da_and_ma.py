@@ -66,7 +66,11 @@ def main():
         nargs="+",
         metavar="DIRECTION",
         choices=["x_only", "y_only"],
-        help="MA directions for 009 (default: both, in succession).",
+        help=(
+            "MA directions for 009 (default: x_only only -- pass "
+            "--ma-directions y_only or --ma-directions x_only y_only to "
+            "include the y_only scan)."
+        ),
     )
     parser.add_argument(
         "--emitt-cases",
@@ -137,6 +141,16 @@ def main():
         help="Main detector solenoid y-offset in meters, forwarded to DA/MA scripts.",
     )
     parser.add_argument(
+        "--extra-sext-strength",
+        type=float,
+        metavar="K2L",
+        help=(
+            "Extra thin-sextupole integrated strength (k2*L, in m^-2), "
+            "forwarded to DA/MA scripts' --extra-sext-strength (default: "
+            "0.0, i.e. off)."
+        ),
+    )
+    parser.add_argument(
         "--show",
         action="store_true",
         help="Show figures interactively after each script (default: save only).",
@@ -183,6 +197,9 @@ def main():
     if args.y_offset is not None:
         da_args.extend(["--y-offset", str(args.y_offset)])
         ma_args.extend(["--y-offset", str(args.y_offset)])
+    if args.extra_sext_strength is not None:
+        da_args.extend(["--extra-sext-strength", str(args.extra_sext_strength)])
+        ma_args.extend(["--extra-sext-strength", str(args.extra_sext_strength)])
     if not args.show:
         da_args.append("--no-show")
         ma_args.append("--no-show")

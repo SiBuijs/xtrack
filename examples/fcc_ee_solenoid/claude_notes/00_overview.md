@@ -82,7 +82,13 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   sext_amp=1.0)`: single entry point used by 009/010/014 to flip all 4 IPs'
   `on_sol_*` / correction knobs together and set the `sext_amp` sextupole-
   amplification knob. (011 and 012 have their own inline copy/no-op instead of
-  importing this — minor duplication, not a bug.)
+  importing this — minor duplication, not a bug.) Also `set_solenoid_offset`
+  (rigid x/y shift of the 4 main solenoids) and, added 2026-07-15,
+  `install_extra_sextupole(line, k2l=...)` — opt-in (no-op at `k2l=0.0`) thin
+  extra sextupole inserted into each IP's main solenoid at a fixed
+  SplineBoris slice boundary near s=-1.23 m from the IP; used by 009/010 via
+  their `--extra-sext-strength` CLI flag. See
+  `03_aperture_emittance_studies_009_014.md` for details.
 - `aperture_grid.py` — `initial_conditions_grid(study="MA", ...)`: polar grid
   generator for momentum-acceptance initial conditions (used by 009 only; 010
   has its own DA-specific grid builder inline).

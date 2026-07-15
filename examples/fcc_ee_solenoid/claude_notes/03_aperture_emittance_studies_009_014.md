@@ -33,6 +33,19 @@ tracks, saves a plot + `.npz` via `aperture_study_io.py`, has a
 `--directions`, see below), and a `main()` guarded by
 `__name__ == "__main__"`. `013_run_da_and_ma.py` drives 009+010+014 as
 subprocesses with a shared CLI.
+- **Extra sextupole knob (009/010 only, added 2026-07-15)**:
+  `--extra-sext-strength K2L` (default `0.0`, off) calls
+  `lattice_knobs.install_extra_sextupole(line, k2l=...)` right after
+  `set_solenoid_offset(...)` and before the tracker is (re)built. It inserts
+  one zero-length `xt.Sextupole` per IP (named `extra_sext_{ip_name}`), with
+  its whole strength given as an integrated `knl[2] = k2l` kick rather than
+  via `k2`+`length` — required so the insertion lands exactly on an existing
+  `sol_slice_{ip}_048`/`sol_slice_{ip}_049` boundary (s ~= -1.223 m from the
+  IP, the closest slice edge to the user-requested -1.23 m) without needing
+  to split either neighbouring SplineBoris slice, which doesn't support
+  slicing (`SplineBoris` has no `_thick_slice_class`). A no-op when
+  `k2l == 0.0`, so the lattice is byte-for-byte unchanged by default. 014
+  (EMIT) does not have this flag.
 
 ## 009_momentum_acceptance.py (MA study)
 - **x/y direction split (added 2026-07-13)**: previously ran a single fixed
@@ -43,9 +56,12 @@ subprocesses with a shared CLI.
   `theta=0` the grid is on-axis x with `y_normalized=0`; at `theta=pi/2` it's
   on-axis y with `x_normalized=0`). CLI: `--directions x_only y_only`
   (`choices=list(MA_DIRECTIONS)`); if omitted, `_select_directions` defaults
-  to running **both, in succession** (mirrors `_select_cases`'s
-  no-arg-means-all pattern). `013_run_da_and_ma.py` forwards this via its own
-  `--ma-directions` flag.
+  to **`x_only` only** (changed 2026-07-15 at user request — y MA is off by
+  default now; pass `--directions y_only` or `--directions x_only y_only` to
+  turn it on). `013_run_da_and_ma.py` forwards this via its own
+  `--ma-directions` flag, which has the same x_only-only default (013 only
+  passes `--directions` through to 009 when `--ma-directions` is explicitly
+  given, so 009's default applies whenever it's omitted).
 - Grid: `initial_conditions_grid` (from `aperture_grid.py`) — polar in
   `(x_normalized, y_normalized)` at `theta in [theta, theta]` (i.e. a **line**,
   not a fan, `nn_x_theta` defaults to 1; `theta` comes from
@@ -225,8 +241,12 @@ subprocesses with a shared CLI.
   (`--da-only/--ma-only/--emitt-only`, `--cases` shortcut for `--da-cases`,
   per-study `--{da,ma,emitt}-cases`/`--n-turns` overrides plus a global
   `--n-turns`, `--ma-directions` (added 2026-07-13, forwarded straight to
-  009's `--directions`, default: both x_only/y_only in succession),
-  `--n-part` for EMIT only, `--sexamp`, `--no-emitt` to skip EMIT,
+  009's `--directions`, default: `x_only` only as of 2026-07-15 — pass
+  `--ma-directions y_only` or `--ma-directions x_only y_only` to include the
+  y MA scan),
+  `--n-part` for EMIT only, `--sexamp`, `--extra-sext-strength` (added
+  2026-07-15, forwarded to 009/010's own `--extra-sext-strength`; not
+  forwarded to 014/EMIT), `--no-emitt` to skip EMIT,
   `--show`). No `--da-n-turns` etc. defaults to the global `--n-turns` unless
   explicitly overridden. Despite the module docstring/filename saying
   "DA and MA", it now also runs the emittance-evolution study (014) by default
@@ -338,7 +358,16 @@ by 009 (010 deliberately avoids it, see above).
   appends `__sexamp{value}` to filenames only when `sexamp != 1.0` (uses
   `format_tag_float`, e.g. `2.0 -> "2p0"`, minus sign -> `"m"`), so default
   runs get clean filenames and only non-default sextupole-amplification runs
-  get a distinguishing suffix.
+  get a distinguishing suffix. **Note (2026-07-15): this docstring line is
+  stale** — `BUILD_DEFAULTS` also has `x_offset`/`y_offset` (pre-existing,
+  tags `xoff`/`yoff`) and, as of 2026-07-15, `extra_sext_strength` (tag
+  `xsext`, see below); check the source, not just this bullet.
+- **Extra sextupole labeling (added 2026-07-15)**: `extra_sext_strength`
+  (the `--extra-sext-strength` CLI knob, see below) is threaded through
+  `save_da_study`/`save_ma_study` and `variant_suffix` exactly like `sexamp`/
+  `x_offset`/`y_offset` — saved as a float in the `.npz`, and non-default
+  (nonzero) values get a `__xsext{value}` filename tag shared by both the
+  `.npz` and the PDF plot.
 - `make_basename`/`make_study_stem`: filename convention
   `{STUDY}[_{tag}]_{Sol_On|Sol_Off[_Cor_Off]}_{Model}_{n_part}p_{n_turns}t_{xylimtag}{variant}`
   (n_part omitted for EMIT calls that don't pass it? — check: `save_emitt_study`

@@ -20,6 +20,7 @@ BUILD_DEFAULTS = {
     "theta": -0.015,
     "x_offset": 0.0,
     "y_offset": 0.0,
+    "extra_sext_strength": 0.0,
 }
 
 
@@ -44,6 +45,10 @@ def variant_suffix(**overrides: Any) -> str:
     y_offset = overrides.get("y_offset", BUILD_DEFAULTS["y_offset"])
     if y_offset != BUILD_DEFAULTS["y_offset"]:
         tags.append(f"yoff{format_tag_float(y_offset)}")
+    extra_sext_strength = overrides.get(
+        "extra_sext_strength", BUILD_DEFAULTS["extra_sext_strength"])
+    if extra_sext_strength != BUILD_DEFAULTS["extra_sext_strength"]:
+        tags.append(f"xsext{format_tag_float(extra_sext_strength)}")
     if not tags:
         return ""
     return "__" + "__".join(tags)
@@ -123,6 +128,7 @@ def save_da_study(
     sexamp: float = BUILD_DEFAULTS["sexamp"],
     x_offset: float = BUILD_DEFAULTS["x_offset"],
     y_offset: float = BUILD_DEFAULTS["y_offset"],
+    extra_sext_strength: float = BUILD_DEFAULTS["extra_sext_strength"],
 ) -> tuple[Path, Path]:
     stem = make_study_stem(
         "DA",
@@ -163,6 +169,7 @@ def save_da_study(
         sexamp=float(sexamp),
         x_offset=float(x_offset),
         y_offset=float(y_offset),
+        extra_sext_strength=float(extra_sext_strength),
     )
     npz_path = _study_npz_path(stem)
     np.savez(npz_path, **arrays)
@@ -199,6 +206,7 @@ def save_ma_study(
     sexamp: float = BUILD_DEFAULTS["sexamp"],
     x_offset: float = BUILD_DEFAULTS["x_offset"],
     y_offset: float = BUILD_DEFAULTS["y_offset"],
+    extra_sext_strength: float = BUILD_DEFAULTS["extra_sext_strength"],
 ) -> tuple[Path, Path]:
     stem = make_study_stem(
         "MA",
@@ -239,6 +247,7 @@ def save_ma_study(
         sexamp=float(sexamp),
         x_offset=float(x_offset),
         y_offset=float(y_offset),
+        extra_sext_strength=float(extra_sext_strength),
     )
     npz_path = _study_npz_path(stem)
     np.savez(npz_path, **arrays)

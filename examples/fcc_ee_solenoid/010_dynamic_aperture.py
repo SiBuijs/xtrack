@@ -8,7 +8,11 @@ import xpart as xp
 import xtrack as xt
 
 from aperture_study_io import save_da_study, variant_suffix
-from lattice_knobs import set_lattice_knobs, set_solenoid_offset
+from lattice_knobs import (
+    install_extra_sextupole,
+    set_lattice_knobs,
+    set_solenoid_offset,
+)
 
 plt.close("all")
 
@@ -167,6 +171,7 @@ def _plot_dynamic_aperture_figure(
 
 def _run_dynamic_aperture(
     case, *, n_turns, with_progress, sexamp, x_offset, y_offset,
+    extra_sext_strength=0.0,
 ):
     lattice_json = case["lattice_json"]
     title = case["title"]
@@ -185,6 +190,7 @@ def _run_dynamic_aperture(
         sext_amp=sexamp,
     )
     set_solenoid_offset(line, x_offset=x_offset, y_offset=y_offset)
+    install_extra_sextupole(line, k2l=extra_sext_strength)
 
     line.discard_tracker()
     line.build_tracker()
@@ -268,10 +274,12 @@ def _run_dynamic_aperture(
         n_part=num_particles,
         variant=variant_suffix(
             sexamp=sexamp, x_offset=x_offset, y_offset=y_offset,
+            extra_sext_strength=extra_sext_strength,
         ),
         sexamp=sexamp,
         x_offset=x_offset,
         y_offset=y_offset,
+        extra_sext_strength=extra_sext_strength,
     )
     print(
         f"[{title}] Dynamic aperture run complete:"
@@ -342,6 +350,18 @@ def main():
         help="Main detector solenoid y-offset in meters (default: 0.0).",
     )
     parser.add_argument(
+        "--extra-sext-strength",
+        type=float,
+        default=0.0,
+        metavar="K2L",
+        help=(
+            "Integrated strength (k2*L, in m^-2) of an extra thin sextupole "
+            "inserted into each IP's main detector solenoid, between two "
+            "SplineBoris slices at s ~= -1.223 m from the IP (default: 0.0, "
+            "i.e. off -- the lattice is unmodified unless this is nonzero)."
+        ),
+    )
+    parser.add_argument(
         "--no-show",
         action="store_true",
         help="Skip interactive figure display (data and PDFs are still saved).",
@@ -361,6 +381,7 @@ def main():
             sexamp=args.sexamp,
             x_offset=args.x_offset,
             y_offset=args.y_offset,
+            extra_sext_strength=args.extra_sext_strength,
         )
 
     if not args.no_show:

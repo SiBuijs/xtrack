@@ -1,9 +1,15 @@
+from pathlib import Path
+
 import xtrack as xt
 
 from xtrack._temp.boris_and_solenoid_map.solenoid_field import SolenoidField
 import numpy as np
 
-env = xt.load('temp_fcc_ee_lcc_local_solenoid.json')
+HERE = Path(__file__).resolve().parent
+INPUT_LATTICE_JSON = HERE / 'temp_fcc_ee_lcc_local_solenoid.json'
+OUTPUT_LATTICE_JSON = HERE / 'fccee_z_lcc_local_solenoid.json'
+
+env = xt.load(INPUT_LATTICE_JSON)
 line = env.fccee_p_ring
 
 # Configuration (which elements are used for the correction at each ip)
@@ -310,7 +316,7 @@ two_on_corr = line.twiss(
     init=tw_off,
     init_at='ipj')
 
-env.to_json('fccee_z_lcc_local_solenoid.json')
+env.to_json(OUTPUT_LATTICE_JSON)
 
 import matplotlib.pyplot as plt
 

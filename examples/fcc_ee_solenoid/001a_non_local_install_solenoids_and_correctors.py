@@ -2,13 +2,19 @@
 # Based on E. Boscolo, A. Ciarma, E. Burkhardt, https://cds.cern.ch/record/2948247
 # Nuclear Instruments and Methods in Physics Research A 1083 (2026) 171135
 
+from pathlib import Path
+
 import xtrack as xt
 
 from xtrack._temp.boris_and_solenoid_map.solenoid_field import SolenoidField
 import numpy as np
 from tilted_solenoid import TiltedSolenoid
 
-env = xt.load('fccee_z_lcc.json')
+HERE = Path(__file__).resolve().parent
+INPUT_LATTICE_JSON = HERE / 'fccee_z_lcc.json'
+OUTPUT_LATTICE_JSON = HERE / 'temp_fcc_ee_lcc_non_local_solenoid.json'
+
+env = xt.load(INPUT_LATTICE_JSON)
 line = env.fccee_p_ring
 
 ip_names = ['ipa', 'ipd', 'ipg', 'ipj']
@@ -163,4 +169,4 @@ for ip_name in ip_names:
                 anchor='start', at=0, from_=f'dy_match_l_{ip_name}@end'),
     ])
 
-env.to_json('temp_fcc_ee_lcc_non_local_solenoid.json')
+env.to_json(OUTPUT_LATTICE_JSON)
