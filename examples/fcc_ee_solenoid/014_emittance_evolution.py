@@ -33,7 +33,6 @@ VARSOL_LATTICE_JSON = (
     HERE / "fccee_z_lcc_varsol_solenoids_coupling_corrected.json"
 )
 
-IP_NAMES = ["ipa", "ipd", "ipg", "ipj"]
 GLOBAL_XY_LIMIT = 1.0
 N_TURNS = 10_000
 N_PART = 1000
@@ -66,6 +65,10 @@ EMITT_CASES = [
 ]
 
 EMITT_CASES_BY_NAME = {case["name"]: case for case in EMITT_CASES}
+# sb_off is the bare-machine baseline: it has already been run once and does
+# not depend on solenoid/correction changes, so skip it by default (pass
+# --cases sb_off explicitly to rerun it).
+DEFAULT_EMITT_CASE_NAMES = [name for name in EMITT_CASES_BY_NAME if name != "sb_off"]
 
 
 def _configure_radiative_tracking(line):
@@ -227,7 +230,9 @@ def _plot_emittance_evolution_figure(
     return fig
 
 
-def _run_emittance_evolution(case, *, n_turns, n_part, with_progress, sexamp):
+def _run_emittance_evolution(
+    case, *, n_turns, n_part, with_progress, sexamp,
+):
     lattice_json = case["lattice_json"]
     title = case["title"]
 
@@ -356,7 +361,9 @@ def _run_emittance_evolution(case, *, n_turns, n_part, with_progress, sexamp):
         fit_alpha=fit_alpha,
         fit_tau=fit_tau,
         fit_eps_init=fit_eps_init,
-        variant=variant_suffix(sexamp=sexamp),
+        variant=variant_suffix(
+            sexamp=sexamp,
+        ),
         sexamp=sexamp,
     )
     print(f"[{title}] Emittance evolution run complete.")
@@ -373,7 +380,7 @@ def _run_emittance_evolution(case, *, n_turns, n_part, with_progress, sexamp):
 
 def _select_cases(case_names):
     if not case_names:
-        return EMITT_CASES
+        return [EMITT_CASES_BY_NAME[name] for name in DEFAULT_EMITT_CASE_NAMES]
 
     unknown = [name for name in case_names if name not in EMITT_CASES_BY_NAME]
     if unknown:
@@ -392,7 +399,9 @@ def main():
         nargs="+",
         metavar="CASE",
         help=(
-            "Cases to run (default: all). "
+            "Cases to run (default: sb_on, varsol_on -- sb_off is skipped by "
+            "default since the bare-machine baseline doesn't change; pass "
+            "--cases sb_off explicitly to include it). "
             "Available: sb_on, varsol_on, sb_off"
         ),
     )

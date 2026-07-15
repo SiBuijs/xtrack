@@ -47,13 +47,19 @@ def main():
         "--da-cases",
         nargs="+",
         metavar="CASE",
-        help="DA cases for 010 (default: all). Available: sb_on, varsol_on, sb_off",
+        help=(
+            "DA cases for 010 (default: sb_on, varsol_on -- sb_off skipped by "
+            "default). Available: sb_on, varsol_on, sb_off"
+        ),
     )
     parser.add_argument(
         "--ma-cases",
         nargs="+",
         metavar="CASE",
-        help="MA cases for 009 (default: all). Available: sb_on, varsol_on, sb_off",
+        help=(
+            "MA cases for 009 (default: sb_on, varsol_on -- sb_off skipped by "
+            "default). Available: sb_on, varsol_on, sb_off"
+        ),
     )
     parser.add_argument(
         "--ma-directions",
@@ -66,7 +72,10 @@ def main():
         "--emitt-cases",
         nargs="+",
         metavar="CASE",
-        help="Emittance cases for 014 (default: all). Available: sb_on, varsol_on, sb_off",
+        help=(
+            "Emittance cases for 014 (default: sb_on, varsol_on -- sb_off "
+            "skipped by default). Available: sb_on, varsol_on, sb_off"
+        ),
     )
     parser.add_argument(
         "--cases",

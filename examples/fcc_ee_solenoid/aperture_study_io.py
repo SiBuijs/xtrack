@@ -10,7 +10,7 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 DATA_DIR = HERE / "data"
-PLOT_DIR = Path("/home/simonfan/cernbox/Pictures/FCC_Solenoid_Studies")
+PLOT_DIR = Path.home() / "cernbox" / "Pictures" / "FCC_Solenoid_Studies"
 
 ModelTag = Literal["SB", "VarSol"]
 StudyTag = Literal["DA", "MA", "EMIT"]
@@ -32,7 +32,7 @@ def format_tag_float(value: float) -> str:
     return text.replace(".", "p").replace("-", "m")
 
 
-def variant_suffix(**overrides: float) -> str:
+def variant_suffix(**overrides: Any) -> str:
     """Return '' or a double-underscore variant tag for non-default build knobs."""
     tags: list[str] = []
     sexamp = overrides.get("sexamp", BUILD_DEFAULTS["sexamp"])

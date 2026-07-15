@@ -20,7 +20,6 @@ VARSOL_LATTICE_JSON = (
     HERE / "fccee_z_lcc_varsol_solenoids_coupling_corrected.json"
 )
 
-IP_NAMES = ["ipa", "ipd", "ipg", "ipj"]
 NEMITT_X = 6.33e-5
 NEMITT_Y = 1.69e-7  # flat beam: sigma_x/sigma_y ~ 220 at the IP
 # Use the xtrack default (1 m), not the 5 cm limit from 009_momentum_acceptance.py:
@@ -72,6 +71,10 @@ DA_CASES = [
 ]
 
 DA_CASES_BY_NAME = {case["name"]: case for case in DA_CASES}
+# sb_off is the bare-machine baseline: it has already been run once and does
+# not depend on solenoid/correction changes, so skip it by default (pass
+# --cases sb_off explicitly to rerun it).
+DEFAULT_DA_CASE_NAMES = [name for name in DA_CASES_BY_NAME if name != "sb_off"]
 
 
 def _compute_beam_sizes(line):
@@ -162,7 +165,9 @@ def _plot_dynamic_aperture_figure(
     return fig
 
 
-def _run_dynamic_aperture(case, *, n_turns, with_progress, sexamp, x_offset, y_offset):
+def _run_dynamic_aperture(
+    case, *, n_turns, with_progress, sexamp, x_offset, y_offset,
+):
     lattice_json = case["lattice_json"]
     title = case["title"]
     nn_y_r = case["nn_y_r"]
@@ -261,7 +266,9 @@ def _run_dynamic_aperture(case, *, n_turns, with_progress, sexamp, x_offset, y_o
         nemitt_x=NEMITT_X,
         nemitt_y=NEMITT_Y,
         n_part=num_particles,
-        variant=variant_suffix(sexamp=sexamp, x_offset=x_offset, y_offset=y_offset),
+        variant=variant_suffix(
+            sexamp=sexamp, x_offset=x_offset, y_offset=y_offset,
+        ),
         sexamp=sexamp,
         x_offset=x_offset,
         y_offset=y_offset,
@@ -276,7 +283,7 @@ def _run_dynamic_aperture(case, *, n_turns, with_progress, sexamp, x_offset, y_o
 
 def _select_cases(case_names):
     if not case_names:
-        return DA_CASES
+        return [DA_CASES_BY_NAME[name] for name in DEFAULT_DA_CASE_NAMES]
 
     unknown = [name for name in case_names if name not in DA_CASES_BY_NAME]
     if unknown:
@@ -295,7 +302,9 @@ def main():
         nargs="+",
         metavar="CASE",
         help=(
-            "Cases to run (default: all). "
+            "Cases to run (default: sb_on, varsol_on -- sb_off is skipped by "
+            "default since the bare-machine baseline doesn't change; pass "
+            "--cases sb_off explicitly to include it). "
             "Available: sb_on, varsol_on, sb_off"
         ),
     )

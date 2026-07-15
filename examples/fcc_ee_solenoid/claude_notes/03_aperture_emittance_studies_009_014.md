@@ -356,10 +356,12 @@ by 009 (010 deliberately avoids it, see above).
   `replot_from_npz` dispatches on `npz_path.name.split("_", 1)[0]` (first
   underscore only), `MA_X_...`/`MA_Y_...` still resolve to `study="MA"`, so
   the tag doesn't break dispatch.
-- `PLOT_DIR = Path("/home/simonfan/cernbox/Pictures/FCC_Solenoid_Studies")` —
-  **outside the git repo**, user-specific absolute path; PDFs are not
-  version-controlled. `DATA_DIR = HERE/"data"` (raw `.npz`, inside the repo,
-  currently gitignored-or-just-untracked — check `git status` if unsure).
+- `PLOT_DIR = Path.home() / "cernbox/Pictures/FCC_Solenoid_Studies"` (changed
+  2026-07-15 from a hardcoded `/home/simonfan/...` string, which broke for
+  any other user/machine even though the underlying synced cernbox folder is
+  the same) — **outside the git repo**; PDFs are not version-controlled.
+  `DATA_DIR = HERE/"data"` (raw `.npz`, inside the repo, currently
+  gitignored-or-just-untracked — check `git status` if unsure).
 - `save_da_study`/`save_ma_study`/`save_emitt_study`: each builds the stem,
   writes a dict of arrays via `np.savez`, then calls `save_figure_pdf`.
   `save_da_study` now also stores `y_normalized` and `max_amp_sigma_y`

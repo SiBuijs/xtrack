@@ -20,7 +20,6 @@ VARSOL_LATTICE_JSON = (
     HERE / "fccee_z_lcc_varsol_solenoids_coupling_corrected.json"
 )
 
-IP_NAMES = ["ipa", "ipd", "ipg", "ipj"]
 NEMITT_X = 6.33e-5
 NEMITT_Y = 1.69e-7
 ENERGY_SPREAD = 3.9e-4
@@ -65,6 +64,10 @@ MA_CASES = [
 ]
 
 MA_CASES_BY_NAME = {case["name"]: case for case in MA_CASES}
+# sb_off is the bare-machine baseline: it has already been run once and does
+# not depend on solenoid/correction changes, so skip it by default (pass
+# --cases sb_off explicitly to rerun it).
+DEFAULT_MA_CASE_NAMES = [name for name in MA_CASES_BY_NAME if name != "sb_off"]
 
 # Pure-plane MA scans: theta=0 is on-axis x (y_normalized=0), theta=pi/2 is
 # on-axis y (x_normalized=0). Run in succession by default (see --directions).
@@ -121,7 +124,7 @@ def _plot_momentum_acceptance_figure(out, tt_init, title, direction):
 
 
 def _run_momentum_acceptance(
-    case, direction, *, n_turns, with_progress, sexamp, x_offset, y_offset
+    case, direction, *, n_turns, with_progress, sexamp, x_offset, y_offset,
 ):
     lattice_json = case["lattice_json"]
     title = case["title"]
@@ -206,7 +209,9 @@ def _run_momentum_acceptance(
         energy_spread=ENERGY_SPREAD,
         delta_initial_values=DELTA_INITIAL_VALUES,
         n_part=len(tt_init),
-        variant=variant_suffix(sexamp=sexamp, x_offset=x_offset, y_offset=y_offset),
+        variant=variant_suffix(
+            sexamp=sexamp, x_offset=x_offset, y_offset=y_offset,
+        ),
         sexamp=sexamp,
         x_offset=x_offset,
         y_offset=y_offset,
@@ -221,7 +226,7 @@ def _run_momentum_acceptance(
 
 def _select_cases(case_names):
     if not case_names:
-        return MA_CASES
+        return [MA_CASES_BY_NAME[name] for name in DEFAULT_MA_CASE_NAMES]
 
     unknown = [name for name in case_names if name not in MA_CASES_BY_NAME]
     if unknown:
@@ -254,7 +259,9 @@ def main():
         nargs="+",
         metavar="CASE",
         help=(
-            "Cases to run (default: all). "
+            "Cases to run (default: sb_on, varsol_on -- sb_off is skipped by "
+            "default since the bare-machine baseline doesn't change; pass "
+            "--cases sb_off explicitly to include it). "
             "Available: sb_on, varsol_on, sb_off"
         ),
     )

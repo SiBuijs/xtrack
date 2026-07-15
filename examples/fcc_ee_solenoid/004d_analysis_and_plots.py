@@ -9,7 +9,7 @@ HERE = Path(__file__).parent
 INPUT_LATTICE_JSON = HERE / 'fccee_z_lcc_splineboris_solenoids_coupling_corrected.json'
 
 IP_NAMES = ['ipa', 'ipd', 'ipg', 'ipj']
-IP_PLOT = 'ipg'
+IP_PLOT = 'ipa'
 
 
 ################################

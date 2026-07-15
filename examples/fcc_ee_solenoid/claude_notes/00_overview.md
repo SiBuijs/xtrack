@@ -89,7 +89,11 @@ These two *_coupling_corrected.json files are the ones actually consumed by
 - `aperture_study_io.py` — save/reload/replot helpers for DA/MA/EMIT `.npz`
   data + PDF figures. Used by 009, 010, 014, and replotted by 012. PDFs go to
   `/home/simonfan/cernbox/Pictures/FCC_Solenoid_Studies` (outside the repo);
-  `.npz` raw data go to `examples/fcc_ee_solenoid/data/`.
+  `.npz` raw data go to `examples/fcc_ee_solenoid/data/`. As of 2026-07-15,
+  `PLOT_DIR` is `Path.home() / "cernbox/Pictures/FCC_Solenoid_Studies"` (was
+  hardcoded to `/home/simonfan/...`, which broke on other machines/users —
+  same synced cernbox folder, just resolved via the current user's home dir
+  now).
 
 ## Physical/engineering constants worth remembering
 
@@ -140,3 +144,13 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   to probe whether the detector solenoid's x-y coupling is genuinely small or
   a fragile cancellation, plus raw-coupling and phase-advance (`dmux`/`dmuy`)
   scan findings.
+
+Removed 2026-07-15: the `kill_higher_order_{upstream,downstream}_{ip}` knob
+(zeroed sextupole-and-above multipole content for one half of one IP's main
+solenoid; was wired into 004b/`lattice_knobs.py`/009/010/013/014/004d) has
+been stripped from all of those files at the user's request. It was never
+committed (added and removed within the same uncommitted working-tree
+session), so there is no git history to recover it from. Its note
+(`05_kill_higher_order_half_solenoid.md`) is deleted; if this line of
+investigation (effect of higher-order multipole content on DA) is revisited,
+it will need to be rebuilt from scratch.
