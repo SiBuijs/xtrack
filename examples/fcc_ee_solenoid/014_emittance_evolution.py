@@ -21,7 +21,7 @@ import xtrack as xt
 from scipy.optimize import curve_fit
 
 from aperture_study_io import save_emitt_study, variant_suffix
-from lattice_knobs import set_lattice_knobs
+from lattice_knobs import robust_twiss, set_lattice_knobs
 
 plt.close("all")
 
@@ -254,7 +254,10 @@ def _run_emittance_evolution(
 
     line.discard_tracker()
     line.build_tracker()
-    tw = line.twiss6d(radiation_analysis=True, strengths=True)
+    # robust_twiss falls back to a co-guess continuation (ramping sext_amp
+    # from 1.0) if the direct closed-orbit search fails, e.g. for large
+    # --sexamp values -- see lattice_knobs.robust_twiss.
+    tw = robust_twiss(line, twiss_method="twiss6d", radiation_analysis=True, strengths=True)
 
     eq_x = float(tw.eq_gemitt_x)
     eq_y = float(tw.eq_gemitt_y)

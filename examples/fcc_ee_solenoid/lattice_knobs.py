@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import xtrack as xt
+from xtrack.twiss import ClosedOrbitSearchError
 
 IP_NAMES = ["ipa", "ipd", "ipg", "ipj"]
 
@@ -109,3 +110,112 @@ def install_extra_sextupole(
             anchor="start",
             from_anchor="start",
         )
+
+
+def _continue_closed_orbit(
+    line,
+    *,
+    var_name: str,
+    target_value: float,
+    baseline_value: float,
+    growth_factor: float = 2.0,
+    shrink_factor: float = 4.0,
+    min_step: float | None = None,
+    verbose: bool = True,
+):
+    """Ramp ``line.vars[var_name]`` from `baseline_value` to `target_value`.
+
+    Same trick as `radial_steering.py`'s `df_hz` continuation chain: each
+    step's converged closed orbit is used as the `co_guess` for the next
+    step, which reaches closed orbits a single Newton search from the
+    default (zero) guess cannot find. Unlike that script's fixed 1-unit
+    step, the step size here adapts -- shrinking on a failed step and
+    growing again after successes -- since the distance from `baseline_value`
+    to an arbitrary requested `target_value` (e.g. sext_amp=3000) is not
+    known in advance to be reachable in one step, or how many steps it needs.
+
+    Leaves `var_name` set to `target_value` on return. Raises
+    `ClosedOrbitSearchError` if the step shrinks below `min_step` before
+    reaching the target.
+    """
+    total_span = target_value - baseline_value
+    if min_step is None:
+        min_step = max(abs(total_span) * 1e-4, 1e-9)
+    direction = 1.0 if total_span >= 0 else -1.0
+
+    line[var_name] = baseline_value
+    value = baseline_value
+    p_co = line.find_closed_orbit()
+
+    step = abs(total_span)
+    while value != target_value:
+        next_value = value + direction * min(step, abs(target_value - value))
+        line[var_name] = next_value
+        try:
+            p_co_next = line.find_closed_orbit(co_guess=p_co)
+        except ClosedOrbitSearchError:
+            step /= shrink_factor
+            if step < min_step:
+                line[var_name] = value
+                raise ClosedOrbitSearchError(
+                    f"Closed-orbit continuation on {var_name!r} stalled at "
+                    f"{value:g} (target {target_value:g}, baseline "
+                    f"{baseline_value:g}): step shrank below "
+                    f"min_step={min_step:g}."
+                ) from None
+            continue
+        p_co = p_co_next
+        value = next_value
+        if verbose:
+            print(f"    co continuation: {var_name}={value:g} OK (step={step:g})")
+        step = min(step * growth_factor, abs(target_value - value))
+
+    return p_co
+
+
+def robust_twiss(
+    line,
+    *,
+    twiss_method: str = "twiss",
+    var_name: str = "sext_amp",
+    baseline_value: float = 1.0,
+    verbose: bool = True,
+    **twiss_kwargs,
+):
+    """`line.twiss(**twiss_kwargs)` with a closed-orbit continuation fallback.
+
+    Tries the requested twiss (or `twiss6d` etc., via `twiss_method`)
+    directly first, so the common case (`sext_amp` at or near its default of
+    1.0) pays no extra cost. If that raises `ClosedOrbitSearchError` (as it
+    does for large `sext_amp`, e.g. --sexamp 3000, where the true closed
+    orbit is too far from the zero-guess starting point for a direct Newton
+    search to converge), falls back to ramping `var_name` from
+    `baseline_value` up to its current value on the line via
+    `_continue_closed_orbit`, then retries the twiss using the converged
+    orbit as `co_guess`.
+
+    Only ramps `var_name` if it is an actual knob on `line` -- e.g. the
+    VariableSolenoid lattice has no `sext_amp` knob at all, in which case
+    the original error is re-raised unchanged.
+    """
+    twiss_fn = getattr(line, twiss_method)
+    try:
+        return twiss_fn(**twiss_kwargs)
+    except ClosedOrbitSearchError:
+        if var_name not in line.vars:
+            raise
+        target_value = float(line.vars[var_name]._value)
+        if verbose:
+            print(
+                f"  twiss() failed to find closed orbit at "
+                f"{var_name}={target_value:g}; retrying via continuation "
+                f"from {var_name}={baseline_value:g} ..."
+            )
+        p_co = _continue_closed_orbit(
+            line,
+            var_name=var_name,
+            target_value=target_value,
+            baseline_value=baseline_value,
+            verbose=verbose,
+        )
+        return twiss_fn(co_guess=p_co, **twiss_kwargs)

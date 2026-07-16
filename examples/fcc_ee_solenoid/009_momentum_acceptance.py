@@ -10,6 +10,7 @@ from aperture_grid import initial_conditions_grid
 from aperture_study_io import save_ma_study, variant_suffix
 from lattice_knobs import (
     install_extra_sextupole,
+    robust_twiss,
     set_lattice_knobs,
     set_solenoid_offset,
 )
@@ -159,7 +160,10 @@ def _run_momentum_acceptance(
 
     line.discard_tracker()
     line.build_tracker()
-    line.twiss()
+    # robust_twiss falls back to a co-guess continuation (ramping sext_amp
+    # from 1.0) if the direct closed-orbit search fails, e.g. for large
+    # --sexamp values -- see lattice_knobs.robust_twiss.
+    tw_co = robust_twiss(line)
 
     tt_init = initial_conditions_grid(
         study="MA",
@@ -178,6 +182,7 @@ def _run_momentum_acceptance(
         delta=tt_init.delta_init,
         x_norm=tt_init.x_normalized,
         y_norm=tt_init.y_normalized,
+        particle_on_co=tw_co.particle_on_co,
     )
 
     line.discard_tracker()

@@ -10,6 +10,7 @@ import xtrack as xt
 from aperture_study_io import save_da_study, variant_suffix
 from lattice_knobs import (
     install_extra_sextupole,
+    robust_twiss,
     set_lattice_knobs,
     set_solenoid_offset,
 )
@@ -82,7 +83,10 @@ DEFAULT_DA_CASE_NAMES = [name for name in DA_CASES_BY_NAME if name != "sb_off"]
 
 
 def _compute_beam_sizes(line):
-    tw = line.twiss()
+    # robust_twiss falls back to a co-guess continuation (ramping sext_amp
+    # from 1.0) if the direct closed-orbit search fails, e.g. for large
+    # --sexamp values -- see lattice_knobs.robust_twiss.
+    tw = robust_twiss(line)
     beta_x = tw["betx"][0]
     beta_y = tw["bety"][0]
     beta0, gamma0 = float(tw["beta0"]), float(tw["gamma0"])
@@ -90,7 +94,7 @@ def _compute_beam_sizes(line):
     geom_emitt_y = NEMITT_Y / (beta0 * gamma0)
     sigma_x = np.sqrt(beta_x * geom_emitt_x)
     sigma_y = np.sqrt(beta_y * geom_emitt_y)
-    return sigma_x, sigma_y
+    return sigma_x, sigma_y, tw
 
 
 def _build_da_initial_conditions(*, nn_y_r, nn_x_theta):
@@ -199,7 +203,7 @@ def _run_dynamic_aperture(
 
     line.discard_tracker()
     line.build_tracker()
-    sigma_x, sigma_y = _compute_beam_sizes(line)
+    sigma_x, sigma_y, tw_co = _compute_beam_sizes(line)
     print(
         f"Beam sizes at start: sigma_x={sigma_x*1e6:.3f} um, "
         f"sigma_y={sigma_y*1e6:.3f} um "
@@ -225,6 +229,7 @@ def _run_dynamic_aperture(
         y_norm=tt_init.y_normalized,
         px_norm=0,
         py_norm=0,
+        particle_on_co=tw_co.particle_on_co,
     )
 
     line.discard_tracker()
