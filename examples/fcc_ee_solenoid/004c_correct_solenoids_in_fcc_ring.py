@@ -390,6 +390,7 @@ for ip_name in IP_NAMES:
         init_at=ip_name,
         start=name_start,
         end=name_end,
+        n_steps_max=100,
         vary=xt.VaryList(k1s_knobs, step=1e-6),
         targets=[
             xt.TargetSet(betx2=0, bety1=0, at=xt.START, tol=5e-5),

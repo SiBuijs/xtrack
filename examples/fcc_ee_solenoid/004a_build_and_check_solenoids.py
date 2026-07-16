@@ -14,6 +14,16 @@ from spline_boris_setup import (
     smooth_edge_taper,
     symplectic_error,
 )
+from solenoid_params import (
+    COMP_SOLENOID_A,
+    COMP_SOLENOID_B0,
+    COMP_SOLENOID_DISTANCE_FROM_IP,
+    COMP_SOLENOID_LENGTH,
+    MAIN_SOLENOID_A,
+    MAIN_SOLENOID_B0,
+    MAIN_SOLENOID_HALF_LENGTH,
+    THETA,
+)
 from tilted_solenoid import TiltedSolenoid
 from xtrack._temp.boris_and_solenoid_map.solenoid_field import SolenoidField
 from xtrack.beam_elements.splineboris_src.spline_B_field_eval_python import (
@@ -24,7 +34,6 @@ from xtrack.beam_elements.splineboris_src.spline_B_field_eval_python import (
 HERE = Path(__file__).parent
 OUTPUT_LINES_JSON = HERE / '004_solenoid_lines.json'
 
-THETA = -0.015
 PARTICLE = 'positron'
 ENERGY0 = 45.6e9
 
@@ -67,7 +76,6 @@ BETY = 0.0007
 
 MAIN_SOLENOID_S_AXIS = np.linspace(-2.399, 2.399, 201)
 COMP_SOLENOID_S_AXIS = np.linspace(-1.0, 1.0, 201)
-COMP_SOLENOID_DISTANCE_FROM_IP = 12.0
 
 assert MAX_TRANSVERSE_DERIVATIVE_ORDER_FOR_SPLINE <= xt.SplineBoris._SB_MAX_MULTIPOLE_ORDER - 1
 assert MAX_TRANSVERSE_DERIVATIVE_ORDER <= 5
@@ -260,8 +268,11 @@ def compute_field_mixed_derivative(
 
 
 # Build the two physical solenoid models and extract the tapered field data.
-main_field_model = TiltedSolenoid(L=1.23 * 2, a=0.13, B0=3.0, theta=THETA)
-comp_field_model = SolenoidField(L=1.5, a=0.03, B0=1.0, z0=0.0)
+main_field_model = TiltedSolenoid(
+    L=MAIN_SOLENOID_HALF_LENGTH * 2, a=MAIN_SOLENOID_A, B0=MAIN_SOLENOID_B0,
+    theta=THETA)
+comp_field_model = SolenoidField(
+    L=COMP_SOLENOID_LENGTH, a=COMP_SOLENOID_A, B0=COMP_SOLENOID_B0, z0=0.0)
 
 field_extraction_kwargs = {
     'max_transverse_derivative_order': MAX_TRANSVERSE_DERIVATIVE_ORDER,

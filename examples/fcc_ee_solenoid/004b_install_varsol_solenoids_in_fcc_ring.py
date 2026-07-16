@@ -3,6 +3,14 @@ from pathlib import Path
 import numpy as np
 import xtrack as xt
 
+from solenoid_params import (
+    COMP_SOLENOID_DISTANCE_FROM_IP,
+    COMPENSATION_CORRECTOR_LENGTH,
+    COMPENSATION_CORRECTOR_MARKER_DS,
+    MAIN_SOLENOID_CORRECTOR_DS_END,
+    MAIN_SOLENOID_CORRECTOR_DS_START,
+)
+
 
 HERE = Path(__file__).parent
 INPUT_LATTICE_JSON = HERE / 'fccee_z_lcc.json'
@@ -10,12 +18,6 @@ INPUT_SOLENOID_LINES_JSON = HERE / '004_solenoid_lines.json'
 OUTPUT_LATTICE_JSON = HERE / 'temp_fcc_ee_lcc_varsol_solenoids.json'
 
 IP_NAMES = ['ipa', 'ipd', 'ipg', 'ipj']
-
-COMP_SOLENOID_DISTANCE_FROM_IP = 12.0
-MAIN_SOLENOID_CORRECTOR_DS_START = 1.23
-MAIN_SOLENOID_CORRECTOR_DS_END = 2.29
-COMPENSATION_CORRECTOR_MARKER_DS = 11.95
-COMPENSATION_CORRECTOR_LENGTH = 1.0
 
 SOLENOID_INSERTION_S_TOL = 1e-8
 
