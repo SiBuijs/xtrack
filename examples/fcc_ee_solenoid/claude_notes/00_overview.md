@@ -150,6 +150,11 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   to probe whether the detector solenoid's x-y coupling is genuinely small or
   a fragile cancellation, plus raw-coupling and phase-advance (`dmux`/`dmuy`)
   scan findings.
+- `05_spin_polarization.md` — `015_spin_polarization.py`: radiative
+  spin-polarization buildup/depolarization study (Sokolov-Ternov `P_inf`/
+  `tau_pol` from Twiss `polarization_analysis=True`, `tau_depol` from a
+  linear fit of tracked polarization decay), structurally a sibling of
+  `014_emittance_evolution.py`. Not part of the 000-014 pipeline numbering.
 
 Removed 2026-07-15: the `kill_higher_order_{upstream,downstream}_{ip}` knob
 (zeroed sextupole-and-above multipole content for one half of one IP's main

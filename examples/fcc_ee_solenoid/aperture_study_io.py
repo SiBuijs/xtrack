@@ -13,7 +13,7 @@ DATA_DIR = HERE / "data"
 PLOT_DIR = Path.home() / "cernbox" / "Pictures" / "FCC_Solenoid_Studies"
 
 ModelTag = Literal["SB", "VarSol"]
-StudyTag = Literal["DA", "MA", "EMIT"]
+StudyTag = Literal["DA", "MA", "EMIT", "POL"]
 
 BUILD_DEFAULTS = {
     "sexamp": 1.0,
@@ -317,6 +317,79 @@ def save_emitt_study(
     npz_path = _study_npz_path(stem)
     np.savez(npz_path, **arrays)
     print(f"Saved EMIT data: {npz_path}")
+
+    pdf_path = save_figure_pdf(fig, stem)
+    return npz_path, pdf_path
+
+
+def save_pol_study(
+    *,
+    fig: plt.Figure,
+    model: ModelTag,
+    with_solenoids: bool,
+    with_correctors: bool,
+    n_turns: int,
+    global_xy_limit: float,
+    n_part: int,
+    turns: np.ndarray,
+    spin_x_mean: np.ndarray,
+    spin_y_mean: np.ndarray,
+    spin_z_mean: np.ndarray,
+    polarization: np.ndarray,
+    p_inf: float,
+    p_eq_twiss: float,
+    tau_pol_s: float,
+    tau_depol_twiss_s: float,
+    spin_tune_fractional: float,
+    t_rev0: float,
+    fit_p0: float,
+    fit_slope: float,
+    fit_tau_depol_turns: float,
+    fit_tau_depol_s: float,
+    p_eq_derived: float,
+    variant: str = "",
+    sexamp: float = BUILD_DEFAULTS["sexamp"],
+) -> tuple[Path, Path]:
+    stem = make_study_stem(
+        "POL",
+        with_solenoids=with_solenoids,
+        with_correctors=with_correctors,
+        model=model,
+        n_part=n_part,
+        n_turns=n_turns,
+        global_xy_limit=global_xy_limit,
+        variant=variant,
+    )
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+    arrays = dict(
+        turns=np.asarray(turns),
+        spin_x_mean=np.asarray(spin_x_mean),
+        spin_y_mean=np.asarray(spin_y_mean),
+        spin_z_mean=np.asarray(spin_z_mean),
+        polarization=np.asarray(polarization),
+        p_inf=float(p_inf),
+        p_eq_twiss=float(p_eq_twiss),
+        tau_pol_s=float(tau_pol_s),
+        tau_depol_twiss_s=float(tau_depol_twiss_s),
+        spin_tune_fractional=float(spin_tune_fractional),
+        t_rev0=float(t_rev0),
+        fit_p0=float(fit_p0),
+        fit_slope=float(fit_slope),
+        fit_tau_depol_turns=float(fit_tau_depol_turns),
+        fit_tau_depol_s=float(fit_tau_depol_s),
+        p_eq_derived=float(p_eq_derived),
+        n_part=int(n_part),
+        n_turns=int(n_turns),
+        global_xy_limit=float(global_xy_limit),
+        with_solenoids=with_solenoids,
+        with_correctors=with_correctors,
+        model=model,
+        sexamp=float(sexamp),
+    )
+    npz_path = _study_npz_path(stem)
+    np.savez(npz_path, **arrays)
+    print(f"Saved POL data: {npz_path}")
 
     pdf_path = save_figure_pdf(fig, stem)
     return npz_path, pdf_path
