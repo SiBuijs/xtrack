@@ -403,12 +403,17 @@ for ip_name in IP_NAMES:
             xt.TargetSet(dpy=0, at=xt.END, tol=1e-7),
         ])
 
-    opt_coupling.solve()
+    # The coupling knob has ~80 skew-quad vary knobs but only 8 targets, so
+    # the Jacobian is heavily rank-deficient; with the default rcond the
+    # pseudo-inverse chases numerically-noisy near-null directions and the
+    # solve stalls/oscillates instead of converging (seen after the main
+    # solenoid was raised to 3 T). Truncating small singular values fixes it.
+    opt_coupling.solve(rcond=3e-3)
 
     # Iterate to improve consistency of orbit and optics corrections.
     opt_orbit.solve()
     opt_optics.solve()
-    opt_coupling.solve()
+    opt_coupling.solve(rcond=3e-3)
     opt_orbit.solve()
     opt_optics.solve()
 
