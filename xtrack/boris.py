@@ -7,8 +7,10 @@ class BorisSpatialIntegrator:
 
     isthick = True
 
-    def __init__(self, fieldmap_callable, s_start, s_end, n_steps, verbose=False):
+    def __init__(self, fieldmap_callable, s_start, s_end, n_steps,
+                 vector_potential_callable=None, verbose=False):
         self.fieldmap_callable = fieldmap_callable
+        self.vector_potential_callable = vector_potential_callable
         self.s_start = s_start
         self.s_end = s_end
         self.ds = (s_end - s_start) / n_steps
@@ -16,6 +18,17 @@ class BorisSpatialIntegrator:
         self.verbose = verbose
         self.length = s_end - s_start
         self.log_trajectories = False
+
+    def _shift_canonical_kinetic(self, p, mask_alive, sign):
+        # canonical_p = kinetic_p + q*A/P0 (xtrack convention, see
+        # track_magnet.template.h: kin_px = px - ax). sign=-1 converts
+        # canonical (as stored in p.px, p.py) to kinetic; sign=+1 converts back.
+        Ax, Ay, _ = self.vector_potential_callable(
+            p.x[mask_alive], p.y[mask_alive], p.s[mask_alive])
+        charge_coulomb = p.charge[mask_alive] * qe
+        P0 = p.p0c[mask_alive] * qe / clight
+        p.px[mask_alive] += sign * charge_coulomb * Ax / P0
+        p.py[mask_alive] += sign * charge_coulomb * Ay / P0
 
     def track(self, p):
 
@@ -28,6 +41,9 @@ class BorisSpatialIntegrator:
 
         s_in = p.s[mask_alive].copy()
         p.s[mask_alive] = self.s_start
+
+        if self.vector_potential_callable is not None:
+            self._shift_canonical_kinetic(p, mask_alive, sign=-1)
 
         for ii in range(self.n_steps):
 
@@ -75,6 +91,10 @@ class BorisSpatialIntegrator:
                 x_log.append(p.x.copy())
                 y_log.append(p.y.copy())
                 z_log.append(p.s.copy())
+
+        if self.vector_potential_callable is not None:
+            self._shift_canonical_kinetic(p, mask_alive, sign=+1)
+
         p.s[mask_alive] = s_in + self.length
 
         if self.log_trajectories:

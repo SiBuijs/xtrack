@@ -68,4 +68,18 @@ plt.xlabel('Number of steps')
 plt.ylabel('Deviation from unity on the determinant of R')
 plt.legend()
 
+s_field = np.linspace(0, sf.s4, 2001)
+x_field = p0.x[0] * np.ones_like(s_field)
+y_field = p0.y[0] * np.ones_like(s_field)
+Bx_field, By_field, Bz_field = sf.get_field(x_field, y_field, s_field)
+
+fig4 = plt.figure(4, figsize=(6.4, 4.8))
+plt.plot(s_field, Bx_field, label=r'$B_x$')
+plt.plot(s_field, By_field, label=r'$B_y$')
+plt.plot(s_field, Bz_field, label=r'$B_z$')
+plt.xlabel('s (m)')
+plt.ylabel('B (T)')
+plt.title(f'Field seen at x={p0.x[0]*1e3:.1f} mm, y={p0.y[0]*1e3:.1f} mm')
+plt.legend()
+
 plt.show()

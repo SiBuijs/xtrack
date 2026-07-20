@@ -81,6 +81,51 @@ class SolenoidField:
 
         return Bx, By, Bz
 
+    def get_vector_potential(self, x, y, z, n_quad=200):
+        """
+        Vector potential of the finite circular solenoid (purely azimuthal,
+        Az=0), from Hampton et al. (2020), Appendix C, Eq. (C26)/(C31),
+        evaluated via Gauss-Legendre quadrature over the source angle theta_s.
+        """
+
+        a = self.a
+        B0 = self.B0
+        z0 = self.z0
+        L = self.L
+
+        x = np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+        z = np.asarray(z, dtype=float)
+
+        r = np.sqrt(x**2 + y**2)
+
+        zeta_plus = z - z0 + L / 2
+        zeta_minus = z - z0 - L / 2
+
+        nodes, weights = np.polynomial.legendre.leggauss(n_quad)
+        theta_s = 0.5 * np.pi * (nodes + 1)  # map [-1, 1] -> [0, pi]
+        w = 0.5 * np.pi * weights
+        cos_theta_s = np.cos(theta_s)
+
+        a2r2_minus_cross = a**2 + r[..., None]**2 - 2 * a * r[..., None] * cos_theta_s
+
+        def log_term(zeta):
+            zeta_b = zeta[..., None]
+            return np.log(zeta_b + np.sqrt(zeta_b**2 + a2r2_minus_cross))
+
+        integrand = (log_term(zeta_plus) - log_term(zeta_minus)) * cos_theta_s
+        Atheta = (B0 * a / (2 * np.pi)) * np.sum(integrand * w, axis=-1)
+
+        Ax = 0 * x
+        Ay = 0 * y
+        Az = 0 * z
+
+        mask_r_nonzero = r > 1e-11
+        Ax[mask_r_nonzero] = -Atheta[mask_r_nonzero] * y[mask_r_nonzero] / r[mask_r_nonzero]
+        Ay[mask_r_nonzero] = Atheta[mask_r_nonzero] * x[mask_r_nonzero] / r[mask_r_nonzero]
+
+        return Ax, Ay, Az
+
     @staticmethod
     def finite_difference_coefficients(offsets, derivative_order):
         offsets = np.asarray(offsets, dtype=float)
