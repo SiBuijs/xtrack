@@ -27,6 +27,12 @@ in this directory for what's changed since 2026-07-20.
   has a field-component plot (`fig4`: Bx,By,Bz vs s at the tracked particle's
   transverse offset).
 - `005_study_symplectic_error.py` — see below; still evolving.
+- `006_check_boris_corrected.py` — tests a `g(theta)=(theta/2)cot(theta/2)`
+  drift/kick-rescaling hypothesis (new `xtrack.BorisSpatialCorrected`
+  class) against plain `BorisSpatialIntegrator`; see
+  `02_g_theta_correction_hypothesis.md` — **result: hypothesis not
+  supported**, corrected version's symplectic error came out ~2-3x larger,
+  same `1/n_steps²` order.
 
 ## 005: symplectic-error study — current state and findings
 

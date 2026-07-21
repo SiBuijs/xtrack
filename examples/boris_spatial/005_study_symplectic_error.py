@@ -16,7 +16,7 @@ s_end = 30
 
 S = xt.linear_normal_form.S
 
-n_steps_vect = [200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000]
+n_steps_vect = [200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000]
 
 sympl_error_boris = []
 sympl_error_boris_corrected = []

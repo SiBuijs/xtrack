@@ -49,7 +49,7 @@ from .loss_location_refinement import _skip_in_loss_location_refinement
 from .trajectory_correction import TrajectoryCorrection
 from . import json
 from .load import load, load_madx_lattice
-from .boris import BorisSpatialIntegrator
+from .boris import BorisSpatialIntegrator, BorisSpatialCorrected
 
 from .multiline import Multiline
 
