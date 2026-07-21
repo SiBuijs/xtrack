@@ -7,6 +7,7 @@
 
 #include "xtrack/headers/track.h"
 #include "xtrack/beam_elements/splineboris_src/spline_B_field_eval.h" // evaluate_B for Bx, By, Bs (scalar version)
+#include "xtrack/beam_elements/splineboris_src/spline_A_field_eval.h" // evaluate_A for Ax, Ay, As (canonical/kinetic px,py conversion)
 #include "xtrack/beam_elements/elements_src/track_magnet_kick.h"
 #ifndef XTRACK_MULTIPOLE_NO_SYNRAD
 // Forward declarations for random functions needed by synrad_spectrum.h
@@ -95,6 +96,24 @@ void SplineBoris_single_particle(
     // Local s coordinate for stepping through the element.
     // Backtracking traverses the same field map from L to 0.
     double s_local = backtrack ? L : 0.0;
+
+    // ----------------------------------------------------------------------
+    //  Canonical -> kinetic momentum conversion at the entry face.
+    //  LocalParticle's px, py are canonical (canonical = kinetic + q*A/P0,
+    //  see track_magnet.template.h: kin_px = px - ax), but the leapfrog
+    //  loop below integrates Newton's law directly and needs kinetic
+    //  momentum throughout. Converted back to canonical at the exit face
+    //  below -- this is a one-time bookkeeping shift at the boundary, not
+    //  a per-step correction (mirrors BorisSpatialIntegrator's
+    //  _shift_canonical_kinetic in boris.py).
+    // ----------------------------------------------------------------------
+    {
+        double Ax_entry, Ay_entry, As_entry;
+        evaluate_A(x - shift_x, y - shift_y, s_local, bs, by, bx, L, multipole_order,
+                   &Ax_entry, &Ay_entry, &As_entry);
+        px -= q_coulomb * scale_b * Ax_entry;
+        py -= q_coulomb * scale_b * Ay_entry;
+    }
 
     #ifndef XTRACK_MULTIPOLE_NO_SYNRAD
     // Variables for radiation tracking (if needed)
@@ -326,6 +345,18 @@ void SplineBoris_single_particle(
             );
         }
         #endif
+    }
+
+    // ----------------------------------------------------------------------
+    //  Kinetic -> canonical momentum conversion at the exit face (undoes
+    //  the entry-face shift above; see the comment there).
+    // ----------------------------------------------------------------------
+    {
+        double Ax_exit, Ay_exit, As_exit;
+        evaluate_A(x - shift_x, y - shift_y, s_local, bs, by, bx, L, multipole_order,
+                   &Ax_exit, &Ay_exit, &As_exit);
+        px += q_coulomb * scale_b * Ax_exit;
+        py += q_coulomb * scale_b * Ay_exit;
     }
 
     // ------------------------------------------------------------------

@@ -13,6 +13,7 @@ from xtrack._temp.boris_and_solenoid_map.solenoid_field import SolenoidField
 from xtrack._temp.splineboris.field_fitter import FieldFitter
 from xtrack._temp.splineboris.splineboris_sequence import SplineBorisSequence
 from xtrack.beam_elements.splineboris_src.spline_B_field_eval_python import evaluate_B
+from xtrack.beam_elements.splineboris_src.spline_A_field_eval_python import evaluate_A
 
 FIT_PARS_INDEX_COLS = [
     "field_component",
@@ -92,6 +93,28 @@ def make_segment_field():
                                     multipole_order_local)
             return Bx, By, Bs
         return field
+    return _make
+
+@pytest.fixture(scope="module")
+def make_segment_vector_potential():
+    # Companion to make_segment_field: builds the vector potential A(x, y, z) for
+    # the same Hermite segment, so a BorisSpatialIntegrator reference can be given
+    # vector_potential_callable= and match SplineBoris's own canonical/kinetic
+    # momentum conversion at each segment's boundary (see track_splineboris.h).
+    def _make(bs, by, bx, L, multipole_order_local, s_start=0.0):
+        bs_arr = np.asarray(bs, dtype=float).tolist()
+        B_norm_list = [np.asarray(b, dtype=float).tolist() for b in by]
+        B_skew_list = [np.asarray(b, dtype=float).tolist() for b in bx]
+        def vector_potential(x, y, z):
+            s_loc = z - s_start
+            Ax, Ay, As = evaluate_A(x, y, s_loc,
+                                    bs_arr,
+                                    B_norm_list,
+                                    B_skew_list,
+                                    L,
+                                    multipole_order_local)
+            return Ax, Ay, As
+        return vector_potential
     return _make
 
 @pytest.fixture(scope="module")
@@ -861,7 +884,8 @@ def test_splineboris_solenoid_vs_variable_solenoid(solenoid_field, solenoid_vs_v
 
 
 
-def test_splineboris_undulator_vs_boris_spatial(undulator_fit_pars_df, make_segment_field):
+def test_splineboris_undulator_vs_boris_spatial(undulator_fit_pars_df, make_segment_field,
+                                                  make_segment_vector_potential):
     """
     Build a lightweight undulator from spline-fit parameters using SplineBorisSequence
     and check that tracking with SplineBoris and BorisSpatialIntegrator gives consistent
@@ -920,6 +944,14 @@ def test_splineboris_undulator_vs_boris_spatial(undulator_fit_pars_df, make_segm
             multipole_order,
             s_start=float(s_start),
         )
+        vecpot_i = make_segment_vector_potential(
+            bs,
+            by,
+            bx,
+            L,
+            multipole_order,
+            s_start=float(s_start),
+        )
 
         boris_elems.append(
             xt.BorisSpatialIntegrator(
@@ -927,6 +959,7 @@ def test_splineboris_undulator_vs_boris_spatial(undulator_fit_pars_df, make_segm
                 s_start=float(s_start),
                 s_end=float(s_end),
                 n_steps=int(elem.n_steps),
+                vector_potential_callable=vecpot_i,
             )
         )
 
@@ -953,7 +986,8 @@ def test_splineboris_undulator_vs_boris_spatial(undulator_fit_pars_df, make_segm
 
 
 
-def test_splineboris_rotated_undulator_vs_boris_spatial(undulator_rotated_fit_pars_df, undulator_fit_pars_df, make_segment_field):
+def test_splineboris_rotated_undulator_vs_boris_spatial(undulator_rotated_fit_pars_df, undulator_fit_pars_df,
+                                                          make_segment_field, make_segment_vector_potential):
     '''
     Rotate the field map by 90 degrees and check that the fit parameters obey the rotation rule:
     Bx_rotated == By_original,
@@ -1041,6 +1075,14 @@ def test_splineboris_rotated_undulator_vs_boris_spatial(undulator_rotated_fit_pa
             multipole_order,
             s_start=float(s_start),
         )
+        vecpot_i = make_segment_vector_potential(
+            bs,
+            by,
+            bx,
+            L,
+            multipole_order,
+            s_start=float(s_start),
+        )
 
         boris_elems.append(
             xt.BorisSpatialIntegrator(
@@ -1048,6 +1090,7 @@ def test_splineboris_rotated_undulator_vs_boris_spatial(undulator_rotated_fit_pa
                 s_start=float(s_start),
                 s_end=float(s_end),
                 n_steps=int(elem.n_steps),
+                vector_potential_callable=vecpot_i,
             )
         )
 
