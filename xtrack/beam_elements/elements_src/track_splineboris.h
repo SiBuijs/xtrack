@@ -140,12 +140,12 @@ void SplineBoris_single_particle(
         // Save state for radiation tracking
         #ifndef XTRACK_MULTIPOLE_NO_SYNRAD
         if (radiation_flag && ds > 0) {
-            // Get kinetic momenta (px/py minus ax/ay)
-            // Convert physical momenta back to dimensionless, then subtract ax/ay
-            double ax_old = LocalParticle_get_ax(part);
-            double ay_old = LocalParticle_get_ay(part);
-            old_kin_px = (px / P0) - ax_old;
-            old_kin_py = (py / P0) - ay_old;
+            // px/py are already kinetic here (converted at the entry face,
+            // see the canonical->kinetic conversion above); just rescale to
+            // dimensionless units. Do NOT subtract ax/ay again -- that would
+            // apply this element's own vector-potential shift twice.
+            old_kin_px = px / P0;
+            old_kin_py = py / P0;
         }
         #endif
 
@@ -313,12 +313,10 @@ void SplineBoris_single_particle(
         
         // Track radiation over this step
         if (radiation_flag && ds > 0) {
-            // Get new kinetic momenta (px/py minus ax/ay)
-            // Convert physical momenta back to dimensionless, then subtract ax/ay
-            double ax_new = LocalParticle_get_ax(part);
-            double ay_new = LocalParticle_get_ay(part);
-            double new_kin_px = (px / P0) - ax_new;
-            double new_kin_py = (py / P0) - ay_new;
+            // px/py are already kinetic here (see comment above); just
+            // rescale to dimensionless units, don't subtract ax/ay again.
+            double new_kin_px = px / P0;
+            double new_kin_py = py / P0;
             
             // Compute mean kinetic momenta for radiation computation
             // Note: Bx, By, Bs are already evaluated at midpoint (xh, yh) by the Boris algorithm

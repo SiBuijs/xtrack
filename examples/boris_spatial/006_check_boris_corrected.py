@@ -82,7 +82,7 @@ x_ref, y_ref, z_ref, _, _ = rk4_track(
     s_end, n_steps_rk4_ref, sf.get_field)
 print(f'RK4 reference (n_steps={n_steps_rk4_ref}): x={x_ref:.9e}  y={y_ref:.9e}')
 
-n_steps_vect = [200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000]
+n_steps_vect = [200, 500, 1000, 2000, 5000, 10000, 20000, 50000]
 
 sympl_error_boris = []
 sympl_error_boris_corrected = []
