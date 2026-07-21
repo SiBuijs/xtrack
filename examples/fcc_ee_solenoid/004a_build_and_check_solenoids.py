@@ -19,6 +19,7 @@ from solenoid_params import (
     COMP_SOLENOID_B0,
     COMP_SOLENOID_DISTANCE_FROM_IP,
     COMP_SOLENOID_LENGTH,
+    FIELD_TAG,
     MAIN_SOLENOID_A,
     MAIN_SOLENOID_B0,
     MAIN_SOLENOID_HALF_LENGTH,
@@ -32,7 +33,7 @@ from xtrack.beam_elements.splineboris_src.spline_B_field_eval_python import (
 
 
 HERE = Path(__file__).parent
-OUTPUT_LINES_JSON = HERE / '004_solenoid_lines.json'
+OUTPUT_LINES_JSON = HERE / f'004_solenoid_lines_{FIELD_TAG}.json'
 
 PARTICLE = 'positron'
 ENERGY0 = 45.6e9

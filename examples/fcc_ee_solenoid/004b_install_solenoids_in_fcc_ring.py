@@ -8,6 +8,7 @@ from solenoid_params import (
     COMP_SOLENOID_DISTANCE_FROM_IP,
     COMPENSATION_CORRECTOR_LENGTH,
     COMPENSATION_CORRECTOR_MARKER_DS,
+    FIELD_TAG,
     MAIN_SOLENOID_CORRECTOR_DS_END,
     MAIN_SOLENOID_CORRECTOR_DS_START,
 )
@@ -15,8 +16,8 @@ from solenoid_params import (
 
 HERE = Path(__file__).parent
 INPUT_LATTICE_JSON = HERE / 'fccee_z_lcc.json'
-INPUT_SOLENOID_LINES_JSON = HERE / '004_solenoid_lines.json'
-OUTPUT_LATTICE_JSON = HERE / 'temp_fcc_ee_lcc_splineboris_solenoids.json'
+INPUT_SOLENOID_LINES_JSON = HERE / f'004_solenoid_lines_{FIELD_TAG}.json'
+OUTPUT_LATTICE_JSON = HERE / f'temp_fcc_ee_lcc_splineboris_solenoids_{FIELD_TAG}.json'
 
 IP_NAMES = ['ipa', 'ipd', 'ipg', 'ipj']
 

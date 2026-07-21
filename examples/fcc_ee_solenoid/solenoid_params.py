@@ -43,3 +43,16 @@ MAIN_SOLENOID_CORRECTOR_DS_END = 2.29
 # correctors [m], and the (thin, isthick=False) corrector length [m].
 COMPENSATION_CORRECTOR_MARKER_DS = 11.95
 COMPENSATION_CORRECTOR_LENGTH = 1.0
+
+
+def field_tag(b0: float = MAIN_SOLENOID_B0) -> str:
+    """Filename-safe tag for a main-solenoid field strength, e.g. 3.0 -> '3T'."""
+    text = f"{b0:g}".replace(".", "p").replace("-", "m")
+    return f"{text}T"
+
+
+# Tag identifying the main-solenoid field strength (MAIN_SOLENOID_B0) this
+# module is currently configured for. Threaded into filenames across the
+# 004a-004d/009-015 pipeline and aperture_study_io.py so lattices/studies
+# built at different field strengths don't silently overwrite each other.
+FIELD_TAG = field_tag()

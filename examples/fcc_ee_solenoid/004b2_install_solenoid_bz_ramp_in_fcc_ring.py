@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import xtrack as xt
 
+from solenoid_params import FIELD_TAG
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--ramp-amp', type=float, default=0.2)
 parser.add_argument('--no-plot', action='store_true')
@@ -19,11 +21,11 @@ args = parser.parse_args()
 
 HERE = Path(__file__).parent
 INPUT_LATTICE_JSON = HERE / 'fccee_z_lcc.json'
-INPUT_SOLENOID_LINES_JSON = HERE / '004_solenoid_lines.json'
+INPUT_SOLENOID_LINES_JSON = HERE / f'004_solenoid_lines_{FIELD_TAG}.json'
 INPUT_SOLENOID_LINES_BZ_RAMP_JSON = (
-    HERE / f'004_solenoid_lines_bz_ramp_{args.ramp_amp:g}.json')
+    HERE / f'004_solenoid_lines_{FIELD_TAG}_bz_ramp_{args.ramp_amp:g}.json')
 OUTPUT_LATTICE_JSON = (
-    HERE / f'temp_fcc_ee_lcc_splineboris_solenoids_bz_ramp_{args.ramp_amp:g}.json')
+    HERE / f'temp_fcc_ee_lcc_splineboris_solenoids_{FIELD_TAG}_bz_ramp_{args.ramp_amp:g}.json')
 
 IP_NAMES = ['ipa', 'ipd', 'ipg', 'ipj']
 RAMP_IP_NAME = 'ipg'

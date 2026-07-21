@@ -8,6 +8,8 @@ from typing import Any, Literal
 import matplotlib.pyplot as plt
 import numpy as np
 
+from solenoid_params import FIELD_TAG
+
 HERE = Path(__file__).resolve().parent
 DATA_DIR = HERE / "data"
 PLOT_DIR = Path.home() / "cernbox" / "Pictures" / "FCC_Solenoid_Studies"
@@ -78,7 +80,7 @@ def make_basename(
     if with_solenoids and not with_correctors:
         sol += "_Cor_Off"
     return (
-        f"{sol}_{model}_{n_part}p_{n_turns}t_"
+        f"{sol}_{model}_{FIELD_TAG}_{n_part}p_{n_turns}t_"
         f"{global_xy_limit_tag(global_xy_limit)}{variant}"
     )
 

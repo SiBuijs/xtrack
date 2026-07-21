@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import xtrack as xt
 
+from solenoid_params import FIELD_TAG
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-show', action='store_true',
                      help='Save the plot but do not open an interactive window.')
@@ -67,7 +69,7 @@ def raw_coupling(path):
 results = {}
 for ramp_amp in RAMP_AMPS:
     if ramp_amp == 0.0:
-        path = HERE / 'temp_fcc_ee_lcc_splineboris_solenoids.json'
+        path = HERE / f'temp_fcc_ee_lcc_splineboris_solenoids_{FIELD_TAG}.json'
     else:
         subprocess.run(
             [sys.executable, '004a2_build_solenoid_bz_ramp.py',
@@ -77,7 +79,10 @@ for ramp_amp in RAMP_AMPS:
             [sys.executable, '004b2_install_solenoid_bz_ramp_in_fcc_ring.py',
              '--ramp-amp', str(ramp_amp), '--no-plot'],
             cwd=HERE, check=True, capture_output=True)
-        path = HERE / f'temp_fcc_ee_lcc_splineboris_solenoids_bz_ramp_{ramp_amp:g}.json'
+        path = (
+            HERE
+            / f'temp_fcc_ee_lcc_splineboris_solenoids_{FIELD_TAG}_bz_ramp_{ramp_amp:g}.json'
+        )
 
     metrics = raw_coupling(path)
     results[ramp_amp] = metrics

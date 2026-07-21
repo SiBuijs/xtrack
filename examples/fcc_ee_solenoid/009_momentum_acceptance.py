@@ -14,15 +14,16 @@ from lattice_knobs import (
     set_lattice_knobs,
     set_solenoid_offset,
 )
+from solenoid_params import FIELD_TAG
 
 plt.close("all")
 
 HERE = Path(__file__).resolve().parent
 SPLINEBORIS_LATTICE_JSON = (
-    HERE / "fccee_z_lcc_splineboris_solenoids_coupling_corrected.json"
+    HERE / f"fccee_z_lcc_splineboris_solenoids_coupling_corrected_{FIELD_TAG}.json"
 )
 VARSOL_LATTICE_JSON = (
-    HERE / "fccee_z_lcc_varsol_solenoids_coupling_corrected.json"
+    HERE / f"fccee_z_lcc_varsol_solenoids_coupling_corrected_{FIELD_TAG}.json"
 )
 
 NEMITT_X = 6.33e-5

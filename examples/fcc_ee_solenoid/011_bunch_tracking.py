@@ -6,6 +6,8 @@ import xobjects as xo
 import xpart as xp
 import xtrack as xt
 
+from solenoid_params import FIELD_TAG
+
 plt.close("all")
 
 HERE = Path(__file__).resolve().parent
@@ -13,7 +15,7 @@ HERE = Path(__file__).resolve().parent
 # (from 004b_install_solenoids_in_fcc_ring.py and
 # 004c_correct_solenoids_in_fcc_ring.py).
 INPUT_LATTICE_JSON = (
-    HERE / "fccee_z_lcc_splineboris_solenoids_coupling_corrected.json"
+    HERE / f"fccee_z_lcc_splineboris_solenoids_coupling_corrected_{FIELD_TAG}.json"
 )
 
 IP_NAMES = ["ipa", "ipd", "ipg", "ipj"]

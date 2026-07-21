@@ -33,15 +33,16 @@ import xtrack as xt
 
 from aperture_study_io import save_pol_study, variant_suffix
 from lattice_knobs import robust_twiss, set_lattice_knobs
+from solenoid_params import FIELD_TAG
 
 plt.close("all")
 
 HERE = Path(__file__).resolve().parent
 SPLINEBORIS_LATTICE_JSON = (
-    HERE / "fccee_z_lcc_splineboris_solenoids_coupling_corrected.json"
+    HERE / f"fccee_z_lcc_splineboris_solenoids_coupling_corrected_{FIELD_TAG}.json"
 )
 VARSOL_LATTICE_JSON = (
-    HERE / "fccee_z_lcc_varsol_solenoids_coupling_corrected.json"
+    HERE / f"fccee_z_lcc_varsol_solenoids_coupling_corrected_{FIELD_TAG}.json"
 )
 
 GLOBAL_XY_LIMIT = 1.0

@@ -26,6 +26,7 @@ import xtrack as xt
 
 from spline_boris_setup import build_splineboris_line, extract_tapered_field_data
 from bz_ramp_field import LinearBzRamp
+from solenoid_params import FIELD_TAG
 from tilted_solenoid import TiltedSolenoid
 
 parser = argparse.ArgumentParser()
@@ -33,9 +34,9 @@ parser.add_argument('--ramp-amp', type=float, default=0.2)
 args = parser.parse_args()
 
 HERE = Path(__file__).parent
-INPUT_LINES_JSON = HERE / '004_solenoid_lines.json'
+INPUT_LINES_JSON = HERE / f'004_solenoid_lines_{FIELD_TAG}.json'
 OUTPUT_LINES_JSON = (
-    HERE / f'004_solenoid_lines_bz_ramp_{args.ramp_amp:g}.json')
+    HERE / f'004_solenoid_lines_{FIELD_TAG}_bz_ramp_{args.ramp_amp:g}.json')
 
 # --- Must match 004a_build_and_check_solenoids.py exactly, or the coefficient
 # addition below is no longer equivalent to fitting the summed field once. ---

@@ -4,9 +4,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import xtrack as xt
 
+from solenoid_params import FIELD_TAG
+
 
 HERE = Path(__file__).parent
-INPUT_LATTICE_JSON = HERE / 'fccee_z_lcc_splineboris_solenoids_coupling_corrected.json'
+INPUT_LATTICE_JSON = (
+    HERE / f'fccee_z_lcc_splineboris_solenoids_coupling_corrected_{FIELD_TAG}.json'
+)
 
 IP_NAMES = ['ipa', 'ipd', 'ipg', 'ipj']
 IP_PLOT = 'ipa'
