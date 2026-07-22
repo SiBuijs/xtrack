@@ -1,5 +1,15 @@
 # Bz-ramp coupling-amplification study (new files, not part of 000-014)
 
+> **REMOVED 2026-07-22, at the user's request — no longer used.** All four
+> files below (`bz_ramp_field.py`, `004a2_build_solenoid_bz_ramp.py`,
+> `004b2_install_solenoid_bz_ramp_in_fcc_ring.py`, `scan_bz_ramp_amp.py`) were
+> `git rm`'d from `examples/fcc_ee_solenoid/`. They are recoverable from git
+> history (they were committed) if this line of investigation is ever
+> revisited. Nothing else in the pipeline imported them, so removal was
+> clean — no other script needs updating as a result. This note is kept
+> below **for historical reference only**; do not expect the files it
+> describes to exist.
+
 Written 2026-07-14. Purpose: let a future session skip re-deriving why these
 files exist and what they found. If a referenced file/function no longer
 exists, treat these notes as stale for that detail and re-check the source.
