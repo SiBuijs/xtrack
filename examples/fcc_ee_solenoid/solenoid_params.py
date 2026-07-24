@@ -56,3 +56,25 @@ def field_tag(b0: float = MAIN_SOLENOID_B0) -> str:
 # 004a-004d/009-015 pipeline and aperture_study_io.py so lattices/studies
 # built at different field strengths don't silently overwrite each other.
 FIELD_TAG = field_tag()
+
+
+def add_b0_argument(parser, *, default: float = MAIN_SOLENOID_B0) -> None:
+    """Add a ``--b0`` CLI flag for selecting the main-solenoid field strength.
+
+    Lets build/run scripts pick a field strength at runtime instead of
+    hand-editing MAIN_SOLENOID_B0 above -- the chosen value is turned into a
+    field_tag() to build or select the matching tagged lattice files (e.g.
+    ``2.0`` -> ``2T``, ``3.0`` -> ``3T``). Only selects/tags files; it does
+    not itself validate that a build for that value exists on disk.
+    """
+    parser.add_argument(
+        "--b0",
+        type=float,
+        default=default,
+        metavar="TESLA",
+        help=(
+            "Main-solenoid field strength in tesla, selects which "
+            f"field_tag()-tagged lattice files to build/use (default: "
+            f"{default:g} T -> tag {field_tag(default)!r})."
+        ),
+    )

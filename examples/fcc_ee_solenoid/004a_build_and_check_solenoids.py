@@ -1,4 +1,5 @@
 from pathlib import Path
+import argparse
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -19,11 +20,12 @@ from solenoid_params import (
     COMP_SOLENOID_B0,
     COMP_SOLENOID_DISTANCE_FROM_IP,
     COMP_SOLENOID_LENGTH,
-    FIELD_TAG,
     MAIN_SOLENOID_A,
     MAIN_SOLENOID_B0,
     MAIN_SOLENOID_HALF_LENGTH,
     THETA,
+    add_b0_argument,
+    field_tag,
 )
 from tilted_solenoid import TiltedSolenoid
 from xtrack._temp.boris_and_solenoid_map.solenoid_field import SolenoidField
@@ -31,6 +33,18 @@ from xtrack.beam_elements.splineboris_src.spline_B_field_eval_python import (
     hermite_to_polynomial,
 )
 
+
+_parser = argparse.ArgumentParser(
+    description='Build and check tapered detector/compensation solenoid models.')
+add_b0_argument(_parser, default=MAIN_SOLENOID_B0)
+_args = _parser.parse_args()
+
+# Overrides the default imported from solenoid_params.py with the CLI choice,
+# so a single invocation builds templates for whichever field strength is
+# requested (e.g. --b0 2.0), tagged accordingly -- see FIELD_TAG in
+# solenoid_params.py.
+MAIN_SOLENOID_B0 = _args.b0
+FIELD_TAG = field_tag(MAIN_SOLENOID_B0)
 
 HERE = Path(__file__).parent
 OUTPUT_LINES_JSON = HERE / f'004_solenoid_lines_{FIELD_TAG}.json'

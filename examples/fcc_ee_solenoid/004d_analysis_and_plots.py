@@ -1,11 +1,18 @@
 from pathlib import Path
+import argparse
 
 import matplotlib.pyplot as plt
 import numpy as np
 import xtrack as xt
 
-from solenoid_params import FIELD_TAG
+from solenoid_params import MAIN_SOLENOID_B0, add_b0_argument, field_tag
 
+
+_parser = argparse.ArgumentParser(
+    description='Analyze and plot the corrected SplineBoris FCC lattice.')
+add_b0_argument(_parser, default=MAIN_SOLENOID_B0)
+_args = _parser.parse_args()
+FIELD_TAG = field_tag(_args.b0)
 
 HERE = Path(__file__).parent
 INPUT_LATTICE_JSON = (

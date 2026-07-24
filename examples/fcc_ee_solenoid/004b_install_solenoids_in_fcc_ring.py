@@ -1,4 +1,5 @@
 from pathlib import Path
+import argparse
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -8,11 +9,19 @@ from solenoid_params import (
     COMP_SOLENOID_DISTANCE_FROM_IP,
     COMPENSATION_CORRECTOR_LENGTH,
     COMPENSATION_CORRECTOR_MARKER_DS,
-    FIELD_TAG,
+    MAIN_SOLENOID_B0,
     MAIN_SOLENOID_CORRECTOR_DS_END,
     MAIN_SOLENOID_CORRECTOR_DS_START,
+    add_b0_argument,
+    field_tag,
 )
 
+
+_parser = argparse.ArgumentParser(
+    description='Install SplineBoris solenoids and correctors in the FCC ring.')
+add_b0_argument(_parser, default=MAIN_SOLENOID_B0)
+_args = _parser.parse_args()
+FIELD_TAG = field_tag(_args.b0)
 
 HERE = Path(__file__).parent
 INPUT_LATTICE_JSON = HERE / 'fccee_z_lcc.json'

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, Literal
 
@@ -12,7 +13,14 @@ from solenoid_params import FIELD_TAG
 
 HERE = Path(__file__).resolve().parent
 DATA_DIR = HERE / "data"
-PLOT_DIR = Path.home() / "cernbox" / "Pictures" / "FCC_Solenoid_Studies"
+# Override on machines where Path.home() isn't a synced CERNBox folder (e.g.
+# remote/headless boxes reached over ssh) via FCC_SOLENOID_PLOT_DIR.
+PLOT_DIR = Path(
+    os.environ.get(
+        "FCC_SOLENOID_PLOT_DIR",
+        Path.home() / "cernbox" / "Pictures" / "FCC_Solenoid_Studies",
+    )
+)
 
 ModelTag = Literal["SB", "VarSol"]
 StudyTag = Literal["DA", "MA", "EMIT", "POL"]
@@ -74,13 +82,21 @@ def make_basename(
     n_turns: int,
     global_xy_limit: float,
     variant: str = "",
+    field_tag: str = FIELD_TAG,
 ) -> str:
-    """Build a filename stem (without study prefix) for NPZ/PDF outputs."""
+    """Build a filename stem (without study prefix) for NPZ/PDF outputs.
+
+    `field_tag` defaults to solenoid_params.FIELD_TAG (the module-level
+    MAIN_SOLENOID_B0), but callers that let the field strength be picked at
+    runtime (e.g. via solenoid_params.add_b0_argument) should pass the tag
+    matching the lattice actually loaded, so saved filenames don't silently
+    mislabel the field strength.
+    """
     sol = "Sol_On" if with_solenoids else "Sol_Off"
     if with_solenoids and not with_correctors:
         sol += "_Cor_Off"
     return (
-        f"{sol}_{model}_{FIELD_TAG}_{n_part}p_{n_turns}t_"
+        f"{sol}_{model}_{field_tag}_{n_part}p_{n_turns}t_"
         f"{global_xy_limit_tag(global_xy_limit)}{variant}"
     )
 
@@ -282,6 +298,7 @@ def save_emitt_study(
     fit_eps_init: np.ndarray,
     variant: str = "",
     sexamp: float = BUILD_DEFAULTS["sexamp"],
+    field_tag: str = FIELD_TAG,
 ) -> tuple[Path, Path]:
     stem = make_study_stem(
         "EMIT",
@@ -292,6 +309,7 @@ def save_emitt_study(
         n_turns=n_turns,
         global_xy_limit=global_xy_limit,
         variant=variant,
+        field_tag=field_tag,
     )
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -351,6 +369,7 @@ def save_pol_study(
     p_eq_derived: float,
     variant: str = "",
     sexamp: float = BUILD_DEFAULTS["sexamp"],
+    field_tag: str = FIELD_TAG,
 ) -> tuple[Path, Path]:
     stem = make_study_stem(
         "POL",
@@ -361,6 +380,7 @@ def save_pol_study(
         n_turns=n_turns,
         global_xy_limit=global_xy_limit,
         variant=variant,
+        field_tag=field_tag,
     )
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 

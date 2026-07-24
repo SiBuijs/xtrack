@@ -33,54 +33,59 @@ import xtrack as xt
 
 from aperture_study_io import save_pol_study, variant_suffix
 from lattice_knobs import robust_twiss, set_lattice_knobs
-from solenoid_params import FIELD_TAG
+from solenoid_params import MAIN_SOLENOID_B0, add_b0_argument, field_tag
 
 plt.close("all")
 
 HERE = Path(__file__).resolve().parent
-SPLINEBORIS_LATTICE_JSON = (
-    HERE / f"fccee_z_lcc_splineboris_solenoids_coupling_corrected_{FIELD_TAG}.json"
-)
-VARSOL_LATTICE_JSON = (
-    HERE / f"fccee_z_lcc_varsol_solenoids_coupling_corrected_{FIELD_TAG}.json"
-)
 
 GLOBAL_XY_LIMIT = 1.0
 N_TURNS = 10_000
 N_PART = 1000
 
-POL_CASES = [
-    dict(
-        name="sb_on",
-        model="SB",
-        lattice_json=SPLINEBORIS_LATTICE_JSON,
-        with_solenoids=True,
-        with_correctors=True,
-        title="SplineBoris: solenoids powered + correction scheme",
-    ),
-    dict(
-        name="varsol_on",
-        model="VarSol",
-        lattice_json=VARSOL_LATTICE_JSON,
-        with_solenoids=True,
-        with_correctors=True,
-        title="VariableSolenoid: solenoids powered + correction scheme",
-    ),
-    dict(
-        name="sb_off",
-        model="SB",
-        lattice_json=SPLINEBORIS_LATTICE_JSON,
-        with_solenoids=False,
-        with_correctors=False,
-        title="SplineBoris: solenoids unpowered",
-    ),
-]
 
-POL_CASES_BY_NAME = {case["name"]: case for case in POL_CASES}
+def _lattice_paths(tag):
+    return (
+        HERE / f"fccee_z_lcc_splineboris_solenoids_coupling_corrected_{tag}.json",
+        HERE / f"fccee_z_lcc_varsol_solenoids_coupling_corrected_{tag}.json",
+    )
+
+
+def _build_pol_cases(tag):
+    """Build the POL_CASES list for a given field_tag (e.g. '2T', '3T')."""
+    splineboris_json, varsol_json = _lattice_paths(tag)
+    return [
+        dict(
+            name="sb_on",
+            model="SB",
+            lattice_json=splineboris_json,
+            with_solenoids=True,
+            with_correctors=True,
+            title=f"SplineBoris ({tag}): solenoids powered + correction scheme",
+        ),
+        dict(
+            name="varsol_on",
+            model="VarSol",
+            lattice_json=varsol_json,
+            with_solenoids=True,
+            with_correctors=True,
+            title=f"VariableSolenoid ({tag}): solenoids powered + correction scheme",
+        ),
+        dict(
+            name="sb_off",
+            model="SB",
+            lattice_json=splineboris_json,
+            with_solenoids=False,
+            with_correctors=False,
+            title=f"SplineBoris ({tag}): solenoids unpowered",
+        ),
+    ]
+
+
 # sb_off's depolarization time is many orders of magnitude longer than any
 # feasible number of tracked turns (no solenoid coupling to drive dn/ddelta),
 # so it is skipped by default -- pass --cases sb_off explicitly to run it.
-DEFAULT_POL_CASE_NAMES = [name for name in POL_CASES_BY_NAME if name != "sb_off"]
+DEFAULT_POL_CASE_NAMES = ["sb_on", "varsol_on"]
 
 
 def _configure_radiative_tracking(line):
@@ -202,10 +207,20 @@ def _plot_polarization_figure(
 
 
 def _run_polarization_evolution(
-    case, *, n_turns, n_part, with_progress, sexamp,
+    case, *, n_turns, n_part, with_progress, sexamp, tag,
 ):
     lattice_json = case["lattice_json"]
     title = case["title"]
+
+    if not lattice_json.exists():
+        raise SystemExit(
+            f"Missing lattice file: {lattice_json.name}\n"
+            f"Build it first for --b0 corresponding to tag {tag!r} via "
+            "004a_build_and_check_solenoids.py -> "
+            "004b_install_solenoids_in_fcc_ring.py / "
+            "004b_install_varsol_solenoids_in_fcc_ring.py -> "
+            "004c_correct_solenoids_in_fcc_ring.py (each accepts --b0)."
+        )
 
     print(f"\n=== {title} ===")
     print(f"Loading lattice: {lattice_json.name}")
@@ -354,6 +369,7 @@ def _run_polarization_evolution(
             sexamp=sexamp,
         ),
         sexamp=sexamp,
+        field_tag=tag,
     )
     print(f"[{title}] Polarization evolution run complete.")
     return dict(
@@ -366,16 +382,16 @@ def _run_polarization_evolution(
     )
 
 
-def _select_cases(case_names):
+def _select_cases(case_names, cases_by_name):
     if not case_names:
-        return [POL_CASES_BY_NAME[name] for name in DEFAULT_POL_CASE_NAMES]
+        return [cases_by_name[name] for name in DEFAULT_POL_CASE_NAMES]
 
-    unknown = [name for name in case_names if name not in POL_CASES_BY_NAME]
+    unknown = [name for name in case_names if name not in cases_by_name]
     if unknown:
-        valid = ", ".join(POL_CASES_BY_NAME)
+        valid = ", ".join(cases_by_name)
         raise SystemExit(f"Unknown case(s): {', '.join(unknown)}. Choose from: {valid}")
 
-    return [POL_CASES_BY_NAME[name] for name in case_names]
+    return [cases_by_name[name] for name in case_names]
 
 
 def main():
@@ -398,6 +414,7 @@ def main():
         action="store_true",
         help="List available cases and exit.",
     )
+    add_b0_argument(parser, default=MAIN_SOLENOID_B0)
     parser.add_argument(
         "--n-turns",
         type=int,
@@ -431,18 +448,24 @@ def main():
     )
     args = parser.parse_args()
 
+    tag = field_tag(args.b0)
+    pol_cases = _build_pol_cases(tag)
+    pol_cases_by_name = {case["name"]: case for case in pol_cases}
+
     if args.list_cases:
-        for case in POL_CASES:
+        print(f"Field tag: {tag} (--b0 {args.b0:g})")
+        for case in pol_cases:
             print(f"{case['name']}: {case['title']}")
         return
 
-    for case in _select_cases(args.cases):
+    for case in _select_cases(args.cases, pol_cases_by_name):
         _run_polarization_evolution(
             case,
             n_turns=args.n_turns,
             n_part=args.n_part,
             with_progress=1,
             sexamp=args.sexamp,
+            tag=tag,
         )
 
     if not args.no_show:

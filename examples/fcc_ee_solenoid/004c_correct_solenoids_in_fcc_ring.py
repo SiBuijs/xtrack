@@ -4,20 +4,10 @@ import argparse
 import matplotlib.pyplot as plt
 import xtrack as xt
 
-from solenoid_params import FIELD_TAG
+from solenoid_params import MAIN_SOLENOID_B0, add_b0_argument, field_tag
 
 
 HERE = Path(__file__).parent
-_MODEL_LATTICE_PATHS = {
-    'splineboris': (
-        f'temp_fcc_ee_lcc_splineboris_solenoids_{FIELD_TAG}.json',
-        f'fccee_z_lcc_splineboris_solenoids_coupling_corrected_{FIELD_TAG}.json',
-    ),
-    'varsol': (
-        f'temp_fcc_ee_lcc_varsol_solenoids_{FIELD_TAG}.json',
-        f'fccee_z_lcc_varsol_solenoids_coupling_corrected_{FIELD_TAG}.json',
-    ),
-}
 
 parser = argparse.ArgumentParser(
     description='Correct solenoids in the FCC ring lattice.'
@@ -28,7 +18,20 @@ parser.add_argument(
     default='splineboris',
     help='Solenoid model to correct (default: splineboris).',
 )
+add_b0_argument(parser, default=MAIN_SOLENOID_B0)
 args = parser.parse_args()
+
+FIELD_TAG = field_tag(args.b0)
+_MODEL_LATTICE_PATHS = {
+    'splineboris': (
+        f'temp_fcc_ee_lcc_splineboris_solenoids_{FIELD_TAG}.json',
+        f'fccee_z_lcc_splineboris_solenoids_coupling_corrected_{FIELD_TAG}.json',
+    ),
+    'varsol': (
+        f'temp_fcc_ee_lcc_varsol_solenoids_{FIELD_TAG}.json',
+        f'fccee_z_lcc_varsol_solenoids_coupling_corrected_{FIELD_TAG}.json',
+    ),
+}
 
 INPUT_LATTICE_JSON = HERE / _MODEL_LATTICE_PATHS[args.model][0]
 OUTPUT_LATTICE_JSON = HERE / _MODEL_LATTICE_PATHS[args.model][1]
