@@ -16,9 +16,9 @@ copies of these numbers.
 # Tilt of the main detector solenoid w.r.t. the beam axis [rad].
 THETA = -0.015
 
-# Main detector solenoid: half-length [m] (full length = 2 * this), radius
-# [m], and on-axis field strength [T].
-MAIN_SOLENOID_HALF_LENGTH = 1.23
+# Main detector solenoid: radius [m] and on-axis field strength [T]. The
+# half-length depends on which field-strength case is selected -- see
+# half_length_for_b0() below.
 MAIN_SOLENOID_A = 0.13
 MAIN_SOLENOID_B0 = 3.0
 
@@ -35,14 +35,61 @@ COMP_SOLENOID_DISTANCE_FROM_IP = 12.0
 
 # s-range (from the IP-side end of the main solenoid) over which the first
 # dipole corrector is overlaid with the main solenoid slices, on each side
-# [m].
-MAIN_SOLENOID_CORRECTOR_DS_START = 1.23
+# [m]. ds_start depends on the field-strength case (see
+# corrector_ds_start_for_b0() below); ds_end is the same for every case.
 MAIN_SOLENOID_CORRECTOR_DS_END = 2.29
 
 # Marker offset from the IP for the compensation-solenoid orbit/optics
 # correctors [m], and the (thin, isthick=False) corrector length [m].
 COMPENSATION_CORRECTOR_MARKER_DS = 11.95
 COMPENSATION_CORRECTOR_LENGTH = 1.0
+
+# Main-solenoid half-length [m] (full length = 2x this) and first-corrector
+# ds_start [m], keyed by MAIN_SOLENOID_B0 -- the 3T detector design is
+# physically longer (2.6 m full length) than the 2T one (2.46 m) and its
+# first corrector sits farther out. Selected at runtime via --b0 (see
+# add_b0_argument below), so 004a/004b[_varsol] build/install each case with
+# its own correct geometry instead of one case silently borrowing the
+# other's numbers.
+_MAIN_SOLENOID_HALF_LENGTH_BY_B0 = {
+    2.0: 1.23,
+    3.0: 1.30,
+}
+_MAIN_SOLENOID_CORRECTOR_DS_START_BY_B0 = {
+    2.0: 1.23,
+    3.0: 1.40,
+}
+
+
+def _lookup_by_b0(table: dict, b0: float, what: str) -> float:
+    try:
+        return table[b0]
+    except KeyError:
+        raise ValueError(
+            f"No known {what} for B0={b0!r} T -- add an entry to "
+            f"solenoid_params.py (known B0 values: {sorted(table)}).")
+
+
+def half_length_for_b0(b0: float = MAIN_SOLENOID_B0) -> float:
+    """Main-solenoid half-length [m] (full length = 2x this) for the given
+    on-axis field strength -- see _MAIN_SOLENOID_HALF_LENGTH_BY_B0 above."""
+    return _lookup_by_b0(
+        _MAIN_SOLENOID_HALF_LENGTH_BY_B0, b0, 'main-solenoid half-length')
+
+
+def corrector_ds_start_for_b0(b0: float = MAIN_SOLENOID_B0) -> float:
+    """s-offset [m] from the IP-side end of the main solenoid where the
+    first dipole corrector starts, for the given on-axis field strength --
+    see _MAIN_SOLENOID_CORRECTOR_DS_START_BY_B0 above."""
+    return _lookup_by_b0(
+        _MAIN_SOLENOID_CORRECTOR_DS_START_BY_B0, b0, 'corrector ds_start')
+
+
+# Module-level defaults for the default MAIN_SOLENOID_B0 -- kept for any
+# caller that wants the default case's geometry without going through the
+# CLI-selected B0.
+MAIN_SOLENOID_HALF_LENGTH = half_length_for_b0()
+MAIN_SOLENOID_CORRECTOR_DS_START = corrector_ds_start_for_b0()
 
 
 def field_tag(b0: float = MAIN_SOLENOID_B0) -> str:

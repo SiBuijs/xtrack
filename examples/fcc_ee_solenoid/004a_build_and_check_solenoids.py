@@ -22,10 +22,10 @@ from solenoid_params import (
     COMP_SOLENOID_LENGTH,
     MAIN_SOLENOID_A,
     MAIN_SOLENOID_B0,
-    MAIN_SOLENOID_HALF_LENGTH,
     THETA,
     add_b0_argument,
     field_tag,
+    half_length_for_b0,
 )
 from tilted_solenoid import TiltedSolenoid
 from xtrack._temp.boris_and_solenoid_map.solenoid_field import SolenoidField
@@ -45,6 +45,7 @@ _args = _parser.parse_args()
 # solenoid_params.py.
 MAIN_SOLENOID_B0 = _args.b0
 FIELD_TAG = field_tag(MAIN_SOLENOID_B0)
+MAIN_SOLENOID_HALF_LENGTH = half_length_for_b0(MAIN_SOLENOID_B0)
 
 HERE = Path(__file__).parent
 OUTPUT_LINES_JSON = HERE / f'004_solenoid_lines_{FIELD_TAG}.json'

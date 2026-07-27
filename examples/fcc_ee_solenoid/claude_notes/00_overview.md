@@ -89,6 +89,24 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   SplineBoris slice boundary near s=-1.23 m from the IP; used by 009/010 via
   their `--extra-sext-strength` CLI flag. See
   `03_aperture_emittance_studies_009_014.md` for details.
+- `solenoid_params.py` — single source of truth for main/compensation
+  solenoid geometry, imported by 004a/004b[_varsol]/004c/004d/009-015 (added
+  2026-07-16, `--b0` CLI mechanism added 2026-07-24). `MAIN_SOLENOID_B0`
+  selects the field-strength case (`2.0` or `3.0` T so far); `add_b0_argument`
+  wires a `--b0` flag into each script, and `field_tag(b0)` (e.g. `3.0 ->
+  '3T'`) is threaded into every filename across the pipeline so different
+  cases never overwrite each other's lattice/study files.
+  **2026-07-27: main-solenoid half-length and first-corrector ds_start are
+  now case-dependent too** (previously both were hardcoded at the 2T values
+  regardless of `MAIN_SOLENOID_B0`, silently wrong for the 3T case) —
+  `half_length_for_b0(b0)`/`corrector_ds_start_for_b0(b0)` look up
+  `_MAIN_SOLENOID_HALF_LENGTH_BY_B0`/`_MAIN_SOLENOID_CORRECTOR_DS_START_BY_B0`
+  dicts (`2.0 T -> 1.23/1.23 m`, `3.0 T -> 1.30/1.40 m`; `ds_end=2.29 m` is
+  the same for both cases). 004a calls `half_length_for_b0(MAIN_SOLENOID_B0)`
+  after applying the CLI `--b0` override; 004b/004b_varsol call
+  `corrector_ds_start_for_b0(_args.b0)` the same way. If a new field-strength
+  case is ever added, both dicts need a new entry or these functions raise
+  `ValueError`.
 - `aperture_grid.py` — `initial_conditions_grid(study="MA", ...)`: polar grid
   generator for momentum-acceptance initial conditions (used by 009 only; 010
   has its own DA-specific grid builder inline).

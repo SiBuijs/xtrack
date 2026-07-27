@@ -173,6 +173,62 @@ ax5.set_xlabel('s [m]')
 fig2.subplots_adjust(hspace=0.25, top=0.95, bottom=0.06, left=0.14)
 ax5.set_xlim(-20, 20)
 
+###########################################
+# 2T vs 3T betx2/bety1 comparison figure #
+###########################################
+
+COMPARISON_TAGS = ['2T', '3T']
+
+
+def _twiss_on_for_tag(tag):
+    """Coupled-optics twiss (solenoids+corrections on) for a given field tag."""
+    if tag == FIELD_TAG:
+        return tw
+
+    input_json = (
+        HERE / f'fccee_z_lcc_splineboris_solenoids_coupling_corrected_{tag}.json'
+    )
+    env_cmp = xt.load(input_json)
+    line_cmp = env_cmp.fccee_p_ring.copy(shallow=True)
+    line_cmp.particle_ref.anomalous_magnetic_moment = 0.00115965218128
+
+    line_cmp.cycle(f'end_ds_start_straight_{IP_NAMES[0]}')
+    table_cmp = line_cmp.get_table()
+    for ip_name in IP_NAMES:
+        s_cut_right = np.arange(
+            table_cmp['s', ip_name] + 2.4, table_cmp['s', ip_name] + 11.0, 0.2,
+        )
+        line_cmp.cut_at_s(s_cut_right)
+
+        s_cut_left = np.arange(
+            table_cmp['s', ip_name] - 11.0, table_cmp['s', ip_name] - 2.4, 0.2,
+        )
+        line_cmp.cut_at_s(s_cut_left)
+
+    for ip_name in IP_NAMES:
+        line_cmp[f'on_sol_{ip_name}'] = 1
+        line_cmp[f'on_sol_corr_{ip_name}'] = 1
+
+    tw_cmp = line_cmp.twiss4d(strengths=True)
+    tw_cmp.zero_at(IP_PLOT)
+    return tw_cmp
+
+
+fig3, axs3 = plt.subplots(
+    len(COMPARISON_TAGS), 1, sharex=True, figsize=(6.4, 4.8),
+)
+for ax, tag in zip(axs3, COMPARISON_TAGS):
+    tw_tag = _twiss_on_for_tag(tag)
+    ax.plot(tw_tag.s, tw_tag.betx2, label=r'$\beta_{x2}$')
+    ax.plot(tw_tag.s, tw_tag.bety1, label=r'$\beta_{y1}$')
+    ax.set_ylabel(r'$\beta_{x2,y1}$')
+    ax.set_title(f'{tag} main solenoid')
+    ax.legend(loc='best')
+    ax.grid(True)
+axs3[-1].set_xlabel('s [m]')
+axs3[-1].set_xlim(-20, 20)
+fig3.subplots_adjust(hspace=0.3, top=0.92, bottom=0.1, left=0.14)
+
 print(f'Loaded {INPUT_LATTICE_JSON}')
 print(f'tw4d qx = {tw4d.qx:.12g}, qy = {tw4d.qy:.12g}')
 print(f'tw6d qx = {tw.qx:.12g}, qy = {tw.qy:.12g}, qs = {tw.qs:.12g}')

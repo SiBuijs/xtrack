@@ -10,8 +10,8 @@ from solenoid_params import (
     COMPENSATION_CORRECTOR_MARKER_DS,
     MAIN_SOLENOID_B0,
     MAIN_SOLENOID_CORRECTOR_DS_END,
-    MAIN_SOLENOID_CORRECTOR_DS_START,
     add_b0_argument,
+    corrector_ds_start_for_b0,
     field_tag,
 )
 
@@ -21,6 +21,7 @@ _parser = argparse.ArgumentParser(
 add_b0_argument(_parser, default=MAIN_SOLENOID_B0)
 _args = _parser.parse_args()
 FIELD_TAG = field_tag(_args.b0)
+MAIN_SOLENOID_CORRECTOR_DS_START = corrector_ds_start_for_b0(_args.b0)
 
 HERE = Path(__file__).parent
 INPUT_LATTICE_JSON = HERE / 'fccee_z_lcc.json'
