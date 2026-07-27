@@ -4,9 +4,12 @@ Initializes a bunch fully polarized along y (P(0) = 1) and tracks it under
 quantum synchrotron radiation. Quantum energy-diffusion couples to spin
 precession through dn/ddelta, so the ensemble-averaged polarization
 P(t) = |<spin_vec>| slowly decoheres; over the trackable turn range this
-decay is well inside the linear regime of the true exponential (tau_depol is
-typically orders of magnitude larger than a feasible number of tracked
-turns), so a straight-line fit gives tau_depol directly (slope = -P(0)/tau).
+decay is fit directly to its true functional form P(n) = P0 * exp(-n/tau_depol)
+(tau_depol is typically orders of magnitude larger than a feasible number of
+tracked turns, so this is normally deep in that exponential's linear-looking
+onset, but fitting the exponential form itself avoids the systematic bias a
+straight-line fit picks up as the decay becomes non-negligible over the
+tracked range).
 
 The polarization-buildup time (Sokolov-Ternov effect alone, no
 depolarization) and the asymptotic polarization P_inf are not things this
@@ -120,27 +123,37 @@ def _compute_polarization(mon, n_turns):
     return spin_x_mean, spin_y_mean, spin_z_mean, polarization
 
 
-def _fit_linear_depolarization(turns, polarization, t_rev0):
-    """Straight-line fit P(n) = P0 + slope * n, valid for n << tau_depol.
+def _fit_exponential_depolarization(turns, polarization, t_rev0):
+    """Exponential fit P(n) = P0 * exp(-n / tau_depol), the actual functional
+    form of radiative depolarization (a straight-line fit is only its
+    linear-regime approximation for n << tau_depol).
 
-    Returns (P0, slope [1/turn], tau_depol [turns], tau_depol [s]). tau_depol
-    is inf if the fitted slope is non-negative (no significant decay
-    resolved above noise -- e.g. too few turns/particles, or a case like
-    sb_off where the true depolarization is negligible on any feasible turn
-    count).
+    Fit by linear regression of ln(P) vs n (equivalent to a weighted
+    nonlinear least-squares fit of P itself, and far more robust/cheap than
+    a general nonlinear solve here).
+
+    Returns (P0, slope [1/turn] -- initial dP/dn at n=0, for compatibility
+    with the linear-regime annotation/npz schema --, tau_depol [turns],
+    tau_depol [s]). tau_depol is inf if the fitted log-slope is non-negative
+    (no significant decay resolved above noise -- e.g. too few
+    turns/particles, or a case like sb_off where the true depolarization is
+    negligible on any feasible turn count).
     """
-    mask = np.isfinite(polarization)
+    mask = np.isfinite(polarization) & (polarization > 0)
     if mask.sum() < 2:
         return np.nan, np.nan, np.nan, np.nan
 
-    slope, intercept = np.polyfit(turns[mask], polarization[mask], deg=1)
-    if slope < 0:
-        tau_depol_turns = -1.0 / slope
+    log_slope, log_intercept = np.polyfit(
+        turns[mask], np.log(polarization[mask]), deg=1)
+    p0 = float(np.exp(log_intercept))
+    if log_slope < 0:
+        tau_depol_turns = -1.0 / log_slope
         tau_depol_s = tau_depol_turns * t_rev0
     else:
         tau_depol_turns = np.inf
         tau_depol_s = np.inf
-    return float(intercept), float(slope), float(tau_depol_turns), float(tau_depol_s)
+    slope = float(log_slope * p0)
+    return p0, slope, float(tau_depol_turns), float(tau_depol_s)
 
 
 def _plot_polarization_figure(
@@ -148,7 +161,7 @@ def _plot_polarization_figure(
     turns,
     polarization,
     fit_p0,
-    fit_slope,
+    fit_tau_depol_turns,
     fit_tau_depol_s,
     p_inf,
     tau_pol_s,
@@ -160,19 +173,18 @@ def _plot_polarization_figure(
     fig, ax = plt.subplots(figsize=(6.4, 4.8))
     ax.plot(turns, polarization, label="tracked")
 
-    if np.isfinite(fit_slope):
-        fit_curve = fit_p0 + fit_slope * turns
-        ax.plot(turns, fit_curve, "--", color="C3", label="linear fit")
+    if np.isfinite(fit_tau_depol_turns):
+        fit_curve = fit_p0 * np.exp(-turns / fit_tau_depol_turns)
+        ax.plot(turns, fit_curve, "--", color="C3", label="exponential fit")
 
     ax.set_xlabel("turn")
     ax.set_ylabel(r"Polarization $P = |\langle \vec{s}\rangle|$")
     ax.legend(loc="lower right", fontsize=8)
 
-    fit_lines = ["fit (tracking, linear regime):"]
-    if np.isfinite(fit_slope):
+    fit_lines = ["fit (tracking, exponential decay):"]
+    if np.isfinite(fit_tau_depol_turns):
         fit_lines += [
             fr"  $P_0 = {fit_p0:.6f}$",
-            fr"  $dP/dn = {fit_slope:.3e}\ \mathrm{{turn}}^{{-1}}$",
             fr"  $\tau_\mathrm{{depol}} = {fit_tau_depol_s:.3e}\ \mathrm{{s}}$",
         ]
     else:
@@ -307,12 +319,11 @@ def _run_polarization_evolution(
     )
 
     fit_p0, fit_slope, fit_tau_depol_turns, fit_tau_depol_s = (
-        _fit_linear_depolarization(turns, polarization, t_rev0)
+        _fit_exponential_depolarization(turns, polarization, t_rev0)
     )
 
     print(f"  P(0) tracked                = {polarization[0]:.6f}")
     print(f"  P0 (fit intercept)          = {fit_p0:.6f}")
-    print(f"  dP/dturn (fit slope)        = {fit_slope:.6e} 1/turn")
     print(
         f"  tau_depol (fit, tracking)   = {fit_tau_depol_s:.6e} s "
         f"({fit_tau_depol_turns:.6e} turns)   [Twiss: {tau_depol_twiss_s:.6e} s]"
@@ -332,7 +343,7 @@ def _run_polarization_evolution(
         turns=turns,
         polarization=polarization,
         fit_p0=fit_p0,
-        fit_slope=fit_slope,
+        fit_tau_depol_turns=fit_tau_depol_turns,
         fit_tau_depol_s=fit_tau_depol_s,
         p_inf=p_inf,
         tau_pol_s=tau_pol_s,
