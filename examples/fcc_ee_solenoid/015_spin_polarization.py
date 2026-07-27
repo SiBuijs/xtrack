@@ -166,7 +166,7 @@ def _plot_polarization_figure(
 
     ax.set_xlabel("turn")
     ax.set_ylabel(r"Polarization $P = |\langle \vec{s}\rangle|$")
-    ax.legend(loc="upper right", fontsize=8)
+    ax.legend(loc="lower right", fontsize=8)
 
     fit_lines = ["fit (tracking, linear regime):"]
     if np.isfinite(fit_slope):
@@ -190,12 +190,12 @@ def _plot_polarization_figure(
     ]
     info_text = "\n".join(fit_lines + twiss_lines + derived_lines)
     ax.text(
-        0.02,
-        0.02,
+        0.98,
+        0.98,
         info_text,
         transform=ax.transAxes,
-        ha="left",
-        va="bottom",
+        ha="right",
+        va="top",
         fontsize=6.5,
         linespacing=1.4,
         bbox=dict(boxstyle="round", facecolor="white", alpha=0.85, edgecolor="0.7"),
