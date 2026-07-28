@@ -14,17 +14,18 @@ from lattice_knobs import (
     set_lattice_knobs,
     set_solenoid_offset,
 )
-from solenoid_params import FIELD_TAG
+from solenoid_params import MAIN_SOLENOID_B0, add_b0_argument, field_tag
 
 plt.close("all")
 
 HERE = Path(__file__).resolve().parent
-SPLINEBORIS_LATTICE_JSON = (
-    HERE / f"fccee_z_lcc_splineboris_solenoids_coupling_corrected_{FIELD_TAG}.json"
-)
-VARSOL_LATTICE_JSON = (
-    HERE / f"fccee_z_lcc_varsol_solenoids_coupling_corrected_{FIELD_TAG}.json"
-)
+
+
+def _lattice_paths(tag):
+    return (
+        HERE / f"fccee_z_lcc_splineboris_solenoids_coupling_corrected_{tag}.json",
+        HERE / f"fccee_z_lcc_varsol_solenoids_coupling_corrected_{tag}.json",
+    )
 
 NEMITT_X = 6.33e-5
 NEMITT_Y = 1.69e-7  # flat beam: sigma_x/sigma_y ~ 220 at the IP
@@ -43,44 +44,47 @@ MAX_AMP_SIGMA_Y = MAX_AMP_SIGMA_X * Y_AXIS_SCAN_FACTOR
 N_TURNS = 10_000
 
 # Each case can use its own grid resolution.
-DA_CASES = [
-    dict(
-        name="sb_on",
-        model="SB",
-        lattice_json=SPLINEBORIS_LATTICE_JSON,
-        with_solenoids=True,
-        with_correctors=True,
-        title="SplineBoris: solenoids powered + correction scheme",
-        nn_y_r=25,
-        nn_x_theta=30,
-    ),
-    dict(
-        name="varsol_on",
-        model="VarSol",
-        lattice_json=VARSOL_LATTICE_JSON,
-        with_solenoids=True,
-        with_correctors=True,
-        title="VariableSolenoid: solenoids powered + correction scheme",
-        nn_y_r=30,
-        nn_x_theta=50,
-    ),
-    dict(
-        name="sb_off",
-        model="SB",
-        lattice_json=SPLINEBORIS_LATTICE_JSON,
-        with_solenoids=False,
-        with_correctors=False,
-        title="SplineBoris: solenoids unpowered",
-        nn_y_r=25,
-        nn_x_theta=30,
-    ),
-]
+def _build_da_cases(tag):
+    """Build the DA_CASES list for a given field_tag (e.g. '2T', '3T')."""
+    splineboris_json, varsol_json = _lattice_paths(tag)
+    return [
+        dict(
+            name="sb_on",
+            model="SB",
+            lattice_json=splineboris_json,
+            with_solenoids=True,
+            with_correctors=True,
+            title=f"SplineBoris ({tag}): solenoids powered + correction scheme",
+            nn_y_r=25,
+            nn_x_theta=30,
+        ),
+        dict(
+            name="varsol_on",
+            model="VarSol",
+            lattice_json=varsol_json,
+            with_solenoids=True,
+            with_correctors=True,
+            title=f"VariableSolenoid ({tag}): solenoids powered + correction scheme",
+            nn_y_r=30,
+            nn_x_theta=50,
+        ),
+        dict(
+            name="sb_off",
+            model="SB",
+            lattice_json=splineboris_json,
+            with_solenoids=False,
+            with_correctors=False,
+            title=f"SplineBoris ({tag}): solenoids unpowered",
+            nn_y_r=25,
+            nn_x_theta=30,
+        ),
+    ]
 
-DA_CASES_BY_NAME = {case["name"]: case for case in DA_CASES}
+
 # sb_off is the bare-machine baseline: it has already been run once and does
 # not depend on solenoid/correction changes, so skip it by default (pass
 # --cases sb_off explicitly to rerun it).
-DEFAULT_DA_CASE_NAMES = [name for name in DA_CASES_BY_NAME if name != "sb_off"]
+DEFAULT_DA_CASE_NAMES = ["sb_on", "varsol_on"]
 
 
 def _compute_beam_sizes(line):
@@ -176,12 +180,22 @@ def _plot_dynamic_aperture_figure(
 
 def _run_dynamic_aperture(
     case, *, n_turns, with_progress, sexamp, x_offset, y_offset,
-    extra_sext_strength=0.0,
+    extra_sext_strength=0.0, tag,
 ):
     lattice_json = case["lattice_json"]
     title = case["title"]
     nn_y_r = case["nn_y_r"]
     nn_x_theta = case["nn_x_theta"]
+
+    if not lattice_json.exists():
+        raise SystemExit(
+            f"Missing lattice file: {lattice_json.name}\n"
+            f"Build it first for --b0 corresponding to tag {tag!r} via "
+            "004a_build_and_check_solenoids.py -> "
+            "004b_install_solenoids_in_fcc_ring.py / "
+            "004b_install_varsol_solenoids_in_fcc_ring.py -> "
+            "004c_correct_solenoids_in_fcc_ring.py (each accepts --b0)."
+        )
 
     print(f"\n=== {title} ===")
     print(f"Loading lattice: {lattice_json.name}")
@@ -286,6 +300,7 @@ def _run_dynamic_aperture(
         x_offset=x_offset,
         y_offset=y_offset,
         extra_sext_strength=extra_sext_strength,
+        field_tag=tag,
     )
     print(
         f"[{title}] Dynamic aperture run complete:"
@@ -295,16 +310,16 @@ def _run_dynamic_aperture(
     return out
 
 
-def _select_cases(case_names):
+def _select_cases(case_names, cases_by_name):
     if not case_names:
-        return [DA_CASES_BY_NAME[name] for name in DEFAULT_DA_CASE_NAMES]
+        return [cases_by_name[name] for name in DEFAULT_DA_CASE_NAMES]
 
-    unknown = [name for name in case_names if name not in DA_CASES_BY_NAME]
+    unknown = [name for name in case_names if name not in cases_by_name]
     if unknown:
-        valid = ", ".join(DA_CASES_BY_NAME)
+        valid = ", ".join(cases_by_name)
         raise SystemExit(f"Unknown case(s): {', '.join(unknown)}. Choose from: {valid}")
 
-    return [DA_CASES_BY_NAME[name] for name in case_names]
+    return [cases_by_name[name] for name in case_names]
 
 
 def main():
@@ -327,6 +342,7 @@ def main():
         action="store_true",
         help="List available cases and exit.",
     )
+    add_b0_argument(parser, default=MAIN_SOLENOID_B0)
     parser.add_argument(
         "--n-turns",
         type=int,
@@ -374,12 +390,17 @@ def main():
     )
     args = parser.parse_args()
 
+    tag = field_tag(args.b0)
+    da_cases = _build_da_cases(tag)
+    da_cases_by_name = {case["name"]: case for case in da_cases}
+
     if args.list_cases:
-        for case in DA_CASES:
+        print(f"Field tag: {tag} (--b0 {args.b0:g})")
+        for case in da_cases:
             print(f"{case['name']}: {case['title']}")
         return
 
-    for case in _select_cases(args.cases):
+    for case in _select_cases(args.cases, da_cases_by_name):
         _run_dynamic_aperture(
             case,
             n_turns=args.n_turns,
@@ -388,6 +409,7 @@ def main():
             x_offset=args.x_offset,
             y_offset=args.y_offset,
             extra_sext_strength=args.extra_sext_strength,
+            tag=tag,
         )
 
     if not args.no_show:

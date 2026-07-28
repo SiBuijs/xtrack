@@ -147,6 +147,7 @@ def save_da_study(
     x_offset: float = BUILD_DEFAULTS["x_offset"],
     y_offset: float = BUILD_DEFAULTS["y_offset"],
     extra_sext_strength: float = BUILD_DEFAULTS["extra_sext_strength"],
+    field_tag: str = FIELD_TAG,
 ) -> tuple[Path, Path]:
     stem = make_study_stem(
         "DA",
@@ -157,6 +158,7 @@ def save_da_study(
         n_turns=n_turns,
         global_xy_limit=global_xy_limit,
         variant=variant,
+        field_tag=field_tag,
     )
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -225,6 +227,7 @@ def save_ma_study(
     x_offset: float = BUILD_DEFAULTS["x_offset"],
     y_offset: float = BUILD_DEFAULTS["y_offset"],
     extra_sext_strength: float = BUILD_DEFAULTS["extra_sext_strength"],
+    field_tag: str = FIELD_TAG,
 ) -> tuple[Path, Path]:
     stem = make_study_stem(
         "MA",
@@ -236,6 +239,7 @@ def save_ma_study(
         n_turns=n_turns,
         global_xy_limit=global_xy_limit,
         variant=variant,
+        field_tag=field_tag,
     )
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 

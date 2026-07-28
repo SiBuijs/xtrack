@@ -96,6 +96,17 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   wires a `--b0` flag into each script, and `field_tag(b0)` (e.g. `3.0 ->
   '3T'`) is threaded into every filename across the pipeline so different
   cases never overwrite each other's lattice/study files.
+  **2026-07-28: 009/010/013 caught up to this pattern** — until then they
+  only read the module-level `MAIN_SOLENOID_B0`/`FIELD_TAG` default at import
+  time (no `--b0` of their own), even though `MAIN_SOLENOID_B0` was already
+  `3.0`, so they happened to already target the 3T lattices without a flag.
+  Now `_build_ma_cases(tag)`/`_build_da_cases(tag)` build their case lists
+  from a runtime `field_tag(args.b0)` (mirroring 014/015's
+  `_build_emitt_cases`/`_build_pol_cases`), and 013 forwards its own `--b0`
+  to all three subprocesses. This also exposed and fixed a real gap in
+  `aperture_study_io.save_da_study`/`save_ma_study`, which had no `field_tag`
+  passthrough at all (unlike `save_emitt_study`) — see
+  `03_aperture_emittance_studies_009_014.md`.
   **2026-07-27: main-solenoid half-length and first-corrector ds_start are
   now case-dependent too** (previously both were hardcoded at the 2T values
   regardless of `MAIN_SOLENOID_B0`, silently wrong for the 3T case) —

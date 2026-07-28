@@ -29,10 +29,28 @@ Each script: loads lattice, `line.cycle("ipa")`,
 (from `lattice_knobs.py`), rebuilds tracker, configures radiation
 (`anomalous_magnetic_moment=0.00115965218128`, `configure_radiation(model=...)`),
 tracks, saves a plot + `.npz` via `aperture_study_io.py`, has a
-`--cases/--list-cases/--n-turns/--sexamp/--no-show` CLI (009 additionally has
-`--directions`, see below), and a `main()` guarded by
+`--cases/--list-cases/--b0/--n-turns/--sexamp/--no-show` CLI (009 additionally
+has `--directions`, see below), and a `main()` guarded by
 `__name__ == "__main__"`. `013_run_da_and_ma.py` drives 009+010+014 as
 subprocesses with a shared CLI.
+- **`--b0` field-strength flag (009/010 added 2026-07-28, mirroring
+  014/015)**: previously 009/010 built their `MA_CASES`/`DA_CASES` list once
+  at import time from the module-level `solenoid_params.FIELD_TAG`
+  (`MAIN_SOLENOID_B0`), so selecting a field-strength case meant editing
+  `solenoid_params.py` rather than passing a flag. Now both scripts have
+  `_build_ma_cases(tag)`/`_build_da_cases(tag)` (same shape as 014's
+  `_build_emitt_cases`/015's `_build_pol_cases`: a `_lattice_paths(tag)`
+  helper plus a case-list builder), called from `main()` with
+  `tag = field_tag(args.b0)` after `add_b0_argument(parser, ...)`. Also added
+  the same missing-lattice `SystemExit` message 014/015 already had
+  (`_run_momentum_acceptance`/`_run_dynamic_aperture` now take a `tag` kwarg
+  and check `lattice_json.exists()` before loading). `--list-cases` prints
+  the resolved `Field tag: ... (--b0 ...)` line first, same as 014/015.
+  `013_run_da_and_ma.py` also gained its own `--b0` (default
+  `MAIN_SOLENOID_B0`) and unconditionally forwards `--b0 <value>` to all
+  three subprocesses (DA/MA/EMIT) — unlike most of 013's other forwarded
+  flags, this one isn't gated by `is not None` since `add_b0_argument`
+  always supplies a default, so it's never `None`.
 - **Extra sextupole knob (009/010 only, added 2026-07-15)**:
   `--extra-sext-strength K2L` (default `0.0`, off) calls
   `lattice_knobs.install_extra_sextupole(line, k2l=...)` right after
@@ -246,7 +264,10 @@ subprocesses with a shared CLI.
   y MA scan),
   `--n-part` for EMIT only, `--sexamp`, `--extra-sext-strength` (added
   2026-07-15, forwarded to 009/010's own `--extra-sext-strength`; not
-  forwarded to 014/EMIT), `--no-emitt` to skip EMIT,
+  forwarded to 014/EMIT), `--b0` (added 2026-07-28 via
+  `solenoid_params.add_b0_argument`, default `MAIN_SOLENOID_B0`; forwarded
+  unconditionally to all three subprocesses since it always has a default),
+  `--no-emitt` to skip EMIT,
   `--show`). No `--da-n-turns` etc. defaults to the global `--n-turns` unless
   explicitly overridden. Despite the module docstring/filename saying
   "DA and MA", it now also runs the emittance-evolution study (014) by default
@@ -400,6 +421,17 @@ by 009 (010 deliberately avoids it, see above).
   `save_ma_study` now requires a `direction: Literal["x_only", "y_only"]`
   kwarg, stored as a scalar `direction` string in the `.npz` and used to pick
   the filename tag (2026-07-13 MA direction split).
+  **Bug fixed 2026-07-28**: `save_da_study`/`save_ma_study` had no
+  `field_tag` parameter at all (unlike `save_emitt_study`, which already
+  passed it through to `make_study_stem`) — every DA/MA output filename was
+  silently tagged with the module-level `solenoid_params.FIELD_TAG` default
+  regardless of which lattice was actually loaded. Harmless while 009/010
+  had no `--b0` of their own (module default == what was loaded), but would
+  have mislabeled filenames the moment they gained a runtime `--b0` (see
+  above). Both now take `field_tag: str = FIELD_TAG` and pass it to
+  `make_study_stem`; 009/010 call them with `field_tag=tag` (the
+  `--b0`-resolved tag for that run). Verified with short (5-turn) smoke
+  runs: `--b0 3.0` produced `DA_Sol_Off_SB_3T_...`/`MA_X_Sol_Off_SB_3T_...`.
 - `_plot_da_from_arrays`: reads `y_normalized` (not raw `y_hat`) for the
   y-axis, no `set_aspect("equal", ...)` (matches the live 010 plot post-fix).
 - `_plot_ma_from_arrays`: reads `direction` from the `.npz` and plots

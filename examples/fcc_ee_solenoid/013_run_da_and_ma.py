@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from solenoid_params import MAIN_SOLENOID_B0, add_b0_argument
+
 HERE = Path(__file__).resolve().parent
 DA_SCRIPT = HERE / "010_dynamic_aperture.py"
 MA_SCRIPT = HERE / "009_momentum_acceptance.py"
@@ -87,6 +89,7 @@ def main():
         metavar="CASE",
         help="Shortcut for --da-cases (DA only).",
     )
+    add_b0_argument(parser, default=MAIN_SOLENOID_B0)
     parser.add_argument(
         "--n-turns",
         type=int,
@@ -176,6 +179,9 @@ def main():
         ma_args.extend(["--directions", *args.ma_directions])
     if emitt_cases:
         emitt_args.extend(["--cases", *emitt_cases])
+    da_args.extend(["--b0", str(args.b0)])
+    ma_args.extend(["--b0", str(args.b0)])
+    emitt_args.extend(["--b0", str(args.b0)])
     da_n_turns = args.da_n_turns if args.da_n_turns is not None else args.n_turns
     ma_n_turns = args.ma_n_turns if args.ma_n_turns is not None else args.n_turns
     emitt_n_turns = args.emitt_n_turns if args.emitt_n_turns is not None else args.n_turns

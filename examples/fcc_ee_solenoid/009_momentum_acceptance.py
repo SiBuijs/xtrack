@@ -14,17 +14,18 @@ from lattice_knobs import (
     set_lattice_knobs,
     set_solenoid_offset,
 )
-from solenoid_params import FIELD_TAG
+from solenoid_params import MAIN_SOLENOID_B0, add_b0_argument, field_tag
 
 plt.close("all")
 
 HERE = Path(__file__).resolve().parent
-SPLINEBORIS_LATTICE_JSON = (
-    HERE / f"fccee_z_lcc_splineboris_solenoids_coupling_corrected_{FIELD_TAG}.json"
-)
-VARSOL_LATTICE_JSON = (
-    HERE / f"fccee_z_lcc_varsol_solenoids_coupling_corrected_{FIELD_TAG}.json"
-)
+
+
+def _lattice_paths(tag):
+    return (
+        HERE / f"fccee_z_lcc_splineboris_solenoids_coupling_corrected_{tag}.json",
+        HERE / f"fccee_z_lcc_varsol_solenoids_coupling_corrected_{tag}.json",
+    )
 
 NEMITT_X = 6.33e-5
 NEMITT_Y = 1.69e-7
@@ -42,38 +43,41 @@ GLOBAL_XY_LIMIT = 5e-2
 DELTA_INITIAL_VALUES = np.linspace(-35 * ENERGY_SPREAD, 35 * ENERGY_SPREAD, 51)
 N_TURNS = 10_000
 
-MA_CASES = [
-    dict(
-        name="sb_on",
-        model="SB",
-        lattice_json=SPLINEBORIS_LATTICE_JSON,
-        with_solenoids=True,
-        with_correctors=True,
-        title="SplineBoris: solenoids powered + correction scheme",
-    ),
-    dict(
-        name="varsol_on",
-        model="VarSol",
-        lattice_json=VARSOL_LATTICE_JSON,
-        with_solenoids=True,
-        with_correctors=True,
-        title="VariableSolenoid: solenoids powered + correction scheme",
-    ),
-    dict(
-        name="sb_off",
-        model="SB",
-        lattice_json=SPLINEBORIS_LATTICE_JSON,
-        with_solenoids=False,
-        with_correctors=False,
-        title="SplineBoris: solenoids unpowered",
-    ),
-]
+def _build_ma_cases(tag):
+    """Build the MA_CASES list for a given field_tag (e.g. '2T', '3T')."""
+    splineboris_json, varsol_json = _lattice_paths(tag)
+    return [
+        dict(
+            name="sb_on",
+            model="SB",
+            lattice_json=splineboris_json,
+            with_solenoids=True,
+            with_correctors=True,
+            title=f"SplineBoris ({tag}): solenoids powered + correction scheme",
+        ),
+        dict(
+            name="varsol_on",
+            model="VarSol",
+            lattice_json=varsol_json,
+            with_solenoids=True,
+            with_correctors=True,
+            title=f"VariableSolenoid ({tag}): solenoids powered + correction scheme",
+        ),
+        dict(
+            name="sb_off",
+            model="SB",
+            lattice_json=splineboris_json,
+            with_solenoids=False,
+            with_correctors=False,
+            title=f"SplineBoris ({tag}): solenoids unpowered",
+        ),
+    ]
 
-MA_CASES_BY_NAME = {case["name"]: case for case in MA_CASES}
+
 # sb_off is the bare-machine baseline: it has already been run once and does
 # not depend on solenoid/correction changes, so skip it by default (pass
 # --cases sb_off explicitly to rerun it).
-DEFAULT_MA_CASE_NAMES = [name for name in MA_CASES_BY_NAME if name != "sb_off"]
+DEFAULT_MA_CASE_NAMES = ["sb_on", "varsol_on"]
 
 # Pure-plane MA scans: theta=0 is on-axis x (y_normalized=0), theta=pi/2 is
 # on-axis y (x_normalized=0). x_only runs by default; y_only must be opted
@@ -132,12 +136,22 @@ def _plot_momentum_acceptance_figure(out, tt_init, title, direction):
 
 def _run_momentum_acceptance(
     case, direction, *, n_turns, with_progress, sexamp, x_offset, y_offset,
-    extra_sext_strength=0.0,
+    extra_sext_strength=0.0, tag,
 ):
     lattice_json = case["lattice_json"]
     title = case["title"]
     theta = MA_DIRECTIONS[direction]["theta"]
     max_y_r = MAX_Y_R * MA_DIRECTIONS[direction]["max_y_r_factor"]
+
+    if not lattice_json.exists():
+        raise SystemExit(
+            f"Missing lattice file: {lattice_json.name}\n"
+            f"Build it first for --b0 corresponding to tag {tag!r} via "
+            "004a_build_and_check_solenoids.py -> "
+            "004b_install_solenoids_in_fcc_ring.py / "
+            "004b_install_varsol_solenoids_in_fcc_ring.py -> "
+            "004c_correct_solenoids_in_fcc_ring.py (each accepts --b0)."
+        )
 
     print(f"\n=== {title} ({direction}) ===")
     print(f"Loading lattice: {lattice_json.name}")
@@ -230,6 +244,7 @@ def _run_momentum_acceptance(
         x_offset=x_offset,
         y_offset=y_offset,
         extra_sext_strength=extra_sext_strength,
+        field_tag=tag,
     )
     print(
         f"[{title} ({direction})] Momentum acceptance run complete:"
@@ -239,16 +254,16 @@ def _run_momentum_acceptance(
     return out
 
 
-def _select_cases(case_names):
+def _select_cases(case_names, cases_by_name):
     if not case_names:
-        return [MA_CASES_BY_NAME[name] for name in DEFAULT_MA_CASE_NAMES]
+        return [cases_by_name[name] for name in DEFAULT_MA_CASE_NAMES]
 
-    unknown = [name for name in case_names if name not in MA_CASES_BY_NAME]
+    unknown = [name for name in case_names if name not in cases_by_name]
     if unknown:
-        valid = ", ".join(MA_CASES_BY_NAME)
+        valid = ", ".join(cases_by_name)
         raise SystemExit(f"Unknown case(s): {', '.join(unknown)}. Choose from: {valid}")
 
-    return [MA_CASES_BY_NAME[name] for name in case_names]
+    return [cases_by_name[name] for name in case_names]
 
 
 def _select_directions(direction_names):
@@ -296,6 +311,7 @@ def main():
             "include the y_only scan). Available: x_only, y_only"
         ),
     )
+    add_b0_argument(parser, default=MAIN_SOLENOID_B0)
     parser.add_argument(
         "--n-turns",
         type=int,
@@ -343,12 +359,17 @@ def main():
     )
     args = parser.parse_args()
 
+    tag = field_tag(args.b0)
+    ma_cases = _build_ma_cases(tag)
+    ma_cases_by_name = {case["name"]: case for case in ma_cases}
+
     if args.list_cases:
-        for case in MA_CASES:
+        print(f"Field tag: {tag} (--b0 {args.b0:g})")
+        for case in ma_cases:
             print(f"{case['name']}: {case['title']}")
         return
 
-    for case in _select_cases(args.cases):
+    for case in _select_cases(args.cases, ma_cases_by_name):
         for direction in _select_directions(args.directions):
             _run_momentum_acceptance(
                 case,
@@ -359,6 +380,7 @@ def main():
                 x_offset=args.x_offset,
                 y_offset=args.y_offset,
                 extra_sext_strength=args.extra_sext_strength,
+                tag=tag,
             )
 
     if not args.no_show:
