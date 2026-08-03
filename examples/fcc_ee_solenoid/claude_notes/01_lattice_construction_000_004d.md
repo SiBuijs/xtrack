@@ -121,7 +121,8 @@ The template-building script; everything downstream reads its output
   a=0.03, B0=1.0, z0=0)`.
 - `extract_tapered_field_data(...)` (from `spline_boris_setup.py`) is the
   heavy lifting: samples `bx`/`by`/`bs` and their transverse derivatives up to
-  `MAX_TRANSVERSE_DERIVATIVE_ORDER=4` on `MAIN_SOLENOID_S_AXIS =
+  `MAX_TRANSVERSE_DERIVATIVE_ORDER=4` (fixed, always 4, regardless of the
+  `--max-transverse-order` flag below) on `MAIN_SOLENOID_S_AXIS =
   linspace(-2.399, 2.399, 201)` (main) / `COMP_SOLENOID_S_AXIS =
   linspace(-1, 1, 201)` (comp), applies a quintic smoothstep taper
   (`TAPER_LENGTH=0.15 m`) so fields go exactly to 0 (value+slope+curvature) at
@@ -129,6 +130,17 @@ The template-building script; everything downstream reads its output
   to get consistent start/end values+derivatives+slice-means for every
   transverse-derivative order — this is what eventually becomes each
   `xt.Spline4`'s `val_start/der_start/val_end/der_end/mean`.
+- **`--max-transverse-order` (added 2026-08-03, default 4)**: caps
+  `MAX_TRANSVERSE_DERIVATIVE_ORDER_FOR_SPLINE`, the *separate* constant
+  actually passed to `build_splineboris_line` further down (see next bullet)
+  — controls how many `bx`/`by` orders get baked into each installed
+  `xt.SplineBoris` (i.e. `element.multipole_order`), not how many are
+  extracted from the field map. Lower = fewer polynomial terms evaluated per
+  Boris step = cheaper tracking, at the cost of losing higher multipole
+  content (order 2 = sextupole). Tagged via `order_tag()` into
+  `OUTPUT_LINES_JSON` (silent/untagged at the default 4) and threaded through
+  004b/004c/004d/009/010/014/015/013 the same way `--b0`/`field_tag` is —
+  see `00_overview.md`'s `solenoid_params.py` entry for the full chain.
 - `comp_scale_b = -main_bs_integral / comp_bs_integral_unscaled / 2.0`: the
   key charge-balancing computation, done **here** (not in 004b/004c).
 - Builds 4 templates via `build_splineboris_line`/`build_variable_solenoid_line`:

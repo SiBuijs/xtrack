@@ -107,6 +107,33 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   `aperture_study_io.save_da_study`/`save_ma_study`, which had no `field_tag`
   passthrough at all (unlike `save_emitt_study`) — see
   `03_aperture_emittance_studies_009_014.md`.
+  **2026-08-03: `--max-transverse-order` added**, mirroring `--b0`/`field_tag`
+  exactly. `order_tag(n)`/`add_max_order_argument()` in `solenoid_params.py`
+  (default `n=4`, tag `''` at the default, `'_o2'` etc. otherwise) cap the
+  transverse multipole order baked into each installed `xt.SplineBoris`
+  element via `build_splineboris_line`'s `max_transverse_derivative_order_
+  for_spline` (see `spline_boris_setup.py`) — this directly sets
+  `element.multipole_order`, i.e. how many `bx`/`by` polynomial terms the
+  Boris pusher evaluates per step. Lower orders (below 2, the sextupole row
+  the 004b `sext_amp` knob scales) drop that multipole content in exchange
+  for cheaper tracking. SplineBoris-only — VariableSolenoid is linear-only
+  and untouched by this flag. Field-extraction order in 004a
+  (`MAX_TRANSVERSE_DERIVATIVE_ORDER`) stays fixed at 4 regardless (it's the
+  cheap, one-time part; the spline-build order must stay `<=` it). Threaded
+  through the same tagged-filename chain as `--b0`: 004a's
+  `004_solenoid_lines_{FIELD_TAG}{ORDER_TAG}.json` -> 004b's
+  `temp_fcc_ee_lcc_splineboris_solenoids_{FIELD_TAG}{ORDER_TAG}.json` ->
+  004c's `fccee_z_lcc_splineboris_solenoids_coupling_corrected_
+  {FIELD_TAG}{ORDER_TAG}.json` (004c's `--model varsol` path is untagged by
+  order, since it has no such knob) -> 004d and 009/010/014/015 (each of
+  which also tags its saved DA/MA/EMIT/POL npz+pdf outputs with the combined
+  `{field_tag}{order_tag}` string). 013 forwards its own
+  `--max-transverse-order` to all three subprocesses, same as `--b0`. Not
+  wired into 011 (which has no `--b0` either — see its own note below).
+  In 004a, dropping the order below 2 disables one diagnostic ("straight
+  from SplineBoris" d^2Bx/dx^2 integral, which reads `element.bx[2]`
+  directly) rather than crashing — guarded by
+  `D2BX_DX2_SPLINE_DIAGNOSTIC_AVAILABLE`.
   **2026-07-27: main-solenoid half-length and first-corrector ds_start are
   now case-dependent too** (previously both were hardcoded at the 2T values
   regardless of `MAIN_SOLENOID_B0`, silently wrong for the 3T case) —

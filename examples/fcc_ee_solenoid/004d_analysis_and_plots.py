@@ -5,18 +5,29 @@ import matplotlib.pyplot as plt
 import numpy as np
 import xtrack as xt
 
-from solenoid_params import MAIN_SOLENOID_B0, add_b0_argument, field_tag
+from solenoid_params import (
+    MAIN_SOLENOID_B0,
+    add_b0_argument,
+    add_max_order_argument,
+    field_tag,
+    order_tag,
+)
 
 
 _parser = argparse.ArgumentParser(
     description='Analyze and plot the corrected SplineBoris FCC lattice.')
 add_b0_argument(_parser, default=MAIN_SOLENOID_B0)
+add_max_order_argument(_parser)
 _args = _parser.parse_args()
 FIELD_TAG = field_tag(_args.b0)
+ORDER_TAG = order_tag(_args.max_transverse_order)
 
 HERE = Path(__file__).parent
 INPUT_LATTICE_JSON = (
-    HERE / f'fccee_z_lcc_splineboris_solenoids_coupling_corrected_{FIELD_TAG}.json'
+    HERE / (
+        'fccee_z_lcc_splineboris_solenoids_coupling_corrected_'
+        f'{FIELD_TAG}{ORDER_TAG}.json'
+    )
 )
 
 IP_NAMES = ['ipa', 'ipd', 'ipg', 'ipj']

@@ -125,3 +125,50 @@ def add_b0_argument(parser, *, default: float = MAIN_SOLENOID_B0) -> None:
             f"{default:g} T -> tag {field_tag(default)!r})."
         ),
     )
+
+
+# Default cap on the transverse multipole order (0..4) baked into each
+# SplineBoris solenoid slice by build_splineboris_line() in
+# spline_boris_setup.py -- this directly sets each installed xt.SplineBoris
+# element's multipole_order, i.e. how many bx/by polynomial terms the Boris
+# pusher evaluates per step. Lower orders drop higher multipole content
+# (order 2 = sextupole, the order the 004b `sext_amp` knob scales) in
+# exchange for cheaper tracking. Kept in sync with the module-level default
+# in 004a_build_and_check_solenoids.py (the only place it is actually built).
+MAX_TRANSVERSE_DERIVATIVE_ORDER_FOR_SPLINE = 4
+
+
+def order_tag(
+        max_order: int = MAX_TRANSVERSE_DERIVATIVE_ORDER_FOR_SPLINE) -> str:
+    """Filename-safe tag for a non-default SplineBoris transverse-order cap,
+    e.g. 4 (the default) -> '', 2 -> '_o2'. Silent at the default so builds
+    that never touch this flag keep their original (untagged) filenames."""
+    if max_order == MAX_TRANSVERSE_DERIVATIVE_ORDER_FOR_SPLINE:
+        return ""
+    return f"_o{max_order}"
+
+
+def add_max_order_argument(
+        parser, *,
+        default: int = MAX_TRANSVERSE_DERIVATIVE_ORDER_FOR_SPLINE) -> None:
+    """Add a ``--max-transverse-order`` CLI flag capping the SplineBoris
+    transverse multipole order baked into the solenoid field model.
+
+    Mirrors add_b0_argument(): the chosen value is turned into an
+    order_tag() to build or select the matching tagged lattice files. Only
+    selects/tags files; it does not itself validate that a build for that
+    value exists on disk. Valid range is 0..4 (0..MAX_TRANSVERSE_DERIVATIVE_
+    ORDER, the fixed field-extraction order in 004a -- raising that would be
+    needed to go higher).
+    """
+    parser.add_argument(
+        "--max-transverse-order",
+        type=int,
+        default=default,
+        metavar="N",
+        help=(
+            "Max transverse multipole order (0..4) baked into each "
+            "SplineBoris solenoid slice, selects which order_tag()-tagged "
+            f"lattice files to build/use (default: {default})."
+        ),
+    )

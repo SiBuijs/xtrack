@@ -22,7 +22,13 @@ from scipy.optimize import curve_fit
 
 from aperture_study_io import save_emitt_study, variant_suffix
 from lattice_knobs import robust_twiss, set_lattice_knobs
-from solenoid_params import MAIN_SOLENOID_B0, add_b0_argument, field_tag
+from solenoid_params import (
+    MAIN_SOLENOID_B0,
+    add_b0_argument,
+    add_max_order_argument,
+    field_tag,
+    order_tag,
+)
 
 plt.close("all")
 
@@ -33,16 +39,20 @@ N_TURNS = 10_000
 N_PART = 1000
 
 
-def _lattice_paths(tag):
+def _lattice_paths(tag, order_tag_str=""):
+    # order_tag_str only applies to the SplineBoris path -- VariableSolenoid
+    # is linear-only and has no transverse-order knob (see 00_overview.md).
     return (
-        HERE / f"fccee_z_lcc_splineboris_solenoids_coupling_corrected_{tag}.json",
+        HERE / f"fccee_z_lcc_splineboris_solenoids_coupling_corrected_{tag}{order_tag_str}.json",
         HERE / f"fccee_z_lcc_varsol_solenoids_coupling_corrected_{tag}.json",
     )
 
 
-def _build_emitt_cases(tag):
-    """Build the EMITT_CASES list for a given field_tag (e.g. '2T', '3T')."""
-    splineboris_json, varsol_json = _lattice_paths(tag)
+def _build_emitt_cases(tag, order_tag_str=""):
+    """Build the EMITT_CASES list for a given field_tag (e.g. '2T', '3T') and
+    order_tag (e.g. '', '_o2' -- SplineBoris-only, see _lattice_paths)."""
+    splineboris_json, varsol_json = _lattice_paths(tag, order_tag_str)
+    sb_tag = f"{tag}{order_tag_str}"
     return [
         dict(
             name="sb_on",
@@ -50,7 +60,7 @@ def _build_emitt_cases(tag):
             lattice_json=splineboris_json,
             with_solenoids=True,
             with_correctors=True,
-            title=f"SplineBoris ({tag}): solenoids powered + correction scheme",
+            title=f"SplineBoris ({sb_tag}): solenoids powered + correction scheme",
         ),
         dict(
             name="varsol_on",
@@ -66,7 +76,7 @@ def _build_emitt_cases(tag):
             lattice_json=splineboris_json,
             with_solenoids=False,
             with_correctors=False,
-            title=f"SplineBoris ({tag}): solenoids unpowered",
+            title=f"SplineBoris ({sb_tag}): solenoids unpowered",
         ),
     ]
 
@@ -245,11 +255,12 @@ def _run_emittance_evolution(
     if not lattice_json.exists():
         raise SystemExit(
             f"Missing lattice file: {lattice_json.name}\n"
-            f"Build it first for --b0 corresponding to tag {tag!r} via "
+            f"Build it first for tag {tag!r} via "
             "004a_build_and_check_solenoids.py -> "
             "004b_install_solenoids_in_fcc_ring.py / "
             "004b_install_varsol_solenoids_in_fcc_ring.py -> "
-            "004c_correct_solenoids_in_fcc_ring.py (each accepts --b0)."
+            "004c_correct_solenoids_in_fcc_ring.py (each accepts --b0 and, "
+            "for the SplineBoris path, --max-transverse-order)."
         )
 
     print(f"\n=== {title} ===")
@@ -431,6 +442,7 @@ def main():
         help="List available cases and exit.",
     )
     add_b0_argument(parser, default=MAIN_SOLENOID_B0)
+    add_max_order_argument(parser)
     parser.add_argument(
         "--n-turns",
         type=int,
@@ -460,11 +472,14 @@ def main():
     args = parser.parse_args()
 
     tag = field_tag(args.b0)
-    emitt_cases = _build_emitt_cases(tag)
+    order_tag_str = order_tag(args.max_transverse_order)
+    emitt_cases = _build_emitt_cases(tag, order_tag_str)
     emitt_cases_by_name = {case["name"]: case for case in emitt_cases}
 
     if args.list_cases:
-        print(f"Field tag: {tag} (--b0 {args.b0:g})")
+        print(
+            f"Field tag: {tag}{order_tag_str} (--b0 {args.b0:g}, "
+            f"--max-transverse-order {args.max_transverse_order})")
         for case in emitt_cases:
             print(f"{case['name']}: {case['title']}")
         return
@@ -476,7 +491,7 @@ def main():
             n_part=args.n_part,
             with_progress=1,
             sexamp=args.sexamp,
-            tag=tag,
+            tag=f"{tag}{order_tag_str}",
         )
 
     if not args.no_show:

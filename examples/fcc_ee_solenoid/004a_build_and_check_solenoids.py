@@ -24,8 +24,10 @@ from solenoid_params import (
     MAIN_SOLENOID_B0,
     THETA,
     add_b0_argument,
+    add_max_order_argument,
     field_tag,
     half_length_for_b0,
+    order_tag,
 )
 from tilted_solenoid import TiltedSolenoid
 from xtrack._temp.boris_and_solenoid_map.solenoid_field import SolenoidField
@@ -37,6 +39,7 @@ from xtrack.beam_elements.splineboris_src.spline_B_field_eval_python import (
 _parser = argparse.ArgumentParser(
     description='Build and check tapered detector/compensation solenoid models.')
 add_b0_argument(_parser, default=MAIN_SOLENOID_B0)
+add_max_order_argument(_parser, default=4)
 _args = _parser.parse_args()
 
 # Overrides the default imported from solenoid_params.py with the CLI choice,
@@ -47,14 +50,25 @@ MAIN_SOLENOID_B0 = _args.b0
 FIELD_TAG = field_tag(MAIN_SOLENOID_B0)
 MAIN_SOLENOID_HALF_LENGTH = half_length_for_b0(MAIN_SOLENOID_B0)
 
+# Transverse-order cap actually baked into the built SplineBoris elements
+# (see splineboris_build_kwargs below); --max-transverse-order < 4 trades
+# higher multipole fidelity for cheaper Boris-pusher tracking. Threaded into
+# the output filename via ORDER_TAG so different-order builds coexist.
+MAX_TRANSVERSE_DERIVATIVE_ORDER_FOR_SPLINE = _args.max_transverse_order
+ORDER_TAG = order_tag(MAX_TRANSVERSE_DERIVATIVE_ORDER_FOR_SPLINE)
+
 HERE = Path(__file__).parent
-OUTPUT_LINES_JSON = HERE / f'004_solenoid_lines_{FIELD_TAG}.json'
+OUTPUT_LINES_JSON = HERE / f'004_solenoid_lines_{FIELD_TAG}{ORDER_TAG}.json'
 
 PARTICLE = 'positron'
 ENERGY0 = 45.6e9
 
+# Field-extraction order is kept fixed at 4 regardless of
+# --max-transverse-order: extraction is cheap and one-time, and
+# MAX_TRANSVERSE_DERIVATIVE_ORDER_FOR_SPLINE must stay <= this value (the
+# spline build only ever reads orders extract_tapered_field_data actually
+# computed).
 MAX_TRANSVERSE_DERIVATIVE_ORDER = 4
-MAX_TRANSVERSE_DERIVATIVE_ORDER_FOR_SPLINE = 4
 DERIVATIVE_STEP = 5e-4
 SPLINE_INTEGRAL_POINTS = 10
 DECREASE_S_POLY_ORDER_WITH_TRANSVERSE_ORDER = True
@@ -93,10 +107,18 @@ BETY = 0.0007
 MAIN_SOLENOID_S_AXIS = np.linspace(-2.399, 2.399, 201)
 COMP_SOLENOID_S_AXIS = np.linspace(-1.0, 1.0, 201)
 
-assert MAX_TRANSVERSE_DERIVATIVE_ORDER_FOR_SPLINE <= xt.SplineBoris._SB_MAX_MULTIPOLE_ORDER - 1
+assert 0 <= MAX_TRANSVERSE_DERIVATIVE_ORDER_FOR_SPLINE <= xt.SplineBoris._SB_MAX_MULTIPOLE_ORDER - 1
 assert MAX_TRANSVERSE_DERIVATIVE_ORDER <= 5
+# The spline build only ever reads orders extract_tapered_field_data actually
+# computed (0..MAX_TRANSVERSE_DERIVATIVE_ORDER).
+assert MAX_TRANSVERSE_DERIVATIVE_ORDER_FOR_SPLINE <= MAX_TRANSVERSE_DERIVATIVE_ORDER
 assert D2BX_DX2_ORDER <= MAX_TRANSVERSE_DERIVATIVE_ORDER
-assert D2BX_DX2_ORDER <= MAX_TRANSVERSE_DERIVATIVE_ORDER_FOR_SPLINE
+# Whether the installed SplineBoris elements actually carry an order-
+# D2BX_DX2_ORDER Hermite row -- False when --max-transverse-order is lowered
+# below D2BX_DX2_ORDER, in which case the "straight from SplineBoris"
+# d^2Bx/dx^2 diagnostic further below is skipped (there is nothing to read).
+D2BX_DX2_SPLINE_DIAGNOSTIC_AVAILABLE = (
+    D2BX_DX2_ORDER <= MAX_TRANSVERSE_DERIVATIVE_ORDER_FOR_SPLINE)
 assert S_DERIVATIVE_SPLINE_ORDER == 4
 assert MAX_S_DERIVATIVE_PLOT_ORDER <= 5
 for spec in MIXED_DERIVATIVE_SPECS:
@@ -527,13 +549,18 @@ for name, item in comparison_fields.items():
     field_map_integral = scale_b * np.trapezoid(
         field_data['bx'][D2BX_DX2_ORDER], field_data['s_axis'])
 
-    splineboris_integral = 0.0
-    for element in line.elements:
-        bx_hermite = np.array(element.bx[D2BX_DX2_ORDER])
-        poly = hermite_to_polynomial(0.0, element.length, bx_hermite)
-        integral_poly = poly.integ()
-        splineboris_integral += element.scale_b * (
-            integral_poly(element.length) - integral_poly(0.0))
+    if D2BX_DX2_SPLINE_DIAGNOSTIC_AVAILABLE:
+        splineboris_integral = 0.0
+        for element in line.elements:
+            bx_hermite = np.array(element.bx[D2BX_DX2_ORDER])
+            poly = hermite_to_polynomial(0.0, element.length, bx_hermite)
+            integral_poly = poly.integ()
+            splineboris_integral += element.scale_b * (
+                integral_poly(element.length) - integral_poly(0.0))
+    else:
+        # --max-transverse-order dropped the order-D2BX_DX2_ORDER Hermite
+        # row entirely -- nothing to read from the installed elements.
+        splineboris_integral = None
 
     d2bx_dx2_integrals[name] = {
         'field_map': field_map_integral,
@@ -1205,6 +1232,11 @@ print(
 for name, values in d2bx_dx2_integrals.items():
     print(f'    {name}:')
     print(f'      field-map data = {values["field_map"]:+.12e} T/m')
-    print(f'      SplineBoris    = {values["splineboris"]:+.12e} T/m')
+    if values['splineboris'] is None:
+        print(
+            '      SplineBoris    = n/a (--max-transverse-order '
+            f'{MAX_TRANSVERSE_DERIVATIVE_ORDER_FOR_SPLINE} < {D2BX_DX2_ORDER})')
+    else:
+        print(f'      SplineBoris    = {values["splineboris"]:+.12e} T/m')
 
 plt.show()

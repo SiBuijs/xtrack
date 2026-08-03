@@ -4,7 +4,13 @@ import argparse
 import matplotlib.pyplot as plt
 import xtrack as xt
 
-from solenoid_params import MAIN_SOLENOID_B0, add_b0_argument, field_tag
+from solenoid_params import (
+    MAIN_SOLENOID_B0,
+    add_b0_argument,
+    add_max_order_argument,
+    field_tag,
+    order_tag,
+)
 
 
 HERE = Path(__file__).parent
@@ -19,13 +25,18 @@ parser.add_argument(
     help='Solenoid model to correct (default: splineboris).',
 )
 add_b0_argument(parser, default=MAIN_SOLENOID_B0)
+add_max_order_argument(parser)
 args = parser.parse_args()
 
 FIELD_TAG = field_tag(args.b0)
+# The transverse-order cap only applies to the SplineBoris model (VarSol is
+# linear-only, see 00_overview.md) -- its tag is left out of the varsol
+# filenames so --max-transverse-order has no effect on --model varsol.
+ORDER_TAG = order_tag(args.max_transverse_order)
 _MODEL_LATTICE_PATHS = {
     'splineboris': (
-        f'temp_fcc_ee_lcc_splineboris_solenoids_{FIELD_TAG}.json',
-        f'fccee_z_lcc_splineboris_solenoids_coupling_corrected_{FIELD_TAG}.json',
+        f'temp_fcc_ee_lcc_splineboris_solenoids_{FIELD_TAG}{ORDER_TAG}.json',
+        f'fccee_z_lcc_splineboris_solenoids_coupling_corrected_{FIELD_TAG}{ORDER_TAG}.json',
     ),
     'varsol': (
         f'temp_fcc_ee_lcc_varsol_solenoids_{FIELD_TAG}.json',

@@ -12,22 +12,27 @@ from solenoid_params import (
     MAIN_SOLENOID_B0,
     MAIN_SOLENOID_CORRECTOR_DS_END,
     add_b0_argument,
+    add_max_order_argument,
     corrector_ds_start_for_b0,
     field_tag,
+    order_tag,
 )
 
 
 _parser = argparse.ArgumentParser(
     description='Install SplineBoris solenoids and correctors in the FCC ring.')
 add_b0_argument(_parser, default=MAIN_SOLENOID_B0)
+add_max_order_argument(_parser)
 _args = _parser.parse_args()
 FIELD_TAG = field_tag(_args.b0)
+ORDER_TAG = order_tag(_args.max_transverse_order)
 MAIN_SOLENOID_CORRECTOR_DS_START = corrector_ds_start_for_b0(_args.b0)
 
 HERE = Path(__file__).parent
 INPUT_LATTICE_JSON = HERE / 'fccee_z_lcc.json'
-INPUT_SOLENOID_LINES_JSON = HERE / f'004_solenoid_lines_{FIELD_TAG}.json'
-OUTPUT_LATTICE_JSON = HERE / f'temp_fcc_ee_lcc_splineboris_solenoids_{FIELD_TAG}.json'
+INPUT_SOLENOID_LINES_JSON = HERE / f'004_solenoid_lines_{FIELD_TAG}{ORDER_TAG}.json'
+OUTPUT_LATTICE_JSON = (
+    HERE / f'temp_fcc_ee_lcc_splineboris_solenoids_{FIELD_TAG}{ORDER_TAG}.json')
 
 IP_NAMES = ['ipa', 'ipd', 'ipg', 'ipj']
 
