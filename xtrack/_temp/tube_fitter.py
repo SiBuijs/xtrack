@@ -38,7 +38,7 @@ KERNEL_TO_DEGREE = {
 }
 
 
-def _generate_pq_pairs(M: int, odd_q_only: bool, fit_skew: bool) -> list[tuple[int, int]]:
+def _generate_pq_pairs(M: int, y_symmetry: bool, fit_skew: bool) -> list[tuple[int, int]]:
     """(p, q) pairs with 0 < p+q <= M, filtered by symmetry options."""
     pairs: list[tuple[int, int]] = []
     for p in range(M + 1):
@@ -52,7 +52,7 @@ def _generate_pq_pairs(M: int, odd_q_only: bool, fit_skew: bool) -> list[tuple[i
                 # Skew terms: (p, 0) gives multipole a_p via C_{p,0} (on-axis d^{p-1} B_x / dx^{p-1})
                 if fit_skew or p == 1:
                     pairs.append((p, q))
-            elif not odd_q_only:
+            elif not y_symmetry:
                 pairs.append((p, q))
     return pairs
 
@@ -108,8 +108,11 @@ class TubeFitter:
     fit_skew :
         If True (default), include all skew (p, 0) pairs with 1 <= p <= M in the tube
         basis. If False, only (1, 0) is used (on-axis B_x dipole only).
-    odd_q_only :
-        When True, only use (p, q) with odd q for the normal (By) multipoles.
+    y_symmetry :
+        If True (default), assume machine-plane (y-parity) symmetry: only use
+        (p, q) with odd q for the normal (By) multipoles, so Bnorm terms are
+        forced even in y and Bnorm/Bskew are decoupled accordingly. If False,
+        also include even-q pairs, allowing a field with no assumed y-parity.
     field_tol :
         Relative tolerance for marking a field component as ``to_fit`` in
         ``df_fit_pars`` (same logic as ``FieldFitter``).
@@ -141,7 +144,7 @@ class TubeFitter:
         kernel: str = "cubic",
         tube_radius: float | None = None,
         fit_skew: bool = True,
-        odd_q_only: bool = True,
+        y_symmetry: bool = True,
         field_tol: float = 1e-3,
     ):
         if n_frames < 2:
@@ -164,7 +167,7 @@ class TubeFitter:
         self.M = self.deg + 1
         self.tube_radius = tube_radius
         self.fit_skew = bool(fit_skew)
-        self.odd_q_only = bool(odd_q_only)
+        self.y_symmetry = bool(y_symmetry)
         self.field_tol = float(field_tol)
         self.xy_point = (0.0, 0.0)
         self.component_to_fit: dict[tuple[str, int], bool] = {}
@@ -259,6 +262,36 @@ class TubeFitter:
             raise ValueError(f"field must be 'Bx' or 'By', got {field!r}")
         return f(self.s_full)
 
+    def evaluate_transverse_field(
+        self, x: np.ndarray, y: np.ndarray, z: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Evaluate the fitted (Bx, By) field at arbitrary (x, y, z) points from
+        the fitted multipole potential. Call after ``fit()``.
+
+        x, y, z are broadcast together (each may be a scalar or an array of
+        matching shape) and must already be in metres, i.e. pre-scaled the
+        same way ``raw_data`` is scaled by ``distance_unit`` in ``fit()``.
+        """
+        if self.Psi is None or self.knots is None or self.pq_pairs is None:
+            raise RuntimeError("Call fit() before evaluate_transverse_field().")
+
+        x, y, z = np.broadcast_arrays(
+            np.asarray(x, dtype=float), np.asarray(y, dtype=float), np.asarray(z, dtype=float)
+        )
+        k = self.basis_order
+        design = BSpline.design_matrix(z, self.knots, k)
+
+        bx = np.zeros(z.shape, dtype=float)
+        by = np.zeros(z.shape, dtype=float)
+        for p, q in self.pq_pairs:
+            psi_pq_z = design @ self.Psi[:, p, q]
+            if p > 0:
+                bx += -psi_pq_z * p * x ** (p - 1) * y ** q
+            if q > 0:
+                by += -psi_pq_z * q * x ** p * y ** (q - 1)
+        return bx, by
+
     def _populate_on_axis_from_psi(self) -> None:
         """Fill higher-order on-axis Bx/By columns from tube multipoles (post-``_solve``)."""
         assert self.df_on_axis_raw is not None
@@ -290,7 +323,7 @@ class TubeFitter:
                 f"Unexpected knot vector length {len(self.knots)}, "
                 f"expected {self.n_frames + k + 1}"
             )
-        self.pq_pairs = _generate_pq_pairs(self.M, self.odd_q_only, self.fit_skew)
+        self.pq_pairs = _generate_pq_pairs(self.M, self.y_symmetry, self.fit_skew)
         self.pq_to_idx = {pq: i for i, pq in enumerate(self.pq_pairs)}
 
     # ------------------------------------------------------------------
