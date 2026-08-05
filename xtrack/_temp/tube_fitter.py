@@ -109,10 +109,11 @@ class TubeFitter:
         If True (default), include all skew (p, 0) pairs with 1 <= p <= M in the tube
         basis. If False, only (1, 0) is used (on-axis B_x dipole only).
     y_symmetry :
-        If True (default), assume machine-plane (y-parity) symmetry: only use
+        If True, assume machine-plane (y-parity) symmetry: only use
         (p, q) with odd q for the normal (By) multipoles, so Bnorm terms are
-        forced even in y and Bnorm/Bskew are decoupled accordingly. If False,
-        also include even-q pairs, allowing a field with no assumed y-parity.
+        forced even in y and Bnorm/Bskew are decoupled accordingly. If False
+        (default), also include even-q pairs, allowing a field with no
+        assumed y-parity.
     field_tol :
         Relative tolerance for marking a field component as ``to_fit`` in
         ``df_fit_pars`` (same logic as ``FieldFitter``).
@@ -144,7 +145,7 @@ class TubeFitter:
         kernel: str = "cubic",
         tube_radius: float | None = None,
         fit_skew: bool = True,
-        y_symmetry: bool = True,
+        y_symmetry: bool = False,
         field_tol: float = 1e-3,
     ):
         if n_frames < 2:
