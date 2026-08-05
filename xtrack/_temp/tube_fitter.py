@@ -17,6 +17,8 @@ Conventions (h = 0, straight frame, B = -grad Phi):
 
 from __future__ import annotations
 
+import contextlib
+import io
 import math
 from pathlib import Path
 
@@ -36,6 +38,11 @@ KERNEL_TO_DEGREE = {
     "quadratic": 2,  # B_2, C^1 — narrower than cubic, derivatives continuous
     "cubic": 3,      # B_3, C^2 — widest support but smoothest (default)
 }
+
+# Fallback n_frames used when neither n_frames nor residual_tol is given.
+# Not tuned to any particular fit-quality target -- just a reasonable middle
+# ground that avoids triggering the (potentially slow) residual_tol search.
+DEFAULT_N_FRAMES = 200
 
 
 def _generate_pq_pairs(M: int, y_symmetry: bool, fit_skew: bool) -> list[tuple[int, int]]:
@@ -95,7 +102,29 @@ class TubeFitter:
         ``('Bx', 'By', 'Bs')``.
     n_frames :
         Number of uniformly spaced longitudinal frames (B-spline control points).
-        Number of Hermite regions is ``n_frames - 1``.
+        Number of Hermite regions is ``n_frames - 1``. Mutually exclusive with
+        ``residual_tol`` (specifying both raises ``ValueError``). If neither
+        is given, defaults to ``DEFAULT_N_FRAMES`` (clamped to the valid
+        ``[basis_order + 1, dof_ceiling]`` range) -- a reasonable middle
+        ground, not tuned to any particular fit-quality target.
+    residual_tol :
+        If given (and ``n_frames`` is not), search for the smallest
+        ``n_frames`` whose worst-case relative tube-fit residual (Bskew/Bnorm,
+        the relative version of ``tube_fit_residual_rms``) is <= this value,
+        and use that. The search fits the tube system repeatedly (geometric
+        doubling to bracket the transition, then integer bisection: ~log2 of
+        the search range), so it can take a while for large datasets -- once
+        you know a good value, prefer passing a fixed ``n_frames`` instead.
+        Every evaluated ``n_frames`` is recorded in
+        ``self.n_frames_search_trace`` (``{n_frames: (rel_bskew, rel_bnorm)}``)
+        and plotted automatically via ``plot_n_frames_search()`` once the
+        search finishes (call it again yourself to re-plot). If the target
+        isn't reachable even at the DOF ceiling ``n_frames`` (a genuine
+        residual floor -- e.g. limited transverse data or an unmet
+        ``y_symmetry`` assumption; see
+        ``examples/splineboris/claude_notes/fieldfitter_vs_tubefitter_comparison.md``),
+        this does *not* raise -- it prints a warning and falls back to the
+        DOF ceiling (the best achievable), so construction always succeeds.
     distance_unit :
         Scale factor applied to X, Y, Z index levels to convert to metres.
     deg :
@@ -139,7 +168,7 @@ class TubeFitter:
     def __init__(
         self,
         raw_data: pd.DataFrame,
-        n_frames: int,
+        n_frames: int | None = None,
         distance_unit: float = 1e-3,
         deg: int = 2,
         kernel: str = "cubic",
@@ -147,22 +176,21 @@ class TubeFitter:
         fit_skew: bool = True,
         y_symmetry: bool = False,
         field_tol: float = 1e-3,
+        residual_tol: float | None = None,
     ):
-        if n_frames < 2:
-            raise ValueError("n_frames must be at least 2")
+        if n_frames is not None and residual_tol is not None:
+            raise ValueError(
+                "Specify at most one of n_frames and residual_tol -- pass "
+                "n_frames for a fixed frame count, or residual_tol to search "
+                "for the smallest n_frames that meets it, not both."
+            )
         if kernel not in KERNEL_TO_DEGREE:
             valid = ", ".join(sorted(KERNEL_TO_DEGREE))
             raise ValueError(f"kernel must be one of {{{valid}}}, got {kernel!r}")
 
         self.kernel = kernel
         self.basis_order = KERNEL_TO_DEGREE[kernel]
-        if n_frames < self.basis_order + 1:
-            raise ValueError(
-                f"n_frames ({n_frames}) must be >= basis_order + 1 "
-                f"({self.basis_order + 1}) for kernel={kernel!r}"
-            )
 
-        self.n_frames = int(n_frames)
         self.distance_unit = float(distance_unit)
         self.deg = int(deg)
         self.M = self.deg + 1
@@ -188,8 +216,31 @@ class TubeFitter:
         self.df_on_axis_raw: pd.DataFrame | None = None
         self.df_on_axis_fit: pd.DataFrame | None = None
         self.df_fit_pars: pd.DataFrame | None = None
+        self.n_frames_search_trace: dict[int, tuple[float, float]] | None = None
 
         self._set_raw_data(raw_data)
+
+        if n_frames is not None:
+            resolved_n_frames = int(n_frames)
+        elif residual_tol is not None:
+            resolved_n_frames = self._search_n_frames(float(residual_tol))
+        else:
+            n_min = self.basis_order + 1
+            n_max = self._dof_ceiling()
+            resolved_n_frames = int(np.clip(DEFAULT_N_FRAMES, n_min, n_max))
+            print(
+                f"[TubeFitter] Neither n_frames nor residual_tol given -- "
+                f"defaulting to n_frames={resolved_n_frames}."
+            )
+
+        if resolved_n_frames < 2:
+            raise ValueError("n_frames must be at least 2")
+        if resolved_n_frames < self.basis_order + 1:
+            raise ValueError(
+                f"n_frames ({resolved_n_frames}) must be >= basis_order + 1 "
+                f"({self.basis_order + 1}) for kernel={kernel!r}"
+            )
+        self.n_frames = resolved_n_frames
 
     def fit(self) -> None:
         """Run the full tube-approach fit and populate ``df_fit_pars``."""
@@ -236,6 +287,144 @@ class TubeFitter:
             names=idx.names,
         )
         self.s_full = np.sort(self.df_raw_data.index.get_level_values("Z").unique()).astype(float)
+
+    # ------------------------------------------------------------------
+    # n_frames selection (residual_tol search)
+    # ------------------------------------------------------------------
+
+    def _dof_ceiling(self) -> int:
+        """
+        Max usable n_frames: the tube system has 2*N_x*N_y*N_z equations (Bx,
+        By at every grid point) and n_frames*n_pq unknowns (n_pq = size of
+        the (p, q) multipole basis for this fitter's deg/y_symmetry/fit_skew).
+        Beyond this the system is underdetermined regardless of how much z
+        data exists.
+        """
+        assert self.df_raw_data is not None
+        idx = self.df_raw_data.index
+        n_x = idx.get_level_values("X").nunique()
+        n_y = idx.get_level_values("Y").nunique()
+        n_z = idx.get_level_values("Z").nunique()
+        n_pq = len(_generate_pq_pairs(self.M, self.y_symmetry, self.fit_skew))
+        return (2 * n_x * n_y * n_z) // n_pq
+
+    def _trial_relative_residual(self, n_frames: int) -> tuple[float, float]:
+        """Fit a throwaway TubeFitter at n_frames, return its (Bskew, Bnorm)
+        relative tube-fit residuals."""
+        assert self.df_raw_data is not None
+        with contextlib.redirect_stdout(io.StringIO()):
+            trial = TubeFitter(
+                raw_data=self.df_raw_data,  # already scaled by distance_unit
+                n_frames=n_frames,
+                distance_unit=1.0,
+                deg=self.deg,
+                kernel=self.kernel,
+                tube_radius=self.tube_radius,
+                fit_skew=self.fit_skew,
+                y_symmetry=self.y_symmetry,
+                field_tol=self.field_tol,
+            )
+            trial.fit()
+        b = trial._b_vec
+        rels = {}
+        for field, rows in (("Bskew", slice(0, None, 2)), ("Bnorm", slice(1, None, 2))):
+            rms = trial.tube_fit_residual_rms[field]
+            field_rms = float(np.sqrt(np.mean(b[rows] ** 2)))
+            rels[field] = rms / field_rms if field_rms > 0 else 0.0
+        return rels["Bskew"], rels["Bnorm"]
+
+    def _search_n_frames(self, residual_tol: float) -> int:
+        """
+        Smallest n_frames whose worst-case relative residual is <=
+        residual_tol, found via geometric-doubling bracket + bisection (see
+        examples/splineboris/003d_tube_fitter_nframes_scan.py, folded in here).
+        Records every evaluated point in ``self.n_frames_search_trace``.
+        """
+        n_min = self.basis_order + 1
+        n_max = self._dof_ceiling()
+        cache: dict[int, tuple[float, float]] = {}
+
+        def meets(n: int) -> bool:
+            if n not in cache:
+                cache[n] = self._trial_relative_residual(n)
+                rel_bskew, rel_bnorm = cache[n]
+                print(f"[TubeFitter]   n_frames={n:5d}  Bskew={rel_bskew * 100:6.2f}%  Bnorm={rel_bnorm * 100:6.2f}%")
+            return max(cache[n]) <= residual_tol
+
+        print(
+            f"[TubeFitter] Searching for smallest n_frames with relative "
+            f"residual <= {residual_tol * 100:.3g}% in [{n_min}, {n_max}]..."
+        )
+        if not meets(n_max):
+            self.n_frames_search_trace = dict(cache)
+            print(
+                f"[TubeFitter] WARNING: residual_tol={residual_tol} not reachable "
+                f"even at the DOF ceiling n_frames={n_max} (relative residual="
+                f"{max(cache[n_max]) * 100:.2f}%). This is a genuine residual "
+                f"floor, not a frame-count problem -- falling back to "
+                f"n_frames={n_max} (the best achievable). Consider raising "
+                f"residual_tol, providing more/denser data, or checking whether "
+                f"y_symmetry matches the data."
+            )
+            self.plot_n_frames_search(target=residual_tol, selected=n_max)
+            return n_max
+
+        lo, hi = n_min, n_max
+        n_probe = n_min
+        while n_probe < hi and not meets(n_probe):
+            lo = n_probe
+            n_probe = min(n_probe * 2, hi)
+        hi = n_probe
+
+        while hi - lo > 1:
+            mid = (lo + hi) // 2
+            if meets(mid):
+                hi = mid
+            else:
+                lo = mid
+
+        self.n_frames_search_trace = dict(cache)
+        print(f"[TubeFitter] Selected n_frames={hi} (relative residual={max(cache[hi]) * 100:.3f}%)")
+        self.plot_n_frames_search(target=residual_tol, selected=hi)
+        return hi
+
+    def plot_n_frames_search(self, target: float | None = None, selected: int | None = None) -> None:
+        """
+        Plot the residual_tol search trace (``self.n_frames_search_trace``):
+        Bskew/Bnorm relative residual vs every ``n_frames`` evaluated during
+        the search. Called automatically at the end of a ``residual_tol``
+        search (whether or not the target was reached); call it again
+        yourself if you want to re-plot it later.
+        """
+        import matplotlib.pyplot as plt
+
+        if not self.n_frames_search_trace:
+            raise RuntimeError(
+                "No n_frames search trace available -- construct TubeFitter "
+                "with residual_tol to populate it."
+            )
+
+        ns = sorted(self.n_frames_search_trace)
+        bskew = [self.n_frames_search_trace[n][0] * 100 for n in ns]
+        bnorm = [self.n_frames_search_trace[n][1] * 100 for n in ns]
+
+        fig, ax = plt.subplots(figsize=(9, 5.5), constrained_layout=True)
+        ax.plot(ns, bskew, "o-", color="tab:blue", label="Bskew")
+        ax.plot(ns, bnorm, "o-", color="tab:orange", label="Bnorm")
+        if target is not None:
+            ax.axhline(target * 100, color="k", linestyle="--", linewidth=1,
+                       label=f"target ({target * 100:.2g}%)")
+        if selected is not None:
+            ax.axvline(selected, color="tab:green", linestyle=":", linewidth=1.5,
+                       label=f"n_frames = {selected}")
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_xlabel("n_frames")
+        ax.set_ylabel("Tube fit residual (% of field RMS)")
+        ax.set_title("TubeFitter n_frames search (residual_tol)")
+        ax.grid(True, which="both", alpha=0.3)
+        ax.legend()
+        plt.show()
 
     def _set_df_on_axis(self) -> None:
         x0, y0 = self.xy_point
