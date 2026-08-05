@@ -1,3 +1,6 @@
+import matplotlib
+matplotlib.use("Agg")  # headless -- TubeFitter's residual_tol search auto-plots via plt.show()
+
 import numpy as np
 from scipy.constants import c as clight
 from scipy.constants import e as qe
@@ -11,6 +14,7 @@ from pathlib import Path
 import xtrack as xt
 from xtrack._temp.boris_and_solenoid_map.solenoid_field import SolenoidField
 from xtrack._temp.field_fitter import FieldFitter
+from xtrack._temp.tube_fitter import TubeFitter, DEFAULT_N_FRAMES
 from xtrack._temp.splineboris_sequence import SplineBorisSequence
 from xtrack.beam_elements.splineboris_src.spline_B_field_eval_python import evaluate_B
 
@@ -217,6 +221,79 @@ def solenoid_vs_varsol_fit_pars_df(solenoid_field):
     assert point_count == SOLENOID_Z_POINT_COUNT, f"Unexpected point_count: {point_count}"
 
     return df_fit_pars
+
+@pytest.fixture(scope="module")
+def undulator_tubefitter_fit_pars_df(test_data_dir):
+    """
+    Fit the same raw SLS undulator field map used for undulator_fit_pars_df
+    (there fit with FieldFitter), but with TubeFitter instead -- see
+    examples/splineboris/003c_fieldfitter_vs_tubefitter.py, which compares the
+    two fitters on this exact dataset.
+    """
+    file_path = test_data_dir / "sls" / "undulator_field_map.txt"
+    df_raw_data = pd.read_csv(
+        file_path, sep=r"\s+", header=None,
+        names=["X", "Y", "Z", "Bx", "By", "Bs"],
+    ).set_index(["X", "Y", "Z"])
+
+    fitter = TubeFitter(
+        raw_data=df_raw_data,
+        n_frames=400,
+        distance_unit=1e-3,
+        deg=2,
+        field_tol=1e-3,
+    )
+    fitter.fit()
+
+    df_fit_pars = fitter.df_fit_pars
+    assert df_fit_pars is not None
+    assert not df_fit_pars.empty, "TubeFitter produced an empty fit-parameter table"
+
+    return df_fit_pars
+
+
+# Small, fast synthetic dataset for exercising TubeFitter's n_frames/residual_tol
+# selection logic in isolation (i.e. not the full solenoid-vs-VariableSolenoid
+# physics comparison above). The field is a low-order sinusoid in z plus fixed
+# per-point noise, so:
+#   - a loose residual_tol is reachable once enough frames resolve the sinusoid
+#   - a residual_tol far below the noise floor is never reachable, regardless
+#     of n_frames, exercising the warn-and-fall-back-to-DOF-ceiling path
+TUBEFITTER_NFRAMES_TEST_B0 = 0.05
+TUBEFITTER_NFRAMES_TEST_NOISE_STD = 6e-4
+TUBEFITTER_NFRAMES_TEST_N_CYCLES = 3
+TUBEFITTER_NFRAMES_TEST_N_X = 3
+TUBEFITTER_NFRAMES_TEST_N_Y = 3
+TUBEFITTER_NFRAMES_TEST_N_Z = 201
+
+
+@pytest.fixture(scope="module")
+def tubefitter_noisy_sine_raw_data():
+    rng = np.random.default_rng(12345)
+
+    x_axis = np.linspace(-1e-3, 1e-3, TUBEFITTER_NFRAMES_TEST_N_X)
+    y_axis = np.linspace(-1e-3, 1e-3, TUBEFITTER_NFRAMES_TEST_N_Y)
+    z_axis = np.linspace(0.0, 1.0, TUBEFITTER_NFRAMES_TEST_N_Z)
+    x_grid, y_grid, z_grid = np.meshgrid(x_axis, y_axis, z_axis, indexing="ij")
+
+    phase = 2 * np.pi * TUBEFITTER_NFRAMES_TEST_N_CYCLES * z_grid
+    by = (TUBEFITTER_NFRAMES_TEST_B0 * np.sin(phase)
+          + rng.normal(scale=TUBEFITTER_NFRAMES_TEST_NOISE_STD, size=z_grid.shape))
+    bx = (0.3 * TUBEFITTER_NFRAMES_TEST_B0 * np.cos(phase)
+          + rng.normal(scale=TUBEFITTER_NFRAMES_TEST_NOISE_STD, size=z_grid.shape))
+    bs = np.zeros_like(z_grid)
+
+    return pd.DataFrame(
+        {
+            "X": x_grid.ravel(),
+            "Y": y_grid.ravel(),
+            "Z": z_grid.ravel(),
+            "Bx": bx.ravel(),
+            "By": by.ravel(),
+            "Bs": bs.ravel(),
+        }
+    ).set_index(["X", "Y", "Z"])
+
 
 @pytest.fixture(scope="module")
 def undulator_fit_pars_df(test_data_dir):
@@ -535,6 +612,133 @@ def test_splineboris_solenoid_vs_variable_solenoid(solenoid_field, solenoid_vs_v
                 atol=2.8e-2 * (np.max(dx_ds_varsol_check) - np.min(dx_ds_varsol_check)))
         xo.assert_allclose(dy_ds_splineboris_check, dy_ds_varsol_check, rtol=0,
                 atol=2.8e-2 * (np.max(dy_ds_varsol_check) - np.min(dy_ds_varsol_check)))
+
+
+
+def test_splineboris_tubefitter_vs_fieldfitter_undulator(
+        undulator_tubefitter_fit_pars_df, undulator_fit_pars_df):
+    """
+    Fit the same raw SLS undulator field map with both TubeFitter (global
+    sparse tube fit) and FieldFitter (sequential Hermite-piecewise regions,
+    reusing the undulator_fit_pars_df fixture), build a SplineBoris line from
+    each, and check that tracking a particle through both gives consistent
+    end coordinates -- i.e. that TubeFitter's fit of real, noisy field data is
+    good enough to reproduce FieldFitter's independently-fitted result.
+    """
+    multipole_order = 3
+
+    p_ref = xt.Particles(mass0=xt.ELECTRON_MASS_EV, q0=1, p0c=2.7e9)
+
+    line_tube = SplineBorisSequence(
+        df_fit_pars=undulator_tubefitter_fit_pars_df,
+        multipole_order=multipole_order,
+        steps_per_point=1,
+    ).to_line()
+    line_tube.particle_ref = p_ref.copy()
+
+    line_field = SplineBorisSequence(
+        df_fit_pars=undulator_fit_pars_df,
+        multipole_order=multipole_order,
+        steps_per_point=1,
+    ).to_line()
+    line_field.particle_ref = p_ref.copy()
+
+    p_tube = line_tube.particle_ref.copy()
+    p_tube.x = 1e-3
+    p_tube.px = 1e-4
+    p_tube.y = 0.5e-3
+    p_tube.py = -0.5e-4
+    line_tube.track(p_tube)
+
+    p_field = line_field.particle_ref.copy()
+    p_field.x = 1e-3
+    p_field.px = 1e-4
+    p_field.y = 0.5e-3
+    p_field.py = -0.5e-4
+    line_field.track(p_field)
+
+    # TubeFitter (global sparse fit) and FieldFitter (sequential per-region
+    # polynomial fit) are different fitting methods on the same noisy,
+    # measured field map, so their outputs aren't identical -- these
+    # tolerances just check the two stay in the same ballpark (sub-mm in
+    # position, sub-0.1 mrad in angle) over the whole undulator, not that
+    # they agree to numerical precision.
+    xo.assert_allclose(p_tube.x, p_field.x, rtol=0, atol=3e-4)
+    xo.assert_allclose(p_tube.px, p_field.px, rtol=0, atol=1e-4)
+    xo.assert_allclose(p_tube.y, p_field.y, rtol=0, atol=1e-4)
+    xo.assert_allclose(p_tube.py, p_field.py, rtol=0, atol=1e-4)
+    xo.assert_allclose(p_tube.zeta, p_field.zeta, rtol=0, atol=1e-6)
+    xo.assert_allclose(p_tube.delta, p_field.delta, rtol=0, atol=0)
+
+
+
+def test_tubefitter_n_frames_and_residual_tol_mutually_exclusive(tubefitter_noisy_sine_raw_data):
+    """Passing both n_frames and residual_tol is an ambiguous request, and should
+    raise rather than silently prioritizing one over the other."""
+    with pytest.raises(ValueError):
+        TubeFitter(
+            raw_data=tubefitter_noisy_sine_raw_data,
+            distance_unit=1.0,
+            deg=1,
+            n_frames=50,
+            residual_tol=0.05,
+        )
+
+
+def test_tubefitter_n_frames_default(tubefitter_noisy_sine_raw_data):
+    """With neither n_frames nor residual_tol given, TubeFitter should fall back
+    to DEFAULT_N_FRAMES (clamped into the valid range) without running a search."""
+    fitter = TubeFitter(raw_data=tubefitter_noisy_sine_raw_data, distance_unit=1.0, deg=1)
+
+    assert fitter.n_frames == DEFAULT_N_FRAMES
+    assert fitter.n_frames_search_trace is None
+
+
+@pytest.mark.filterwarnings("ignore:FigureCanvasAgg is non-interactive.*")
+def test_tubefitter_residual_tol_search_reaches_target(tubefitter_noisy_sine_raw_data):
+    """A loose residual_tol should be reachable well below the DOF ceiling, and
+    the selected n_frames should actually meet the target."""
+    target = 0.05
+    fitter = TubeFitter(
+        raw_data=tubefitter_noisy_sine_raw_data,
+        distance_unit=1.0,
+        deg=1,
+        residual_tol=target,
+    )
+
+    dof_ceiling = fitter._dof_ceiling()
+    assert fitter.basis_order + 1 <= fitter.n_frames <= dof_ceiling
+    assert fitter.n_frames < dof_ceiling, (
+        "search should find a frame count well below the DOF ceiling for such "
+        "a loose target -- getting the ceiling suggests the search silently "
+        "fell back instead of converging"
+    )
+
+    assert fitter.n_frames_search_trace
+    assert fitter.n_frames in fitter.n_frames_search_trace
+    rel_bskew, rel_bnorm = fitter.n_frames_search_trace[fitter.n_frames]
+    assert max(rel_bskew, rel_bnorm) <= target
+
+
+@pytest.mark.filterwarnings("ignore:FigureCanvasAgg is non-interactive.*")
+def test_tubefitter_residual_tol_unreachable_falls_back(tubefitter_noisy_sine_raw_data, capsys):
+    """A residual_tol far below the noise floor can never be met, no matter how
+    many frames are used -- construction should still succeed, falling back to
+    the DOF ceiling with a warning instead of raising."""
+    target = 1e-5
+    fitter = TubeFitter(
+        raw_data=tubefitter_noisy_sine_raw_data,
+        distance_unit=1.0,
+        deg=1,
+        residual_tol=target,
+    )
+
+    dof_ceiling = fitter._dof_ceiling()
+    assert fitter.n_frames == dof_ceiling
+    assert fitter.n_frames_search_trace
+
+    captured = capsys.readouterr()
+    assert "WARNING" in captured.out
 
 
 
