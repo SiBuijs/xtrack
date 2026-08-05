@@ -400,6 +400,29 @@ class TubeFitter:
         for pq_idx, (p, q) in enumerate(self.pq_pairs):
             self.Psi[:, p, q] = flat[:, pq_idx]
 
+        self._report_tube_fit_residual(x_sol)
+
+    def _report_tube_fit_residual(self, x_sol: np.ndarray) -> None:
+        """
+        Report the residual of the tube linear system against the raw Bx/By
+        values it was regressed against (der=0). Higher-order multipoles are
+        read off other components of this same fitted Psi rather than being
+        fit independently, so this single residual is the analogue of
+        FieldFitter's per-field der=0 transverse-fit residual.
+        """
+        residual = self._b_vec - self._A_csr @ x_sol
+        self.tube_fit_residual_rms = {}
+        # rows alternate Bx (even), By (odd); see _build_linear_system.
+        for field, rows in (("Bskew", slice(0, None, 2)), ("Bnorm", slice(1, None, 2))):
+            res = residual[rows]
+            sig = self._b_vec[rows]
+            rms = float(np.sqrt(np.mean(res ** 2)))
+            field_rms = float(np.sqrt(np.mean(sig ** 2)))
+            rel = rms / field_rms if field_rms > 0 else 0.0
+            self.tube_fit_residual_rms[field] = rms
+            print(f"[TubeFitter] {field} tube fit residual (der=0): "
+                  f"RMS = {rms:.3e} T ({rel * 100:.2f}% of field RMS)")
+
     def _fit_bs(self) -> None:
         assert self.knots is not None
         assert self.s_full is not None
@@ -496,7 +519,7 @@ class TubeFitter:
                 significant = relative_max >= self.field_tol * abs_max
                 self.component_to_fit[(field, der)] = bool(in_basis and significant)
                 print(
-                    f"{field} der={der} -> to_fit={self.component_to_fit[(field, der)]} "
+                    f"{field} der={der} -> to_fit={str(self.component_to_fit[(field, der)]):<5} "
                     f"(rel_max={relative_max:.3e}, tol={self.field_tol * abs_max:.3e})"
                 )
 

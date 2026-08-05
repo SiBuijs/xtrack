@@ -455,6 +455,15 @@ class FieldFitter:
         It then evaluates all derivatives from order 1 to ``self.deg`` at
         the X coordinate of ``self.xy_point`` and stores them in
         ``df_on_axis_raw``.
+
+        Also reports the residual of each per-slice polynomial against the
+        raw field values (der=0) it was fit to. Derivatives 1..deg are all
+        evaluated from that same fitted polynomial, so their quality is
+        captured by this one residual rather than needing one of their own.
+        With the classic 3-X-point/deg=2 dataset the fit is exactly
+        determined and this residual is ~0; with more transverse points than
+        ``deg + 1`` it becomes a genuine (and informative) regression
+        residual.
         """
         x_point, y_point = self.xy_point
 
@@ -466,20 +475,32 @@ class FieldFitter:
 
         subsets = {px: self.df_raw_data.xs((px, y_point), level=["X", "Y"]).sort_index() for px in points}
 
+        self.transverse_fit_residual_rms = {}
+
         for field in ["Bskew", "Bnorm"]:
             x = points
             n = len(subsets[points[0]][field])
             derivs = {der: np.zeros(n) for der in range(1, self.deg + 1)}
+            residuals = np.zeros((n, len(points)))
 
             for i in range(n):
                 B_i = [subsets[px][field].to_numpy()[i] for px in points]
                 coeffs = np.polyfit(x, B_i, self.deg)
+                residuals[i, :] = np.asarray(B_i) - np.polyval(coeffs, x)
                 for der in range(1, self.deg + 1):
                     d_coeffs = np.polyder(coeffs, m=der)
                     derivs[der][i] = np.polyval(d_coeffs, x_point)
 
             for der in range(1, self.deg + 1):
                 self.df_on_axis_raw[(field, der)] = derivs[der]
+
+            field_values = np.array([subsets[px][field].to_numpy() for px in points])
+            rms = float(np.sqrt(np.mean(residuals ** 2)))
+            field_rms = float(np.sqrt(np.mean(field_values ** 2)))
+            rel = rms / field_rms if field_rms > 0 else 0.0
+            self.transverse_fit_residual_rms[field] = rms
+            print(f"[FieldFitter] {field} transverse fit residual (der=0): "
+                  f"RMS = {rms:.3e} T ({rel * 100:.2f}% of field RMS)")
 
 
 

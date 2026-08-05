@@ -112,5 +112,3 @@ def plot_comparison(der):
 
 for der in range(0, deg + 1):
     plot_comparison(der)
-
-
