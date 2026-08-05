@@ -11,7 +11,12 @@ Conventions (h = 0, straight frame, B = -grad Phi):
     - C_{p,q}(z) = sum_j Psi[j,p,q] * beta_j(z)
     - b_m(z) = -(m-1)! * C_{m-1,1}(z)  ->  ``Bnorm``, derivative_x = m-1
     - a_m(z) = -m! * C_{m,0}(z)  ->  ``Bskew``, derivative_x = m-1  (uses Psi[:, m, 0])
-    - b_s(z) fitted independently (1D B-spline on on-axis Bs)
+    - b_s(z): if y_symmetry=True, fitted independently (1D B-spline on on-axis
+      Bs), as before. If y_symmetry=False (default), fitted *jointly* with
+      Bx/By in the same sparse system, via C_{0,0}(z) (b_s = -C_{0,0}'(z)),
+      with div(B) = 0 eliminating every C_{p,2}(z) in terms of C_{p,0}(z)''
+      and C_{p+2,0}(z) -- see
+      examples/splineboris/claude_notes/transverse_bs_coupling_gap.md.
     - Default symmetry: only (p, q) with odd q; all (p, 0) skew terms if fit_skew=True
 """
 
@@ -62,6 +67,31 @@ def _generate_pq_pairs(M: int, y_symmetry: bool, fit_skew: bool) -> list[tuple[i
             elif not y_symmetry:
                 pairs.append((p, q))
     return pairs
+
+
+def _free_and_derived_pq(
+    M: int, y_symmetry: bool, fit_skew: bool
+) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
+    """
+    Split ``_generate_pq_pairs`` output into independent ("free") unknowns
+    and Laplace-derived ones.
+
+    ``(p, 2)`` terms are never independent: div(B) = 0 fixes
+    ``Psi[p,2] = -[Psi[p,0]'' + (p+2)(p+1)*Psi[p+2,0]] / 2`` (see
+    examples/splineboris/claude_notes/transverse_bs_coupling_gap.md), so
+    they're dropped from the free list and returned separately as
+    ``derived``. ``(0, 0)`` -- the on-axis potential itself, whose
+    derivative gives ``Bs`` -- is never produced by ``_generate_pq_pairs``
+    (it requires ``p + q > 0``) but is added to ``free`` here whenever
+    ``y_symmetry`` is False, since that's what lets ``Bs`` be fit jointly
+    with ``Bx``/``By`` instead of independently.
+    """
+    pq_pairs = _generate_pq_pairs(M, y_symmetry, fit_skew)
+    derived = [pq for pq in pq_pairs if pq[1] == 2]
+    free = [pq for pq in pq_pairs if pq not in derived]
+    if not y_symmetry:
+        free = free + [(0, 0)]
+    return free, derived
 
 
 def _frame_indices(s_full: np.ndarray, frames: np.ndarray) -> np.ndarray:
@@ -146,6 +176,19 @@ class TubeFitter:
     field_tol :
         Relative tolerance for marking a field component as ``to_fit`` in
         ``df_fit_pars`` (same logic as ``FieldFitter``).
+    bs_smoothing :
+        Only used when ``y_symmetry=False`` (the joint Bs fit). The on-axis
+        potential C_{0,0}(z) (whose derivative gives Bs) is differentiated
+        *twice* to eliminate the (p, 2) trace terms coupling it to Bx/By
+        (div(B) = 0), so any high-frequency wiggle it picks up while
+        chasing noisy on-axis Bs data gets amplified straight into the
+        Bx/By equations. This adds a P-spline-style second-difference
+        penalty on C_{0,0}(z)'s frame coefficients, weighted by
+        ``bs_smoothing`` times the Bx/By field scale, to damp that without
+        competing with genuine Bs structure large enough to matter to
+        Bx/By. Raise it if Bskew/Bnorm residuals blow up on real (noisy)
+        data despite a clean underlying field; lower it (or set to 0) if
+        Bs itself is under-fit.
 
     Kernel choice
     -------------
@@ -177,6 +220,7 @@ class TubeFitter:
         y_symmetry: bool = False,
         field_tol: float = 1e-3,
         residual_tol: float | None = None,
+        bs_smoothing: float = 1e-4,
     ):
         if n_frames is not None and residual_tol is not None:
             raise ValueError(
@@ -198,14 +242,35 @@ class TubeFitter:
         self.fit_skew = bool(fit_skew)
         self.y_symmetry = bool(y_symmetry)
         self.field_tol = float(field_tol)
+        self.bs_smoothing = float(bs_smoothing)
         self.xy_point = (0.0, 0.0)
         self.component_to_fit: dict[tuple[str, int], bool] = {}
+
+        if not self.y_symmetry:
+            if not self.fit_skew:
+                raise ValueError(
+                    "y_symmetry=False requires fit_skew=True: coupling Bs "
+                    "to Bx/By via div(B)=0 needs the full (p, 0) Bskew "
+                    "ladder up to p+2, not just the (1, 0) dipole term."
+                )
+            if self.deg > 2:
+                raise NotImplementedError(
+                    "y_symmetry=False (jointly fitting Bs via div(B)=0) "
+                    "currently only supports deg<=2. Higher deg would need "
+                    "q>=4 trace terms, which require 4th-order derivatives "
+                    "of the longitudinal B-spline basis -- not representable "
+                    "even by the smoothest available kernel ('cubic', C^2). "
+                    "Pass y_symmetry=True to fit Bs independently instead."
+                )
 
         self.frames: np.ndarray | None = None
         self.knots: np.ndarray | None = None
         self.n_regions: int | None = None
         self.pq_pairs: list[tuple[int, int]] | None = None
         self.pq_to_idx: dict[tuple[int, int], int] | None = None
+        self.free_pq_pairs: list[tuple[int, int]] | None = None
+        self.derived_pq_pairs: list[tuple[int, int]] | None = None
+        self.free_pq_to_idx: dict[tuple[int, int], int] | None = None
 
         self.s_full: np.ndarray | None = None
         self.Psi: np.ndarray | None = None
@@ -251,7 +316,8 @@ class TubeFitter:
         self._build_linear_system()
         self._solve()
         self._populate_on_axis_from_psi()
-        self._fit_bs()
+        if self.y_symmetry:
+            self._fit_bs()
         self._convert_to_hermite()
         self._assign_to_fit_flags()
         self._populate_df_fit_pars()
@@ -295,18 +361,23 @@ class TubeFitter:
     def _dof_ceiling(self) -> int:
         """
         Max usable n_frames: the tube system has 2*N_x*N_y*N_z equations (Bx,
-        By at every grid point) and n_frames*n_pq unknowns (n_pq = size of
-        the (p, q) multipole basis for this fitter's deg/y_symmetry/fit_skew).
-        Beyond this the system is underdetermined regardless of how much z
-        data exists.
+        By at every grid point), plus N_z more (on-axis Bs) when Bs is fit
+        jointly (y_symmetry=False), and n_frames*n_pq unknowns (n_pq = size
+        of the *free* (p, q) basis -- excludes Laplace-derived (p, 2) terms,
+        includes the joint (0, 0) potential term when applicable). Beyond
+        this the system is underdetermined regardless of how much z data
+        exists.
         """
         assert self.df_raw_data is not None
         idx = self.df_raw_data.index
         n_x = idx.get_level_values("X").nunique()
         n_y = idx.get_level_values("Y").nunique()
         n_z = idx.get_level_values("Z").nunique()
-        n_pq = len(_generate_pq_pairs(self.M, self.y_symmetry, self.fit_skew))
-        return (2 * n_x * n_y * n_z) // n_pq
+        free, _ = _free_and_derived_pq(self.M, self.y_symmetry, self.fit_skew)
+        n_eq = 2 * n_x * n_y * n_z
+        if not self.y_symmetry:
+            n_eq += n_z
+        return n_eq // len(free)
 
     def _trial_relative_residual(self, n_frames: int) -> tuple[float, float]:
         """Fit a throwaway TubeFitter at n_frames, return its (Bskew, Bnorm)
@@ -323,11 +394,13 @@ class TubeFitter:
                 fit_skew=self.fit_skew,
                 y_symmetry=self.y_symmetry,
                 field_tol=self.field_tol,
+                bs_smoothing=self.bs_smoothing,
             )
             trial.fit()
         b = trial._b_vec
+        n_bxby = trial._n_bx_by_rows
         rels = {}
-        for field, rows in (("Bskew", slice(0, None, 2)), ("Bnorm", slice(1, None, 2))):
+        for field, rows in (("Bskew", slice(0, n_bxby, 2)), ("Bnorm", slice(1, n_bxby, 2))):
             rms = trial.tube_fit_residual_rms[field]
             field_rms = float(np.sqrt(np.mean(b[rows] ** 2)))
             rels[field] = rms / field_rms if field_rms > 0 else 0.0
@@ -452,6 +525,19 @@ class TubeFitter:
             raise ValueError(f"field must be 'Bx' or 'By', got {field!r}")
         return f(self.s_full)
 
+    def _derived_transverse_psi(self, p: int, z: np.ndarray) -> np.ndarray:
+        """
+        Psi[p, 2](z) via the div(B)=0 elimination (see ``_build_linear_system``
+        / transverse_bs_coupling_gap.md), evaluated from the already-solved
+        ``(p, 0)`` / ``(p+2, 0)`` coefficients (``(0, 0)`` -- the joint
+        potential/Bs term -- in place of ``(p, 0)`` when ``p == 0``).
+        """
+        k = self.basis_order
+        base_coeffs = self.Psi[:, 0, 0] if p == 0 else self.Psi[:, p, 0]
+        d2 = BSpline(self.knots, base_coeffs, k).derivative(2)(z)
+        f_p2 = BSpline(self.knots, self.Psi[:, p + 2, 0], k)(z)
+        return -0.5 * (d2 + (p + 2) * (p + 1) * f_p2)
+
     def evaluate_transverse_field(
         self, x: np.ndarray, y: np.ndarray, z: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray]:
@@ -471,11 +557,21 @@ class TubeFitter:
         )
         k = self.basis_order
         design = BSpline.design_matrix(z, self.knots, k)
+        derived = set(self.derived_pq_pairs or [])
 
         bx = np.zeros(z.shape, dtype=float)
         by = np.zeros(z.shape, dtype=float)
         for p, q in self.pq_pairs:
+            if (p, q) in derived:
+                continue
             psi_pq_z = design @ self.Psi[:, p, q]
+            if p > 0:
+                bx += -psi_pq_z * p * x ** (p - 1) * y ** q
+            if q > 0:
+                by += -psi_pq_z * q * x ** p * y ** (q - 1)
+
+        for p, q in derived:
+            psi_pq_z = self._derived_transverse_psi(p, z)
             if p > 0:
                 bx += -psi_pq_z * p * x ** (p - 1) * y ** q
             if q > 0:
@@ -515,6 +611,10 @@ class TubeFitter:
             )
         self.pq_pairs = _generate_pq_pairs(self.M, self.y_symmetry, self.fit_skew)
         self.pq_to_idx = {pq: i for i, pq in enumerate(self.pq_pairs)}
+        self.free_pq_pairs, self.derived_pq_pairs = _free_and_derived_pq(
+            self.M, self.y_symmetry, self.fit_skew
+        )
+        self.free_pq_to_idx = {pq: i for i, pq in enumerate(self.free_pq_pairs)}
 
     # ------------------------------------------------------------------
     # Tube fit (Bx, By)
@@ -523,7 +623,8 @@ class TubeFitter:
     def _build_linear_system(self) -> None:
         assert self.df_raw_data is not None
         assert self.knots is not None
-        assert self.pq_pairs is not None
+        assert self.free_pq_pairs is not None
+        assert self.derived_pq_pairs is not None
 
         idx = self.df_raw_data.index
         x = idx.get_level_values("X").to_numpy(dtype=float)
@@ -538,10 +639,16 @@ class TubeFitter:
             x, y, z, bx, by = x[mask], y[mask], z[mask], bx[mask], by[mask]
 
         n_pts = len(x)
-        n_pq = len(self.pq_pairs)
+        n_pq = len(self.free_pq_pairs)
         k = self.basis_order
+        couple_bs = not self.y_symmetry
+
+        bs_z = self.df_on_axis_raw.index.to_numpy(dtype=float) if couple_bs else np.array([])
+        n_bs = len(bs_z)
+        n_smooth = max(self.n_frames - 2, 0) if couple_bs else 0
+
         n_cols = self.n_frames * n_pq
-        n_rows = 2 * n_pts
+        n_rows = 2 * n_pts + n_bs + n_smooth
 
         A = lil_matrix((n_rows, n_cols), dtype=float)
         b_vec = np.zeros(n_rows, dtype=float)
@@ -552,28 +659,104 @@ class TubeFitter:
             x_pow.append(x_pow[-1] * x)
             y_pow.append(y_pow[-1] * y)
 
+        def col(j: int, pq_idx: int) -> int:
+            return j * n_pq + pq_idx
+
+        if couple_bs:
+            # Basis functions for C_{p,0}''(z), needed to eliminate every
+            # derived C_{p,2}(z) = -[C_{p,0}''(z) + (p+2)(p+1)*C_{p+2,0}(z)] / 2
+            # (div(B) = 0; see transverse_bs_coupling_gap.md). Built once as
+            # an "identity spline" since scipy's design_matrix() here has no
+            # derivative-order argument.
+            d2_basis = BSpline(self.knots, np.eye(self.n_frames), k).derivative(2)
+            idx00 = self.free_pq_to_idx[(0, 0)]
+
         for i_pt in range(n_pts):
             row_bx = 2 * i_pt
             row_by = row_bx + 1
             b_vec[row_bx] = bx[i_pt]
             b_vec[row_by] = by[i_pt]
 
-            design = BSpline.design_matrix(
-                np.array([z[i_pt]]), self.knots, k
-            ).toarray()[0]
+            z_i = z[i_pt]
+            design = BSpline.design_matrix(np.array([z_i]), self.knots, k).toarray()[0]
+            nz = np.nonzero(design)[0]
 
-            for j in np.nonzero(design)[0]:
+            for j in nz:
                 beta_j = design[j]
-                col_base = j * n_pq
-                for pq_idx, (p, q) in enumerate(self.pq_pairs):
-                    col = col_base + pq_idx
+                for (p, q) in self.free_pq_pairs:
+                    if (p, q) == (0, 0):
+                        continue  # doesn't couple to Bx/By directly, only to Bs
+                    c = col(j, self.free_pq_to_idx[(p, q)])
                     if p > 0:
-                        A[row_bx, col] = -p * x_pow[p - 1][i_pt] * y_pow[q][i_pt] * beta_j
+                        A[row_bx, c] = -p * x_pow[p - 1][i_pt] * y_pow[q][i_pt] * beta_j
                     if q > 0:
-                        A[row_by, col] = -q * x_pow[p][i_pt] * y_pow[q - 1][i_pt] * beta_j
+                        A[row_by, c] = -q * x_pow[p][i_pt] * y_pow[q - 1][i_pt] * beta_j
+
+            if couple_bs and self.derived_pq_pairs:
+                design2 = d2_basis(np.array([z_i]))[0]
+                nz2 = np.nonzero(design2)[0]
+                for (p, q) in self.derived_pq_pairs:
+                    # q == 2 always (enforced at construction) -- see
+                    # _free_and_derived_pq.
+                    pq0_idx = idx00 if p == 0 else self.free_pq_to_idx[(p, 0)]
+                    pq2_idx = self.free_pq_to_idx[(p + 2, 0)]
+
+                    # (p, 0) and (p+2, 0) are themselves free pairs already
+                    # written above (whenever p > 0, both feed row_bx too) --
+                    # accumulate here, don't overwrite.
+                    if p > 0:
+                        coeff_bx = -p * x_pow[p - 1][i_pt] * y_pow[q][i_pt]
+                        for j in nz2:
+                            A[row_bx, col(j, pq0_idx)] += coeff_bx * (-0.5) * design2[j]
+                        for j in nz:
+                            A[row_bx, col(j, pq2_idx)] += (
+                                coeff_bx * (-0.5) * (p + 2) * (p + 1) * design[j]
+                            )
+
+                    coeff_by = -q * x_pow[p][i_pt] * y_pow[q - 1][i_pt]
+                    for j in nz2:
+                        A[row_by, col(j, pq0_idx)] += coeff_by * (-0.5) * design2[j]
+                    for j in nz:
+                        A[row_by, col(j, pq2_idx)] += (
+                            coeff_by * (-0.5) * (p + 2) * (p + 1) * design[j]
+                        )
+
+        if couple_bs:
+            bs_vals = self.df_on_axis_raw[("Bs", 0)].to_numpy(dtype=float)
+            d1_basis = BSpline(self.knots, np.eye(self.n_frames), k).derivative(1)
+            row0 = 2 * n_pts
+            for i_pt, z_i in enumerate(bs_z):
+                row = row0 + i_pt
+                b_vec[row] = bs_vals[i_pt]
+                design1 = d1_basis(np.array([z_i]))[0]
+                for j in np.nonzero(design1)[0]:
+                    # Bs(z) = -C_{0,0}'(z)
+                    A[row, col(j, idx00)] = -design1[j]
+
+            if n_smooth > 0:
+                # C_{0,0}(z)''s discrete curvature (c[j-1] - 2c[j] + c[j+1])
+                # feeds *directly* into the derived (p, 2) trace terms above,
+                # via d2_basis -- so any high-frequency wiggle C_{0,0} picks
+                # up while chasing noisy on-axis Bs data gets amplified
+                # straight into the Bx/By equations. Penalize it towards
+                # zero (standard P-spline second-difference smoothing) at a
+                # weight scaled to the Bx/By field magnitude, so it damps
+                # noise-driven curvature without competing with genuine
+                # Bs structure large enough to matter to Bx/By.
+                field_scale = max(np.max(np.abs(bx)), np.max(np.abs(by)), 1e-30)
+                lam = self.bs_smoothing * field_scale
+                row1 = row0 + n_bs
+                for i_s in range(n_smooth):
+                    row = row1 + i_s
+                    A[row, col(i_s, idx00)] = lam
+                    A[row, col(i_s + 1, idx00)] = -2 * lam
+                    A[row, col(i_s + 2, idx00)] = lam
+                    # b_vec[row] stays 0.0 -- penalize curvature towards zero
 
         self._A_csr = A.tocsr()
         self._b_vec = b_vec
+        self._n_bx_by_rows = 2 * n_pts
+        self._n_bs_rows = n_bs
 
     def _solve(self) -> None:
         result = lsmr(
@@ -584,10 +767,10 @@ class TubeFitter:
             maxiter=10000,
         )
         x_sol = result[0]
-        n_pq = len(self.pq_pairs)
+        n_pq = len(self.free_pq_pairs)
         flat = x_sol.reshape(self.n_frames, n_pq)
         self.Psi = np.zeros((self.n_frames, self.M + 1, self.M + 1), dtype=float)
-        for pq_idx, (p, q) in enumerate(self.pq_pairs):
+        for pq_idx, (p, q) in enumerate(self.free_pq_pairs):
             self.Psi[:, p, q] = flat[:, pq_idx]
 
         self._report_tube_fit_residual(x_sol)
@@ -595,15 +778,17 @@ class TubeFitter:
     def _report_tube_fit_residual(self, x_sol: np.ndarray) -> None:
         """
         Report the residual of the tube linear system against the raw Bx/By
-        values it was regressed against (der=0). Higher-order multipoles are
-        read off other components of this same fitted Psi rather than being
-        fit independently, so this single residual is the analogue of
-        FieldFitter's per-field der=0 transverse-fit residual.
+        (and, when jointly fit, on-axis Bs) values it was regressed against
+        (der=0). Higher-order multipoles are read off other components of
+        this same fitted Psi rather than being fit independently, so this
+        single residual is the analogue of FieldFitter's per-field der=0
+        transverse-fit residual.
         """
         residual = self._b_vec - self._A_csr @ x_sol
+        n_bxby = self._n_bx_by_rows
         self.tube_fit_residual_rms = {}
-        # rows alternate Bx (even), By (odd); see _build_linear_system.
-        for field, rows in (("Bskew", slice(0, None, 2)), ("Bnorm", slice(1, None, 2))):
+        # Bx/By rows alternate Bx (even), By (odd); see _build_linear_system.
+        for field, rows in (("Bskew", slice(0, n_bxby, 2)), ("Bnorm", slice(1, n_bxby, 2))):
             res = residual[rows]
             sig = self._b_vec[rows]
             rms = float(np.sqrt(np.mean(res ** 2)))
@@ -611,6 +796,17 @@ class TubeFitter:
             rel = rms / field_rms if field_rms > 0 else 0.0
             self.tube_fit_residual_rms[field] = rms
             print(f"[TubeFitter] {field} tube fit residual (der=0): "
+                  f"RMS = {rms:.3e} T ({rel * 100:.2f}% of field RMS)")
+
+        n_bs = getattr(self, "_n_bs_rows", 0)
+        if n_bs > 0:
+            res = residual[n_bxby:n_bxby + n_bs]
+            sig = self._b_vec[n_bxby:n_bxby + n_bs]
+            rms = float(np.sqrt(np.mean(res ** 2)))
+            field_rms = float(np.sqrt(np.mean(sig ** 2)))
+            rel = rms / field_rms if field_rms > 0 else 0.0
+            self.tube_fit_residual_rms["Bs"] = rms
+            print(f"[TubeFitter] Bs tube fit residual (der=0, jointly fit): "
                   f"RMS = {rms:.3e} T ({rel * 100:.2f}% of field RMS)")
 
     def _fit_bs(self) -> None:
@@ -639,10 +835,18 @@ class TubeFitter:
     def _convert_to_hermite(self) -> None:
         assert self.frames is not None
         assert self.knots is not None
-        assert self.Psi_bs is not None
+
+        k = self.basis_order
+        if self.y_symmetry:
+            assert self.Psi_bs is not None
+            f_bs = BSpline(self.knots, self.Psi_bs, k)
+        else:
+            # Bs(z) = -C_{0,0}'(z), jointly fit with Bx/By -- see
+            # _build_linear_system / transverse_bs_coupling_gap.md.
+            assert self.Psi is not None
+            f_bs = BSpline(self.knots, -self.Psi[:, 0, 0], k).derivative(1)
 
         self._hermite = {}
-        k = self.basis_order
 
         for i_reg in range(self.n_regions):
             s_left = float(self.frames[i_reg])
@@ -667,7 +871,6 @@ class TubeFitter:
                         f_skew, s_left, s_right
                     )
 
-            f_bs = BSpline(self.knots, self.Psi_bs, k)
             self._hermite[("Bs", 0, i_reg)] = _hermite_from_bspline(f_bs, s_left, s_right)
 
     def _assign_to_fit_flags(self) -> None:
@@ -782,7 +985,6 @@ class TubeFitter:
     def _fill_df_on_axis_fit(self) -> None:
         assert self.knots is not None
         assert self.Psi is not None
-        assert self.Psi_bs is not None
         assert self.s_full is not None
         assert self.df_on_axis_fit is not None
 
@@ -802,7 +1004,11 @@ class TubeFitter:
                 self.df_on_axis_fit[("Bx", der)] = np.zeros(n_z)
 
         if self.component_to_fit.get(("Bs", 0), False):
-            f_bs = BSpline(self.knots, self.Psi_bs, k)
+            if self.y_symmetry:
+                assert self.Psi_bs is not None
+                f_bs = BSpline(self.knots, self.Psi_bs, k)
+            else:
+                f_bs = BSpline(self.knots, -self.Psi[:, 0, 0], k).derivative(1)
             self.df_on_axis_fit[("Bs", 0)] = f_bs(self.s_full)
         else:
             self.df_on_axis_fit[("Bs", 0)] = np.zeros(n_z)
