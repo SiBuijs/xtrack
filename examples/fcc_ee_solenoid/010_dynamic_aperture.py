@@ -303,6 +303,7 @@ def _run_dynamic_aperture(
         nemitt_x=NEMITT_X,
         nemitt_y=NEMITT_Y,
         n_part=num_particles,
+        radiation="mean",
         variant=variant_suffix(
             sexamp=sexamp, x_offset=x_offset, y_offset=y_offset,
             extra_sext_strength=extra_sext_strength,

@@ -23,7 +23,7 @@ PLOT_DIR = Path(
 )
 
 ModelTag = Literal["SB", "VarSol"]
-StudyTag = Literal["DA", "MA", "EMIT", "POL"]
+StudyTag = Literal["DA", "MA", "EMIT", "POL", "TUNE"]
 
 BUILD_DEFAULTS = {
     "sexamp": 1.0,
@@ -64,6 +64,23 @@ def variant_suffix(**overrides: Any) -> str:
     return "__" + "__".join(tags)
 
 
+RadiationModel = Literal["mean", "quantum"]
+
+
+def radiation_tag(model: RadiationModel) -> str:
+    """Filename-safe tag for the radiation model active during the tracking
+    run whose results are being saved, e.g. 'mean' -> 'radmean', 'quantum' ->
+    'radquantum'. DA/MA (009/010) track with mean (deterministic damping,
+    no stochastic kicks); EMIT/POL (014/015) switch to quantum right before
+    the tracking loop that produces the saved data (see each script's
+    _configure_radiative_tracking / configure_radiation(model="quantum")
+    call sites) -- tagging this in filenames keeps the two regimes from
+    silently colliding if either study ever grows a --radiation toggle."""
+    if model not in ("mean", "quantum"):
+        raise ValueError(f"Unknown radiation model {model!r}, expected 'mean' or 'quantum'.")
+    return f"rad{model}"
+
+
 def global_xy_limit_tag(global_xy_limit: float) -> str:
     if global_xy_limit >= 1.0:
         value = int(global_xy_limit) if global_xy_limit == int(global_xy_limit) else global_xy_limit
@@ -81,6 +98,7 @@ def make_basename(
     n_part: int,
     n_turns: int,
     global_xy_limit: float,
+    radiation: RadiationModel,
     variant: str = "",
     field_tag: str = FIELD_TAG,
 ) -> str:
@@ -91,12 +109,15 @@ def make_basename(
     runtime (e.g. via solenoid_params.add_b0_argument) should pass the tag
     matching the lattice actually loaded, so saved filenames don't silently
     mislabel the field strength.
+
+    `radiation` records the model active during the saved tracking run --
+    see radiation_tag() above.
     """
     sol = "Sol_On" if with_solenoids else "Sol_Off"
     if with_solenoids and not with_correctors:
         sol += "_Cor_Off"
     return (
-        f"{sol}_{model}_{field_tag}_{n_part}p_{n_turns}t_"
+        f"{sol}_{model}_{field_tag}_{radiation_tag(radiation)}_{n_part}p_{n_turns}t_"
         f"{global_xy_limit_tag(global_xy_limit)}{variant}"
     )
 
@@ -142,6 +163,7 @@ def save_da_study(
     nemitt_x: float,
     nemitt_y: float,
     n_part: int,
+    radiation: RadiationModel = "mean",
     variant: str = "",
     sexamp: float = BUILD_DEFAULTS["sexamp"],
     x_offset: float = BUILD_DEFAULTS["x_offset"],
@@ -157,6 +179,7 @@ def save_da_study(
         n_part=n_part,
         n_turns=n_turns,
         global_xy_limit=global_xy_limit,
+        radiation=radiation,
         variant=variant,
         field_tag=field_tag,
     )
@@ -186,6 +209,7 @@ def save_da_study(
         with_correctors=with_correctors,
         model=model,
         n_part=int(n_part),
+        radiation=radiation,
         sexamp=float(sexamp),
         x_offset=float(x_offset),
         y_offset=float(y_offset),
@@ -222,6 +246,7 @@ def save_ma_study(
     energy_spread: float,
     delta_initial_values: np.ndarray,
     n_part: int,
+    radiation: RadiationModel = "mean",
     variant: str = "",
     sexamp: float = BUILD_DEFAULTS["sexamp"],
     x_offset: float = BUILD_DEFAULTS["x_offset"],
@@ -238,6 +263,7 @@ def save_ma_study(
         n_part=n_part,
         n_turns=n_turns,
         global_xy_limit=global_xy_limit,
+        radiation=radiation,
         variant=variant,
         field_tag=field_tag,
     )
@@ -266,6 +292,7 @@ def save_ma_study(
         with_correctors=with_correctors,
         model=model,
         n_part=int(n_part),
+        radiation=radiation,
         sexamp=float(sexamp),
         x_offset=float(x_offset),
         y_offset=float(y_offset),
@@ -300,6 +327,7 @@ def save_emitt_study(
     fit_alpha: np.ndarray,
     fit_tau: np.ndarray,
     fit_eps_init: np.ndarray,
+    radiation: RadiationModel = "quantum",
     variant: str = "",
     sexamp: float = BUILD_DEFAULTS["sexamp"],
     field_tag: str = FIELD_TAG,
@@ -312,6 +340,7 @@ def save_emitt_study(
         n_part=n_part,
         n_turns=n_turns,
         global_xy_limit=global_xy_limit,
+        radiation=radiation,
         variant=variant,
         field_tag=field_tag,
     )
@@ -336,6 +365,7 @@ def save_emitt_study(
         with_solenoids=with_solenoids,
         with_correctors=with_correctors,
         model=model,
+        radiation=radiation,
         sexamp=float(sexamp),
     )
     npz_path = _study_npz_path(stem)
@@ -371,6 +401,7 @@ def save_pol_study(
     fit_tau_depol_turns: float,
     fit_tau_depol_s: float,
     p_eq_derived: float,
+    radiation: RadiationModel = "quantum",
     variant: str = "",
     sexamp: float = BUILD_DEFAULTS["sexamp"],
     field_tag: str = FIELD_TAG,
@@ -383,6 +414,7 @@ def save_pol_study(
         n_part=n_part,
         n_turns=n_turns,
         global_xy_limit=global_xy_limit,
+        radiation=radiation,
         variant=variant,
         field_tag=field_tag,
     )
@@ -411,11 +443,108 @@ def save_pol_study(
         with_solenoids=with_solenoids,
         with_correctors=with_correctors,
         model=model,
+        radiation=radiation,
         sexamp=float(sexamp),
     )
     npz_path = _study_npz_path(stem)
     np.savez(npz_path, **arrays)
     print(f"Saved POL data: {npz_path}")
+
+    pdf_path = save_figure_pdf(fig, stem)
+    return npz_path, pdf_path
+
+
+def _tune_basename(
+    *,
+    with_solenoids: bool,
+    with_correctors: bool,
+    model: ModelTag,
+    n_delta: int,
+    delta_max: float,
+    fit_order: int = 2,
+    variant: str = "",
+    field_tag: str = FIELD_TAG,
+) -> str:
+    """Filename stem for TUNE outputs -- mirrors make_basename's naming
+    spirit (Sol_On/Off[_Cor_Off], model, field_tag) but swaps the
+    tracking-specific n_part/n_turns/global_xy_limit tags for this study's
+    own n_delta/delta_max, since a tune-vs-delta scan is Twiss-only (no
+    tracking, no particle count, no xy limit). fit_order is only tagged when
+    non-default (2), same silent-at-default convention as order_tag()."""
+    sol = "Sol_On" if with_solenoids else "Sol_Off"
+    if with_solenoids and not with_correctors:
+        sol += "_Cor_Off"
+    order_suffix = "" if fit_order == 2 else f"_fitorder{fit_order}"
+    return (
+        f"{sol}_{model}_{field_tag}_{n_delta}d_"
+        f"dmax{format_tag_float(delta_max)}{order_suffix}{variant}"
+    )
+
+
+def save_tune_study(
+    *,
+    fig: plt.Figure,
+    model: ModelTag,
+    with_solenoids: bool,
+    with_correctors: bool,
+    n_delta: int,
+    delta_max: float,
+    delta_values: np.ndarray,
+    qx: np.ndarray,
+    qy: np.ndarray,
+    fit_order: int,
+    coeffs_x_fit: np.ndarray,
+    coeffs_y_fit: np.ndarray,
+    dqx_twiss: float,
+    ddqx_twiss: float,
+    dqy_twiss: float,
+    ddqy_twiss: float,
+    qx0_twiss: float,
+    qy0_twiss: float,
+    variant: str = "",
+    sexamp: float = BUILD_DEFAULTS["sexamp"],
+    field_tag: str = FIELD_TAG,
+) -> tuple[Path, Path]:
+    """coeffs_x_fit / coeffs_y_fit are Taylor coefficients from the
+    delta-scan polynomial fit, indexed [q0, dq, ddq, dddq, ...] up to
+    fit_order (see 017_tune_vs_delta.py's _taylor_coeffs_from_polyfit) --
+    only dq/ddq (indices 1/2) have a direct-Twiss counterpart to compare
+    against (dqx_twiss/ddqx_twiss etc.); any order above 2 is fit-only."""
+    stem = "TUNE_" + _tune_basename(
+        with_solenoids=with_solenoids,
+        with_correctors=with_correctors,
+        model=model,
+        n_delta=n_delta,
+        delta_max=delta_max,
+        fit_order=fit_order,
+        variant=variant,
+        field_tag=field_tag,
+    )
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+    arrays = dict(
+        delta_values=np.asarray(delta_values),
+        qx=np.asarray(qx),
+        qy=np.asarray(qy),
+        fit_order=int(fit_order),
+        coeffs_x_fit=np.asarray(coeffs_x_fit),
+        coeffs_y_fit=np.asarray(coeffs_y_fit),
+        dqx_twiss=float(dqx_twiss),
+        ddqx_twiss=float(ddqx_twiss),
+        dqy_twiss=float(dqy_twiss),
+        ddqy_twiss=float(ddqy_twiss),
+        qx0_twiss=float(qx0_twiss),
+        qy0_twiss=float(qy0_twiss),
+        n_delta=int(n_delta),
+        delta_max=float(delta_max),
+        with_solenoids=with_solenoids,
+        with_correctors=with_correctors,
+        model=model,
+        sexamp=float(sexamp),
+    )
+    npz_path = _study_npz_path(stem)
+    np.savez(npz_path, **arrays)
+    print(f"Saved TUNE data: {npz_path}")
 
     pdf_path = save_figure_pdf(fig, stem)
     return npz_path, pdf_path

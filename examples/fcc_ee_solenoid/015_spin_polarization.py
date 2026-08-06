@@ -387,6 +387,7 @@ def _run_polarization_evolution(
         fit_tau_depol_turns=fit_tau_depol_turns,
         fit_tau_depol_s=fit_tau_depol_s,
         p_eq_derived=p_eq_derived,
+        radiation="quantum",
         variant=variant_suffix(
             sexamp=sexamp,
         ),

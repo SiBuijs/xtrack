@@ -391,6 +391,7 @@ def _run_emittance_evolution(
         fit_alpha=fit_alpha,
         fit_tau=fit_tau,
         fit_eps_init=fit_eps_init,
+        radiation="quantum",
         variant=variant_suffix(
             sexamp=sexamp,
         ),

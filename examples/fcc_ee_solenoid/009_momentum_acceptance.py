@@ -247,6 +247,7 @@ def _run_momentum_acceptance(
         energy_spread=ENERGY_SPREAD,
         delta_initial_values=DELTA_INITIAL_VALUES,
         n_part=len(tt_init),
+        radiation="mean",
         variant=variant_suffix(
             sexamp=sexamp, x_offset=x_offset, y_offset=y_offset,
             extra_sext_strength=extra_sext_strength,
