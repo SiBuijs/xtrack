@@ -18,3 +18,4 @@ xtrack/prebuilt_kernels
 checkpoint_restart.dat
 .idea
 simona_field_map*
+.claude/
