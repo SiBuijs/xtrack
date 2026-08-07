@@ -23,7 +23,7 @@ a warning if the target turns out to be unreachable -- so there's nothing
 left to handle here.
 '''
 
-TARGET_REL_RESIDUAL = 0.008  # fraction of field RMS -- the convergence target
+TARGET_REL_RESIDUAL = 0.001  # fraction of field RMS -- the convergence target
 
 dz = 0.001
 deg = 2

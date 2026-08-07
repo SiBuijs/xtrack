@@ -223,6 +223,65 @@ def solenoid_vs_varsol_fit_pars_df(solenoid_field):
     return df_fit_pars
 
 @pytest.fixture(scope="module")
+def solenoid_tubefitter_fit_pars_df(solenoid_field):
+    """
+    Fit the same solenoid field map as ``solenoid_vs_varsol_fit_pars_df``
+    (there fit with FieldFitter), but with TubeFitter instead. TubeFitter
+    only ever harvests the q=0 (Bskew/a_n) and q=1 (Bnorm/b_n) rows of its
+    fitted potential, and Bs is fit independently from on-axis data (exactly
+    like FieldFitter) -- q>=2 content (needed to represent this field's
+    dBy/dy) is never exported, and is expected to be regenerated
+    downstream by the Schueren/Table-1 field evaluator from (a_n, b_n, b_s)
+    alone. See examples/splineboris/claude_notes/tube_schueren_integration.md.
+
+    This combination used to diverge by an order of magnitude from
+    VariableSolenoid, back when TubeFitter tried to fit Bs *jointly* with
+    Bx/By via a div(B)=0 elimination (removed -- see
+    examples/splineboris/claude_notes/transverse_bs_coupling_gap.md); the
+    test below checks that fitting Bs independently resolves it.
+    """
+    sf = solenoid_field
+
+    x_axis = np.linspace(
+        -SOLENOID_MULTIPOLE_ORDER * SOLENOID_DX / 2,
+        SOLENOID_MULTIPOLE_ORDER * SOLENOID_DX / 2,
+        SOLENOID_MULTIPOLE_ORDER + 1,
+    )
+    y_axis = np.linspace(
+        -SOLENOID_MULTIPOLE_ORDER * SOLENOID_DY / 2,
+        SOLENOID_MULTIPOLE_ORDER * SOLENOID_DY / 2,
+        SOLENOID_MULTIPOLE_ORDER + 1,
+    )
+    z_axis = np.linspace(0, SOLENOID_INTERVAL, SOLENOID_Z_POINT_COUNT)
+    x_grid, y_grid, z_grid = np.meshgrid(x_axis, y_axis, z_axis, indexing="ij")
+    bx, by, bz = sf.get_field(x_grid.ravel(), y_grid.ravel(), z_grid.ravel())
+
+    df_raw_data = pd.DataFrame(
+        np.column_stack(
+            [x_grid.ravel(), y_grid.ravel(), z_grid.ravel(), bx.ravel(), by.ravel(), bz.ravel()]
+        ),
+        columns=["X", "Y", "Z", "Bx", "By", "Bs"],
+    ).set_index(["X", "Y", "Z"])
+
+    fitter = TubeFitter(
+        raw_data=df_raw_data,
+        n_frames=500,
+        distance_unit=1,
+        deg=SOLENOID_MULTIPOLE_ORDER - 1,
+        field_tol=1e-4,
+    )
+    fitter.fit()
+
+    diag = fitter.check_trace_consistency()
+    assert diag["relative_rms"] < 1e-2, (
+        f"TubeFitter's own (unused) q=2 fit is inconsistent with the "
+        f"div(B)=0/Bs' prediction at the {diag['relative_rms']:.3%} level "
+        f"-- the underlying tube fit may be under-resolved."
+    )
+
+    return fitter.df_fit_pars
+
+@pytest.fixture(scope="module")
 def undulator_tubefitter_fit_pars_df(test_data_dir):
     """
     Fit the same raw SLS undulator field map used for undulator_fit_pars_df
@@ -613,6 +672,88 @@ def test_splineboris_solenoid_vs_variable_solenoid(solenoid_field, solenoid_vs_v
         xo.assert_allclose(dy_ds_splineboris_check, dy_ds_varsol_check, rtol=0,
                 atol=2.8e-2 * (np.max(dy_ds_varsol_check) - np.min(dy_ds_varsol_check)))
 
+
+def test_splineboris_tubefitter_solenoid_vs_variable_solenoid(
+        solenoid_field, solenoid_tubefitter_fit_pars_df):
+    """
+    Same comparison as ``test_splineboris_solenoid_vs_variable_solenoid``,
+    but fit with TubeFitter instead of FieldFitter -- see
+    ``solenoid_tubefitter_fit_pars_df``.
+
+    A paraxial solenoid's transverse field (Bx=-x*Bz'/2, By=-y*Bz'/2) needs
+    a q=2 term (Psi[0,2]) to represent dBy/dy, which TubeFitter never
+    exports. This test checks that tracking still agrees with
+    VariableSolenoid regardless, because the Schueren/Table-1 field
+    evaluator used by SplineBoris regenerates that q=2 content from the
+    exported (a_n, b_n, b_s) via div(B)=0 -- the same mechanism FieldFitter
+    has always relied on (it never fits or exports q>=2 terms either).
+    """
+    interval = SOLENOID_INTERVAL
+    multipole_order = SOLENOID_MULTIPOLE_ORDER
+
+    delta = np.array([0, 4])
+    p0 = xt.Particles(mass0=xt.ELECTRON_MASS_EV, q0=1,
+                    energy0=45.6e6,
+                    x=1e-3,
+                    px=-1e-3*(1+delta),
+                    y=1e-3,
+                    delta=delta)
+
+    sf = solenoid_field
+
+    df_fit_pars = solenoid_tubefitter_fit_pars_df
+    seq = SplineBorisSequence(
+        df_fit_pars=df_fit_pars,
+        multipole_order=multipole_order,
+        steps_per_point=1,
+    )
+
+    line_splineboris = seq.to_line()
+    line_splineboris.build_tracker()
+    p_splineboris = p0.copy()
+    line_splineboris.track(p_splineboris, turn_by_turn_monitor='ONE_TURN_EBE')
+    mon_splineboris = line_splineboris.record_last_track
+
+    n_steps = SOLENOID_N_STEPS
+    z_axis_ref = np.linspace(0, interval, n_steps)
+    Bz_axis = sf.get_field(0 * z_axis_ref, 0 * z_axis_ref, z_axis_ref)[2]
+    P0_J = p0.p0c[0] * qe / clight
+    brho = P0_J / qe / p0.q0
+    ks = Bz_axis / brho
+    ks_entry = ks[:-1]
+    ks_exit = ks[1:]
+    dz = z_axis_ref[1] - z_axis_ref[0]
+    line_varsol = xt.Line(elements=[
+        xt.VariableSolenoid(length=dz, ks_profile=[ks_entry[ii], ks_exit[ii]])
+        for ii in range(len(z_axis_ref) - 1)
+    ])
+    line_varsol.build_tracker()
+    p_varsol = p0.copy()
+    line_varsol.track(p_varsol, turn_by_turn_monitor='ONE_TURN_EBE')
+    mon_varsol = line_varsol.record_last_track
+
+    z_check = sf.z0 + sf.L * np.linspace(-2, 2, 1001)
+
+    n_part = mon_splineboris.x.shape[0]
+    for i_part in range(n_part):
+        s_varsol = 0.5 * (mon_varsol.s[i_part, :-1] + mon_varsol.s[i_part, 1:])
+        dx_ds_varsol = np.diff(mon_varsol.x[i_part, :]) / np.diff(mon_varsol.s[i_part, :])
+        dy_ds_varsol = np.diff(mon_varsol.y[i_part, :]) / np.diff(mon_varsol.s[i_part, :])
+
+        s_splineboris = 0.5 * (mon_splineboris.s[i_part, :-1] + mon_splineboris.s[i_part, 1:])
+        dx_ds_splineboris = np.diff(mon_splineboris.x[i_part, :]) / np.diff(mon_splineboris.s[i_part, :])
+        dy_ds_splineboris = np.diff(mon_splineboris.y[i_part, :]) / np.diff(mon_splineboris.s[i_part, :])
+
+        dx_ds_splineboris_check = np.interp(z_check, s_splineboris, dx_ds_splineboris)
+        dy_ds_splineboris_check = np.interp(z_check, s_splineboris, dy_ds_splineboris)
+
+        dx_ds_varsol_check = np.interp(z_check, s_varsol, dx_ds_varsol)
+        dy_ds_varsol_check = np.interp(z_check, s_varsol, dy_ds_varsol)
+
+        xo.assert_allclose(dx_ds_splineboris_check, dx_ds_varsol_check, rtol=0,
+                atol=3e-2 * (np.max(dx_ds_varsol_check) - np.min(dx_ds_varsol_check)))
+        xo.assert_allclose(dy_ds_splineboris_check, dy_ds_varsol_check, rtol=0,
+                atol=3e-2 * (np.max(dy_ds_varsol_check) - np.min(dy_ds_varsol_check)))
 
 
 def test_splineboris_tubefitter_vs_fieldfitter_undulator(
