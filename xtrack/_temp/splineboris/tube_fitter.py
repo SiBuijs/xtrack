@@ -48,6 +48,12 @@ from xtrack._temp.splineboris.div_b_check import report_raw_div_b
 _REQUIRED_COLUMNS = ("Bx", "By", "Bs")
 _INDEX_NAMES = ("X", "Y", "Z")
 
+KERNEL_TO_DEGREE = {
+    "tent": 1,       # B_1, C^0 -- narrowest support, derivative discontinuous at frames
+    "quadratic": 2,  # B_2, C^1 -- narrower than cubic, derivatives continuous
+    "cubic": 3,       # B_3, C^2 -- widest support but smoothest
+}
+
 # Fallback n_frames used when neither n_frames nor residual_tol is given.
 # Not tuned to any particular fit-quality target -- just a reasonable middle
 # ground that avoids triggering the (potentially slow) residual_tol search.
@@ -97,9 +103,9 @@ def _hermite_from_bspline(f: BSpline, s_left: float, s_right: float) -> tuple[fl
     eps = 1e-6 * L
     return (
         float(f(s_left)),
-        _derivative_into_region(f, s_left, eps) * L,
+        _derivative_into_region(f, s_left, eps),
         float(f(s_right)),
-        _derivative_into_region(f, s_right, -eps) * L,
+        _derivative_into_region(f, s_right, -eps),
         float(f.integrate(s_left, s_right)) / L,
     )
 
@@ -118,8 +124,8 @@ class TubeFitter:
         Number of Hermite regions is ``n_frames - 1``. Mutually exclusive with
         ``residual_tol`` (specifying both raises ``ValueError``). If neither
         is given, defaults to ``DEFAULT_N_FRAMES`` (clamped to the valid
-        ``[2, dof_ceiling]`` range) -- a reasonable middle ground, not tuned
-        to any particular fit-quality target.
+        ``[basis_order + 1, dof_ceiling]`` range) -- a reasonable middle
+        ground, not tuned to any particular fit-quality target.
     residual_tol :
         If given (and ``n_frames`` is not), search for the smallest
         ``n_frames`` whose worst-case relative tube-fit residual (Bskew/Bnorm,
@@ -142,6 +148,9 @@ class TubeFitter:
         Scale factor applied to X, Y, Z index levels to convert to metres.
     deg :
         Maximum transverse derivative order (multipole order minus one).
+    kernel :
+        Longitudinal B-spline basis: ``"tent"``, ``"quadratic"``, or
+        ``"cubic"`` (default ``"tent"``). See **Kernel choice** below.
     tube_radius :
         If set, only use data points with sqrt(x^2 + y^2) <= tube_radius [m].
     fit_skew :
@@ -170,6 +179,24 @@ class TubeFitter:
         ``check_trace_consistency()`` and the raw-data div(B) print
         (``div_b_check.py``) for diagnostics of how well that holds on a
         given dataset.
+
+    Kernel choice
+    -------------
+    ``"tent"`` (default):
+        Narrowest basis, 2 frames wide, C^0 (derivative discontinuous at
+        frames -- ``_derivative_into_region`` picks the correct one-sided
+        slope for each region rather than blending across the kink). Best
+        preserves sharp features, minimal implicit coupling between
+        neighbouring frames.
+    ``"quadratic"``:
+        3 frames wide, C^1 continuous. Narrower than cubic so finer features
+        survive, but derivatives are continuous so no one-sided handling is
+        needed. Middle ground between ``"tent"`` and ``"cubic"``.
+    ``"cubic"``:
+        4 frames wide, C^2 continuous. Smoothest output and highest
+        approximation order for smooth data (``O(h^4)`` vs tent's
+        ``O(h^2)``), at the cost of more implicit smoothing/coupling between
+        neighbouring frames -- can blur genuinely sharp features.
     """
 
     def __init__(
@@ -178,6 +205,7 @@ class TubeFitter:
         n_frames: int | None = None,
         distance_unit: float = 1e-3,
         deg: int = 2,
+        kernel: str = "tent",
         tube_radius: float | None = None,
         fit_skew: bool = True,
         y_symmetry: bool = False,
@@ -190,6 +218,12 @@ class TubeFitter:
                 "n_frames for a fixed frame count, or residual_tol to search "
                 "for the smallest n_frames that meets it, not both."
             )
+        if kernel not in KERNEL_TO_DEGREE:
+            valid = ", ".join(sorted(KERNEL_TO_DEGREE))
+            raise ValueError(f"kernel must be one of {{{valid}}}, got {kernel!r}")
+
+        self.kernel = kernel
+        self.basis_order = KERNEL_TO_DEGREE[kernel]
 
         self.distance_unit = float(distance_unit)
         self.deg = int(deg)
@@ -225,7 +259,7 @@ class TubeFitter:
         elif residual_tol is not None:
             resolved_n_frames = self._search_n_frames(float(residual_tol))
         else:
-            n_min = 2
+            n_min = self.basis_order + 1
             n_max = self._dof_ceiling()
             resolved_n_frames = int(np.clip(DEFAULT_N_FRAMES, n_min, n_max))
             print(
@@ -235,6 +269,11 @@ class TubeFitter:
 
         if resolved_n_frames < 2:
             raise ValueError("n_frames must be at least 2")
+        if resolved_n_frames < self.basis_order + 1:
+            raise ValueError(
+                f"n_frames ({resolved_n_frames}) must be >= basis_order + 1 "
+                f"({self.basis_order + 1}) for kernel={kernel!r}"
+            )
         self.n_frames = resolved_n_frames
 
     def fit(self) -> None:
@@ -310,6 +349,7 @@ class TubeFitter:
                 n_frames=n_frames,
                 distance_unit=1.0,
                 deg=self.deg,
+                kernel=self.kernel,
                 tube_radius=self.tube_radius,
                 fit_skew=self.fit_skew,
                 y_symmetry=self.y_symmetry,
@@ -332,7 +372,7 @@ class TubeFitter:
         examples/splineboris/003d_tube_fitter_nframes_scan.py, folded in here).
         Records every evaluated point in ``self.n_frames_search_trace``.
         """
-        n_min = 2
+        n_min = self.basis_order + 1
         n_max = self._dof_ceiling()
         cache: dict[int, tuple[float, float]] = {}
 
@@ -427,7 +467,7 @@ class TubeFitter:
         """On-axis multipole series b_m or a_m evaluated from ``Psi`` at all ``s_full``."""
         assert self.knots is not None and self.Psi is not None and self.s_full is not None
         assert self.pq_to_idx is not None
-        k = 1
+        k = self.basis_order
         if field == "By":
             if (der, 1) not in self.pq_to_idx:
                 return None
@@ -455,9 +495,25 @@ class TubeFitter:
         z_min, z_max = float(self.s_full[0]), float(self.s_full[-1])
         self.frames = np.linspace(z_min, z_max, self.n_frames)
         self.n_regions = self.n_frames - 1
-        # Clamped tent (degree-1) knots: each endpoint repeated once more
-        # than self.frames already provides, giving len(knots) == n_frames + 2.
-        self.knots = np.r_[z_min, self.frames, z_max]
+        k = self.basis_order
+        # Clamped knots for n_frames B-spline coefficients: len(t) = n_frames + k + 1,
+        # with (k+1) repeats at each end and (n_frames - k - 1) interior knots.
+        # For k=1 (tent) this reduces to each endpoint repeated once more than
+        # self.frames already provides -- interior knots coincide with frames.
+        if self.n_frames > k + 1:
+            interior = np.linspace(z_min, z_max, self.n_frames - k + 1)[1:-1]
+        else:
+            interior = np.array([], dtype=float)
+        self.knots = np.r_[
+            np.full(k + 1, z_min),
+            interior,
+            np.full(k + 1, z_max),
+        ]
+        if len(self.knots) != self.n_frames + k + 1:
+            raise RuntimeError(
+                f"Unexpected knot vector length {len(self.knots)}, "
+                f"expected {self.n_frames + k + 1}"
+            )
 
     # ------------------------------------------------------------------
     # Tube fit (Bx, By)
@@ -482,7 +538,7 @@ class TubeFitter:
 
         n_pts = len(x)
         n_pq = len(self.pq_pairs)
-        k = 1
+        k = self.basis_order
 
         n_cols = self.n_frames * n_pq
         n_rows = 2 * n_pts
@@ -569,7 +625,7 @@ class TubeFitter:
         assert self.df_on_axis_raw is not None
 
         bs_on_axis = self.df_on_axis_raw[("Bs", 0)].to_numpy(dtype=float)
-        k = 1
+        k = self.basis_order
         n_pts = len(self.s_full)
         n_cols = self.n_frames
 
@@ -616,7 +672,7 @@ class TubeFitter:
         if self.Psi_bs is None:
             self._fit_bs()
 
-        k = 1
+        k = self.basis_order
         psi_02 = BSpline(self.knots, self.Psi[:, 0, 2], k)(self.frames)
         psi_20 = BSpline(self.knots, self.Psi[:, 2, 0], k)(self.frames)
         bs_prime = BSpline(self.knots, self.Psi_bs, k).derivative(1)(self.frames)
@@ -645,7 +701,7 @@ class TubeFitter:
         assert self.frames is not None
         assert self.knots is not None
 
-        k = 1
+        k = self.basis_order
         assert self.Psi_bs is not None
         f_bs = BSpline(self.knots, self.Psi_bs, k)
 
@@ -745,8 +801,18 @@ class TubeFitter:
                 for i_reg in range(self.n_regions):
                     idx_start = int(idx_extrema[i_reg])
                     idx_end = int(idx_extrema[i_reg + 1])
-                    s_start = float(self.s_full[idx_start])
-                    s_end = float(self.s_full[idx_end])
+                    # s_start/s_end must be the TRUE frame positions -- the
+                    # same ones used to compute self._hermite via
+                    # _hermite_from_bspline(f, frames[i_reg], frames[i_reg+1])
+                    # in _convert_to_hermite. Using the nearest-raw-sample
+                    # snapped positions (s_full[idx_start/idx_end]) instead
+                    # silently mismatches the L used to derive the Hermite
+                    # derivative terms (c2, c4) from the L used to reconstruct
+                    # them downstream (hermite_to_polynomial scales those
+                    # terms by L) -- see
+                    # examples/splineboris/claude_notes/tube_hermite_export_boundary_bug.md.
+                    s_start = float(self.frames[i_reg])
+                    s_end = float(self.frames[i_reg + 1])
                     region_name = f"Poly_{i_reg:0{index_width}d}"
 
                     if to_fit and (field, der, i_reg) in self._hermite:
@@ -791,7 +857,7 @@ class TubeFitter:
         assert self.s_full is not None
         assert self.df_on_axis_fit is not None
 
-        k = 1
+        k = self.basis_order
         n_z = len(self.s_full)
         for der in range(self.deg + 1):
             if self.component_to_fit.get(("Bnorm", der), False):
@@ -933,7 +999,7 @@ class TubeFitter:
         plt.show()
 
 
-def _constant_dipole_sign_check() -> None:
+def _constant_dipole_sign_check(kernel: str) -> None:
     """Verify Bnorm der=0 endpoints match a uniform By = B0 field."""
     B0 = 0.5
     xs = np.linspace(-0.002, 0.002, 3)
@@ -951,7 +1017,7 @@ def _constant_dipole_sign_check() -> None:
         }
     ).set_index(["X", "Y", "Z"])
 
-    fitter = TubeFitter(df, n_frames=8, distance_unit=1.0, deg=2)
+    fitter = TubeFitter(df, n_frames=8, distance_unit=1.0, deg=2, kernel=kernel)
     fitter.fit()
 
     sub = fitter.df_fit_pars.loc[("Bnorm", 0)].reset_index()
@@ -959,17 +1025,18 @@ def _constant_dipole_sign_check() -> None:
     c3 = sub.loc[sub["param_index"] == 2, "param_value"].iloc[0]
     if not (np.isclose(c1, B0, rtol=1e-2) and np.isclose(c3, B0, rtol=1e-2)):
         raise AssertionError(
-            f"Constant dipole sign check failed: "
+            f"Constant dipole sign check failed (kernel={kernel!r}): "
             f"expected val_start/val_end ~ {B0}, got c1={c1}, c3={c3}"
         )
     print(
-        f"Constant dipole sign check passed: "
+        f"Constant dipole sign check passed (kernel={kernel}): "
         f"Bnorm_0 val_start={c1:.6f}, val_end={c3:.6f} (B0={B0})"
     )
 
 
 if __name__ == "__main__":
-    _constant_dipole_sign_check()
+    for kernel in KERNEL_TO_DEGREE:
+        _constant_dipole_sign_check(kernel)
 
     dz = 0.001
     file_path = Path(__file__).resolve().parents[2] / "test_data" / "sls" / "simona_field_map.txt"
@@ -981,17 +1048,20 @@ if __name__ == "__main__":
     ).set_index(["X", "Y", "Z"])
 
     deg = 2
-    fitter = TubeFitter(
-        raw_data=df_raw,
-        n_frames=550,
-        distance_unit=dz,
-        deg=deg,
-        tube_radius=0.001,
-    )
-    fitter.fit()
-    print(
-        f"Fit complete: {fitter.n_regions} regions, "
-        f"{len(fitter.pq_pairs)} (p,q) pairs per frame"
-    )
-    for der in range(deg + 1):
-        fitter.plot_fields(der=der)
+    for kernel in ("tent", "quadratic", "cubic"):
+        fitter = TubeFitter(
+            raw_data=df_raw,
+            n_frames=550,
+            distance_unit=dz,
+            deg=deg,
+            kernel=kernel,
+            tube_radius=0.001,
+        )
+        print(f"\n=== Fitting with kernel={kernel} ===")
+        fitter.fit()
+        print(
+            f"Fit complete: {fitter.n_regions} regions, "
+            f"{len(fitter.pq_pairs)} (p,q) pairs per frame"
+        )
+        for der in range(deg + 1):
+            fitter.plot_fields(der=der)
