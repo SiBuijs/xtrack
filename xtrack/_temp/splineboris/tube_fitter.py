@@ -233,8 +233,8 @@ class TubeFitter:
         self.frames: np.ndarray | None = None
         self.knots: np.ndarray | None = None
         self.n_regions: int | None = None
-        self.pq_pairs: list[tuple[int, int]] | None = None
-        self.pq_to_idx: dict[tuple[int, int], int] | None = None
+        self.pq_pairs = _generate_pq_pairs(self.M, self.y_symmetry, self.fit_skew)
+        self.pq_to_idx = {pq: i for i, pq in enumerate(self.pq_pairs)}
 
         self.s_full: np.ndarray | None = None
         self.Psi: np.ndarray | None = None
@@ -325,19 +325,14 @@ class TubeFitter:
 
     def _dof_ceiling(self) -> int:
         """
-        Max usable n_frames: the tube system has 2*N_x*N_y*N_z equations (Bx,
-        By at every grid point) and n_frames*n_pq unknowns (n_pq = size of
-        the (p, q) basis). Beyond this the system is underdetermined
-        regardless of how much z data exists.
+        Max usable n_frames: the tube system has 2*n_pts equations (Bx, By at
+        every grid point) and n_frames*n_pq unknowns (n_pq = size of the
+        (p, q) basis). Beyond this the system is underdetermined regardless
+        of how much z data exists.
         """
         assert self.df_raw_data is not None
-        idx = self.df_raw_data.index
-        n_x = idx.get_level_values("X").nunique()
-        n_y = idx.get_level_values("Y").nunique()
-        n_z = idx.get_level_values("Z").nunique()
-        pq_pairs = _generate_pq_pairs(self.M, self.y_symmetry, self.fit_skew)
-        n_eq = 2 * n_x * n_y * n_z
-        return n_eq // len(pq_pairs)
+        n_eq = 2 * len(self.df_raw_data)
+        return n_eq // len(self.pq_pairs)
 
     def _trial_relative_residual(self, n_frames: int) -> tuple[float, float]:
         """Fit a throwaway TubeFitter at n_frames, return its (Bskew, Bnorm)
@@ -392,11 +387,8 @@ class TubeFitter:
             print(
                 f"[TubeFitter] WARNING: residual_tol={residual_tol} not reachable "
                 f"even at the DOF ceiling n_frames={n_max} (relative residual="
-                f"{max(cache[n_max]) * 100:.2f}%). This is a genuine residual "
-                f"floor, not a frame-count problem -- falling back to "
-                f"n_frames={n_max} (the best achievable). Consider raising "
-                f"residual_tol, providing more/denser data, or checking whether "
-                f"y_symmetry matches the data."
+                f"{max(cache[n_max]) * 100:.2f}%). Falling back to "
+                f"n_frames={n_max} (the best achievable)."
             )
             self.plot_n_frames_search(target=residual_tol, selected=n_max)
             return n_max
@@ -484,36 +476,6 @@ class TubeFitter:
             raise ValueError(f"field must be 'Bx' or 'By', got {field!r}")
         return f(self.s_full)
 
-    def evaluate_transverse_field(
-        self, x: np.ndarray, y: np.ndarray, z: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """
-        Evaluate the fitted (Bx, By) field at arbitrary (x, y, z) points from
-        the fitted multipole potential. Call after ``fit()``.
-
-        x, y, z are broadcast together (each may be a scalar or an array of
-        matching shape) and must already be in metres, i.e. pre-scaled the
-        same way ``raw_data`` is scaled by ``distance_unit`` in ``fit()``.
-        """
-        if self.Psi is None or self.knots is None or self.pq_pairs is None:
-            raise RuntimeError("Call fit() before evaluate_transverse_field().")
-
-        x, y, z = np.broadcast_arrays(
-            np.asarray(x, dtype=float), np.asarray(y, dtype=float), np.asarray(z, dtype=float)
-        )
-        k = self.basis_order
-        design = BSpline.design_matrix(z, self.knots, k)
-
-        bx = np.zeros(z.shape, dtype=float)
-        by = np.zeros(z.shape, dtype=float)
-        for p, q in self.pq_pairs:
-            psi_pq_z = design @ self.Psi[:, p, q]
-            if p > 0:
-                bx += -psi_pq_z * p * x ** (p - 1) * y ** q
-            if q > 0:
-                by += -psi_pq_z * q * x ** p * y ** (q - 1)
-        return bx, by
-
     def _populate_on_axis_from_psi(self) -> None:
         """Fill higher-order on-axis Bx/By columns from tube multipoles (post-``_solve``)."""
         assert self.df_on_axis_raw is not None
@@ -545,8 +507,6 @@ class TubeFitter:
                 f"Unexpected knot vector length {len(self.knots)}, "
                 f"expected {self.n_frames + k + 1}"
             )
-        self.pq_pairs = _generate_pq_pairs(self.M, self.y_symmetry, self.fit_skew)
-        self.pq_to_idx = {pq: i for i, pq in enumerate(self.pq_pairs)}
 
     # ------------------------------------------------------------------
     # Tube fit (Bx, By)
