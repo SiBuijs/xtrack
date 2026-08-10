@@ -555,6 +555,10 @@ class TubeFitter:
             b_vec[row_by] = by[i_pt]
 
             z_i = z[i_pt]
+
+            # Comment so that I can commit to the tube_approach_kernels branch.
+            # We will park the higher-order kernels in this branch for now. We will continue with tent on the main tube_approach. 
+
             design = BSpline.design_matrix(np.array([z_i]), self.knots, k).toarray()[0]
             nz = np.nonzero(design)[0]
 
