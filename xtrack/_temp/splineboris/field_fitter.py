@@ -128,7 +128,7 @@ class FieldFitter:
                 f"('X', 'Y', 'Z'), got {type(raw_data).__name__}"
             )
 
-        self.df_raw_data = raw_data
+        self.df_raw_data = raw_data.copy()
 
         # Convert coordinates to meters (e.g. ds=1e-3 for mm input)
         idx = self.df_raw_data.index

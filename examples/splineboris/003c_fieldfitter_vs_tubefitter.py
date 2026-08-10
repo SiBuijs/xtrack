@@ -6,6 +6,7 @@ import pandas as pd
 
 from xtrack._temp.splineboris.field_fitter import FieldFitter
 from xtrack._temp.splineboris.tube_fitter import TubeFitter
+from xtrack._temp.splineboris.splineboris_sequence import SplineBorisSequence
 
 
 '''
@@ -64,6 +65,62 @@ tube_fitter = TubeFitter(
     field_tol=1e-3,
 )
 tube_fitter.fit()
+
+# --- SplineBoris field-prediction residual: FieldFitter vs TubeFitter -----
+# Both fitters only ever export q=0 (skew) and q=1 (norm) content; the
+# downstream SplineBoris Table-1/Schueren evaluator regenerates everything
+# else (including off-axis structure) from that alone. Comparing predicted
+# vs raw field here -- rather than each fitter's own internal regression
+# residual -- is the fairer, apples-to-apples number: both go through the
+# exact same field-evaluation code path from here on.
+multipole_order = deg + 1
+seq_field_fitter = SplineBorisSequence(
+    df_fit_pars=field_fitter.df_fit_pars, multipole_order=multipole_order, steps_per_point=1,
+)
+seq_tube_fitter = SplineBorisSequence(
+    df_fit_pars=tube_fitter.df_fit_pars, multipole_order=multipole_order, steps_per_point=1,
+)
+
+
+def spline_boris_residual(seq, df_raw, on_axis_only=False):
+    """RMS / relative RMS of the SplineBoris field prediction vs raw (X,Y,Z)
+    data, grouped by Z so ``get_field`` is called once per longitudinal slice
+    (it only accepts a scalar ``s``, but array ``x``/``y``)."""
+    preds = {"Bskew": [], "Bnorm": [], "Bs": []}
+    meas = {"Bskew": [], "Bnorm": [], "Bs": []}
+    for z0, grp in df_raw.groupby("Z"):
+        if on_axis_only:
+            grp = grp[(grp["X"] == 0) & (grp["Y"] == 0)]
+            if grp.empty:
+                continue
+        x = grp["X"].to_numpy() * dz
+        y = grp["Y"].to_numpy() * dz
+        bx, by, bs = seq.get_field(x, y, float(z0 * dz))
+        preds["Bskew"].append(np.atleast_1d(bx))
+        preds["Bnorm"].append(np.atleast_1d(by))
+        preds["Bs"].append(np.atleast_1d(bs))
+        meas["Bskew"].append(grp["Bskew"].to_numpy())
+        meas["Bnorm"].append(grp["Bnorm"].to_numpy())
+        meas["Bs"].append(grp["Bs"].to_numpy())
+
+    result = {}
+    for field in ("Bskew", "Bnorm", "Bs"):
+        p = np.concatenate(preds[field])
+        m = np.concatenate(meas[field])
+        rms = float(np.sqrt(np.mean((p - m) ** 2)))
+        field_rms = float(np.sqrt(np.mean(m ** 2)))
+        result[field] = (rms, rms / field_rms if field_rms > 0 else 0.0)
+    return result
+
+
+df_raw_for_residual = df_raw_fieldfitter.reset_index()
+
+for title, on_axis_only in (("full grid", False), ("on-axis only (X=0, Y=0)", True)):
+    print(f"\n=== SplineBoris field-prediction residual vs raw data ({title}) ===")
+    print(f"{'field':8s} {'fitter':12s} {'RMS [T]':>12s} {'rel RMS':>10s}")
+    for tag, seq in (("FieldFitter", seq_field_fitter), ("TubeFitter", seq_tube_fitter)):
+        for field, (rms, rel) in spline_boris_residual(seq, df_raw_for_residual, on_axis_only).items():
+            print(f"{field:8s} {tag:12s} {rms:12.4e} {rel * 100:9.3f}%")
 
 s = field_fitter.s_full
 

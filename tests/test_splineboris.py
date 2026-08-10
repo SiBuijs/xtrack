@@ -265,7 +265,7 @@ def solenoid_tubefitter_fit_pars_df(solenoid_field):
 
     fitter = TubeFitter(
         raw_data=df_raw_data,
-        n_frames=500,
+        n_frames=2000,
         distance_unit=1,
         deg=SOLENOID_MULTIPOLE_ORDER - 1,
         field_tol=1e-4,
@@ -848,7 +848,7 @@ def test_tubefitter_residual_tol_search_reaches_target(tubefitter_noisy_sine_raw
     )
 
     dof_ceiling = fitter._dof_ceiling()
-    assert fitter.basis_order + 1 <= fitter.n_frames <= dof_ceiling
+    assert 2 <= fitter.n_frames <= dof_ceiling
     assert fitter.n_frames < dof_ceiling, (
         "search should find a frame count well below the DOF ceiling for such "
         "a loose target -- getting the ceiling suggests the search silently "

@@ -27,7 +27,6 @@ TARGET_REL_RESIDUAL = 0.001  # fraction of field RMS -- the convergence target
 
 dz = 0.001
 deg = 2
-kernel = "cubic"
 
 file_path = Path(__file__).resolve().parent.parent.parent / "test_data" / "sls" / "undulator_field_map.txt"
 df_raw_data = pd.read_csv(
@@ -41,7 +40,6 @@ fitter = TubeFitter(
     raw_data=df_raw_data,
     distance_unit=dz,
     deg=deg,
-    kernel=kernel,
     field_tol=1e-3,
     y_symmetry=False,
     residual_tol=TARGET_REL_RESIDUAL,
