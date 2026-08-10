@@ -64,20 +64,21 @@ def variant_suffix(**overrides: Any) -> str:
     return "__" + "__".join(tags)
 
 
-RadiationModel = Literal["mean", "quantum"]
+RadiationModel = Literal["off", "mean", "quantum"]
 
 
 def radiation_tag(model: RadiationModel) -> str:
     """Filename-safe tag for the radiation model active during the tracking
     run whose results are being saved, e.g. 'mean' -> 'radmean', 'quantum' ->
-    'radquantum'. DA/MA (009/010) track with mean (deterministic damping,
-    no stochastic kicks); EMIT/POL (014/015) switch to quantum right before
-    the tracking loop that produces the saved data (see each script's
-    _configure_radiative_tracking / configure_radiation(model="quantum")
-    call sites) -- tagging this in filenames keeps the two regimes from
-    silently colliding if either study ever grows a --radiation toggle."""
-    if model not in ("mean", "quantum"):
-        raise ValueError(f"Unknown radiation model {model!r}, expected 'mean' or 'quantum'.")
+    'radquantum', 'off' -> 'radoff'. DA/MA (009/010) expose this as a
+    --radiation {off,mean,quantum} CLI flag (default mean: deterministic
+    damping, no stochastic kicks); EMIT/POL (014/015) always switch to
+    quantum right before the tracking loop that produces the saved data,
+    since quantum excitation is the physics being measured there -- tagging
+    this in filenames keeps the different regimes from silently colliding."""
+    if model not in ("off", "mean", "quantum"):
+        raise ValueError(
+            f"Unknown radiation model {model!r}, expected 'off', 'mean', or 'quantum'.")
     return f"rad{model}"
 
 

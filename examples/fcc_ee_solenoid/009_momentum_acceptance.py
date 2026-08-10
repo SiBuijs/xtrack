@@ -105,10 +105,24 @@ MA_DIRECTIONS = {
 }
 
 
-def _configure_radiative_tracking(line):
+def _configure_radiative_tracking(line, radiation="mean"):
+    """Sets up the deterministic (mean) radiation model used for RF
+    compensation and the closed-orbit twiss below -- twiss cannot run once
+    a stochastic model is active. Callers that want quantum tracking switch
+    to it explicitly afterwards, right before building particles/tracking
+    (see _switch_to_quantum_if_requested below), same mean-then-quantum
+    idiom as 014/015's radiative tracking."""
     line.particle_ref.anomalous_magnetic_moment = 0.00115965218128
+    if radiation == "off":
+        line.configure_radiation(model=None)
+        return
     line.configure_radiation(model="mean")
     line.compensate_radiation_energy_loss()
+
+
+def _switch_to_quantum_if_requested(line, radiation):
+    if radiation == "quantum":
+        line.configure_radiation(model="quantum")
 
 
 def _plot_momentum_acceptance_figure(out, tt_init, title, direction):
@@ -146,7 +160,7 @@ def _plot_momentum_acceptance_figure(out, tt_init, title, direction):
 
 def _run_momentum_acceptance(
     case, direction, *, n_turns, with_progress, sexamp, x_offset, y_offset,
-    extra_sext_strength=0.0, tag,
+    extra_sext_strength=0.0, radiation="mean", tag,
 ):
     lattice_json = case["lattice_json"]
     title = case["title"]
@@ -182,7 +196,7 @@ def _run_momentum_acceptance(
     line.discard_tracker()
     line.build_tracker()
 
-    _configure_radiative_tracking(line)
+    _configure_radiative_tracking(line, radiation=radiation)
 
     line.discard_tracker()
     line.build_tracker()
@@ -210,6 +224,8 @@ def _run_momentum_acceptance(
         y_norm=tt_init.y_normalized,
         particle_on_co=tw_co.particle_on_co,
     )
+
+    _switch_to_quantum_if_requested(line, radiation)
 
     line.discard_tracker()
     line.build_tracker(_context=xo.ContextCpu(omp_num_threads="auto"))
@@ -247,7 +263,7 @@ def _run_momentum_acceptance(
         energy_spread=ENERGY_SPREAD,
         delta_initial_values=DELTA_INITIAL_VALUES,
         n_part=len(tt_init),
-        radiation="mean",
+        radiation=radiation,
         variant=variant_suffix(
             sexamp=sexamp, x_offset=x_offset, y_offset=y_offset,
             extra_sext_strength=extra_sext_strength,
@@ -366,6 +382,18 @@ def main():
         ),
     )
     parser.add_argument(
+        "--radiation",
+        choices=["off", "mean", "quantum"],
+        default="mean",
+        help=(
+            "Radiation model used for tracking (default: mean, deterministic "
+            "damping only). 'off' disables radiation and RF compensation "
+            "entirely. 'quantum' adds stochastic photon-emission kicks on "
+            "top of the mean-computed RF compensation, letting momentum "
+            "acceptance be studied under quantum excitation."
+        ),
+    )
+    parser.add_argument(
         "--no-show",
         action="store_true",
         help="Skip interactive figure display (data and PDFs are still saved).",
@@ -396,6 +424,7 @@ def main():
                 x_offset=args.x_offset,
                 y_offset=args.y_offset,
                 extra_sext_strength=args.extra_sext_strength,
+                radiation=args.radiation,
                 tag=f"{tag}{order_tag_str}",
             )
 

@@ -138,10 +138,24 @@ def _build_da_initial_conditions(*, nn_y_r, nn_x_theta):
     )
 
 
-def _configure_radiative_tracking(line):
+def _configure_radiative_tracking(line, radiation="mean"):
+    """Sets up the deterministic (mean) radiation model used for RF
+    compensation and the closed-orbit/beam-size twiss below -- twiss cannot
+    run once a stochastic model is active. Callers that want quantum
+    tracking switch to it explicitly afterwards, right before building
+    particles/tracking (see _switch_to_quantum_if_requested below), same
+    mean-then-quantum idiom as 014/015's radiative tracking."""
     line.particle_ref.anomalous_magnetic_moment = 0.00115965218128
+    if radiation == "off":
+        line.configure_radiation(model=None)
+        return
     line.configure_radiation(model="mean")
     line.compensate_radiation_energy_loss()
+
+
+def _switch_to_quantum_if_requested(line, radiation):
+    if radiation == "quantum":
+        line.configure_radiation(model="quantum")
 
 
 def _plot_dynamic_aperture_figure(
@@ -190,7 +204,7 @@ def _plot_dynamic_aperture_figure(
 
 def _run_dynamic_aperture(
     case, *, n_turns, with_progress, sexamp, x_offset, y_offset,
-    extra_sext_strength=0.0, tag,
+    extra_sext_strength=0.0, radiation="mean", tag,
 ):
     lattice_json = case["lattice_json"]
     title = case["title"]
@@ -225,7 +239,7 @@ def _run_dynamic_aperture(
     line.discard_tracker()
     line.build_tracker()
 
-    _configure_radiative_tracking(line)
+    _configure_radiative_tracking(line, radiation=radiation)
 
     line.discard_tracker()
     line.build_tracker()
@@ -257,6 +271,8 @@ def _run_dynamic_aperture(
         py_norm=0,
         particle_on_co=tw_co.particle_on_co,
     )
+
+    _switch_to_quantum_if_requested(line, radiation)
 
     line.discard_tracker()
     line.build_tracker(_context=xo.ContextCpu(omp_num_threads="auto"))
@@ -303,7 +319,7 @@ def _run_dynamic_aperture(
         nemitt_x=NEMITT_X,
         nemitt_y=NEMITT_Y,
         n_part=num_particles,
-        radiation="mean",
+        radiation=radiation,
         variant=variant_suffix(
             sexamp=sexamp, x_offset=x_offset, y_offset=y_offset,
             extra_sext_strength=extra_sext_strength,
@@ -397,6 +413,18 @@ def main():
         ),
     )
     parser.add_argument(
+        "--radiation",
+        choices=["off", "mean", "quantum"],
+        default="mean",
+        help=(
+            "Radiation model used for tracking (default: mean, deterministic "
+            "damping only). 'off' disables radiation and RF compensation "
+            "entirely. 'quantum' adds stochastic photon-emission kicks on "
+            "top of the mean-computed RF compensation, letting dynamic "
+            "aperture be studied under quantum excitation."
+        ),
+    )
+    parser.add_argument(
         "--no-show",
         action="store_true",
         help="Skip interactive figure display (data and PDFs are still saved).",
@@ -425,6 +453,7 @@ def main():
             x_offset=args.x_offset,
             y_offset=args.y_offset,
             extra_sext_strength=args.extra_sext_strength,
+            radiation=args.radiation,
             tag=f"{tag}{order_tag_str}",
         )
 
