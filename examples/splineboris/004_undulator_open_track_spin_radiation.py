@@ -10,8 +10,8 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from xtrack._temp.field_fitter import FieldFitter
-from xtrack._temp.splineboris_sequence import SplineBorisSequence
+from xtrack._temp.splineboris.field_fitter import FieldFitter
+from xtrack._temp.splineboris.splineboris_sequence import SplineBorisSequence
 
 
 multipole_order = 3

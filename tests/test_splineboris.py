@@ -13,9 +13,9 @@ from pathlib import Path
 
 import xtrack as xt
 from xtrack._temp.boris_and_solenoid_map.solenoid_field import SolenoidField
-from xtrack._temp.field_fitter import FieldFitter
-from xtrack._temp.tube_fitter import TubeFitter, DEFAULT_N_FRAMES
-from xtrack._temp.splineboris_sequence import SplineBorisSequence
+from xtrack._temp.splineboris.field_fitter import FieldFitter
+from xtrack._temp.splineboris.tube_fitter import TubeFitter, DEFAULT_N_FRAMES
+from xtrack._temp.splineboris.splineboris_sequence import SplineBorisSequence
 from xtrack.beam_elements.splineboris_src.spline_B_field_eval_python import evaluate_B
 
 FIT_PARS_INDEX_COLS = [

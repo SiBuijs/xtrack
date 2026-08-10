@@ -5,8 +5,8 @@ from scipy.constants import e as qe
 import pandas as pd
 import xtrack as xt
 from xtrack._temp.boris_and_solenoid_map.solenoid_field import SolenoidField
-from xtrack._temp.field_fitter import FieldFitter
-from xtrack._temp.splineboris_sequence import SplineBorisSequence
+from xtrack._temp.splineboris.field_fitter import FieldFitter
+from xtrack._temp.splineboris.splineboris_sequence import SplineBorisSequence
 import matplotlib.pyplot as plt
 
 plt.rcParams.update({"font.size": 14})

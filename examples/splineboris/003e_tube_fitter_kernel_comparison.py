@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from xtrack._temp.tube_fitter import KERNEL_TO_DEGREE, TubeFitter
+from xtrack._temp.splineboris.tube_fitter import KERNEL_TO_DEGREE, TubeFitter
 
 
 '''

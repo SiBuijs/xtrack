@@ -4,8 +4,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from xtrack._temp.field_fitter import FieldFitter
-from xtrack._temp.tube_fitter import TubeFitter
+from xtrack._temp.splineboris.field_fitter import FieldFitter
+from xtrack._temp.splineboris.tube_fitter import TubeFitter
 
 
 '''

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from xtrack._temp.field_fitter import FieldFitter
+from xtrack._temp.splineboris.field_fitter import FieldFitter
 
 
 '''

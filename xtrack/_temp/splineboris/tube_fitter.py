@@ -43,7 +43,7 @@ from scipy.interpolate import BSpline
 from scipy.sparse import lil_matrix
 from scipy.sparse.linalg import lsmr
 
-from xtrack._temp.div_b_check import report_raw_div_b
+from xtrack._temp.splineboris.div_b_check import report_raw_div_b
 
 _REQUIRED_COLUMNS = ("Bx", "By", "Bs")
 _INDEX_NAMES = ("X", "Y", "Z")

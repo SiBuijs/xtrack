@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from xtrack._temp.tube_fitter import TubeFitter
+from xtrack._temp.splineboris.tube_fitter import TubeFitter
 
 
 '''

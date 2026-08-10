@@ -8,7 +8,7 @@ import math
 from scipy.signal import find_peaks
 
 import xtrack as xt
-from xtrack._temp.div_b_check import report_raw_div_b
+from xtrack._temp.splineboris.div_b_check import report_raw_div_b
 
 
 class FieldFitter:
