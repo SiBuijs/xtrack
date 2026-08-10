@@ -36,7 +36,7 @@ deg = 2
 
 fitter = TubeFitter(
     raw_data=df_raw_data,
-    n_frames=880,
+    residual_tol=1e-3,
     distance_unit=dz,
     deg=deg,
     field_tol=1e-3,

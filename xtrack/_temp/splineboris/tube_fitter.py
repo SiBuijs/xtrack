@@ -919,16 +919,13 @@ class TubeFitter:
                     return []
                 s_start_vals = np.asarray(self.df_fit_pars.index.get_level_values("s_start"))[mask].astype(float)
                 s_end_vals = np.asarray(self.df_fit_pars.index.get_level_values("s_end"))[mask].astype(float)
-                s_borders = np.unique(np.concatenate((s_start_vals, s_end_vals)))
-                s_arr = np.asarray(s)
-                return sorted({int(np.argmin(np.abs(s_arr - float(sb)))) for sb in s_borders})
+                return np.unique(np.concatenate((s_start_vals, s_end_vals)))
             except Exception:
                 return []
 
         for field_ax, ax, fc in [("Bx", ax1, "Bskew"), ("By", ax2, "Bnorm"), ("Bs", ax3, "Bs")]:
-            for idx in _borders_for_field(fc):
-                if 0 <= idx < len(s):
-                    ax.axvline(x=s[idx], color="k", linestyle="--", linewidth=1, alpha=0.3)
+            for s_border in _borders_for_field(fc):
+                ax.axvline(x=s_border, color="k", linestyle="--", linewidth=1, alpha=0.3)
 
         if der == 2:
             x_label = r"$\frac{d^2 B_x}{d x^2}$"
