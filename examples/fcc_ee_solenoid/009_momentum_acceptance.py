@@ -13,6 +13,7 @@ from lattice_knobs import (
     robust_twiss,
     set_lattice_knobs,
     set_solenoid_offset,
+    zero_sextupole_window,
 )
 from solenoid_params import (
     MAIN_SOLENOID_B0,
@@ -160,7 +161,8 @@ def _plot_momentum_acceptance_figure(out, tt_init, title, direction):
 
 def _run_momentum_acceptance(
     case, direction, *, n_turns, with_progress, sexamp, x_offset, y_offset,
-    extra_sext_strength=0.0, radiation="mean", tag,
+    extra_sext_strength=0.0, sext_window_s_min=None, sext_window_s_max=None,
+    sext_window_order=2, radiation="mean", tag,
 ):
     lattice_json = case["lattice_json"]
     title = case["title"]
@@ -192,6 +194,16 @@ def _run_momentum_acceptance(
     )
     set_solenoid_offset(line, x_offset=x_offset, y_offset=y_offset)
     install_extra_sextupole(line, k2l=extra_sext_strength)
+    if sext_window_s_min is not None:
+        n_zeroed, covered_s_start, covered_s_end = zero_sextupole_window(
+            line, s_min=sext_window_s_min, s_max=sext_window_s_max,
+            order=sext_window_order)
+        print(
+            f"  Zeroed order-{sext_window_order} sextupole-like content in "
+            f"{n_zeroed} slices across 4 IPs, covering s in "
+            f"[{covered_s_start:.4f}, {covered_s_end:.4f}] m from each IP "
+            f"(requested [{sext_window_s_min:g}, {sext_window_s_max:g}] m)."
+        )
 
     line.discard_tracker()
     line.build_tracker()
@@ -267,11 +279,17 @@ def _run_momentum_acceptance(
         variant=variant_suffix(
             sexamp=sexamp, x_offset=x_offset, y_offset=y_offset,
             extra_sext_strength=extra_sext_strength,
+            sext_window_s_min=sext_window_s_min,
+            sext_window_s_max=sext_window_s_max,
+            sext_window_order=sext_window_order,
         ),
         sexamp=sexamp,
         x_offset=x_offset,
         y_offset=y_offset,
         extra_sext_strength=extra_sext_strength,
+        sext_window_s_min=sext_window_s_min,
+        sext_window_s_max=sext_window_s_max,
+        sext_window_order=sext_window_order,
         field_tag=tag,
     )
     print(
@@ -382,6 +400,37 @@ def main():
         ),
     )
     parser.add_argument(
+        "--sext-window-s-min",
+        type=float,
+        default=None,
+        metavar="M",
+        help=(
+            "Start (m, distance from the IP) of an s-window in which the "
+            "sextupole-like SplineBoris content is zeroed in each IP's main "
+            "detector solenoid, e.g. for probing which part of the solenoid "
+            "dominates a beta_x-weighted d^2Bx/dx^2 driving-term integral "
+            "(see 004e_sextupole_window_study.py). Must be given together "
+            "with --sext-window-s-max. Default: None, i.e. off."
+        ),
+    )
+    parser.add_argument(
+        "--sext-window-s-max",
+        type=float,
+        default=None,
+        metavar="M",
+        help="End (m, distance from the IP) of the --sext-window-s-min window.",
+    )
+    parser.add_argument(
+        "--sext-window-order",
+        type=int,
+        default=2,
+        metavar="N",
+        help=(
+            "Transverse-x Hermite order zeroed within the --sext-window-s-min"
+            "/--sext-window-s-max window (default: 2, the sextupole-like term)."
+        ),
+    )
+    parser.add_argument(
         "--radiation",
         choices=["off", "mean", "quantum"],
         default="mean",
@@ -399,6 +448,12 @@ def main():
         help="Skip interactive figure display (data and PDFs are still saved).",
     )
     args = parser.parse_args()
+
+    if (args.sext_window_s_min is None) != (args.sext_window_s_max is None):
+        raise SystemExit(
+            "--sext-window-s-min and --sext-window-s-max must be given "
+            "together."
+        )
 
     tag = field_tag(args.b0)
     order_tag_str = order_tag(args.max_transverse_order)
@@ -424,6 +479,9 @@ def main():
                 x_offset=args.x_offset,
                 y_offset=args.y_offset,
                 extra_sext_strength=args.extra_sext_strength,
+                sext_window_s_min=args.sext_window_s_min,
+                sext_window_s_max=args.sext_window_s_max,
+                sext_window_order=args.sext_window_order,
                 radiation=args.radiation,
                 tag=f"{tag}{order_tag_str}",
             )

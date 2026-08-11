@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
+import numpy as np
 import xtrack as xt
 from xtrack.twiss import ClosedOrbitSearchError
 
 IP_NAMES = ["ipa", "ipd", "ipg", "ipj"]
+
+# Local-s grid (distance from the IP; matches MAIN_SOLENOID_S_AXIS in
+# 004a_build_and_check_solenoids.py / spline_boris_setup.build_splineboris_line)
+# that every IP's 200-slice main solenoid (sol_slice_{ip}_*) is built on.
+# 004b_install_solenoids_in_fcc_ring.py installs the main-solenoid template
+# anchor='center' on the IP, so slice ii's local interval
+# [MAIN_SOLENOID_S_AXIS[ii], MAIN_SOLENOID_S_AXIS[ii + 1]] equals its ring-s
+# offset from that IP exactly -- used by zero_sextupole_window below.
+MAIN_SOLENOID_S_AXIS = np.linspace(-2.399, 2.399, 201)
 
 # Index of the main-solenoid SplineBoris slice immediately downstream of the
 # insertion point: the extra sextupole is placed between slice
@@ -110,6 +120,84 @@ def install_extra_sextupole(
             anchor="start",
             from_anchor="start",
         )
+
+
+def zero_sextupole_window(
+    line,
+    *,
+    s_min: float,
+    s_max: float,
+    order: int = 2,
+    ip_names: list[str] = IP_NAMES,
+    s_axis=MAIN_SOLENOID_S_AXIS,
+) -> tuple[int, float, float]:
+    """Zero the order-`order` bx/by Hermite row of every main-solenoid
+    SplineBoris slice (`sol_slice_{ip}_*`) whose local-s interval (distance
+    from that IP, negative=upstream/positive=downstream) overlaps
+    [s_min, s_max], for every IP in `ip_names`.
+
+    Ring-installed counterpart of
+    004e_sextupole_window_study.py's zero_transverse_order_in_window, which
+    probes the same idea on an isolated, not-yet-installed main-solenoid
+    line. Here the target is the already-installed, knob-driven lattice: for
+    order 2, the installed bx[2, k]/by[2, k] entries are normally tied to the
+    sext_amp knob as a deferred expression (see
+    004b_install_solenoids_in_fcc_ring.py), so a plain attribute assignment
+    on the element would get silently overwritten the next time sext_amp
+    changes (e.g. via set_lattice_knobs(), or robust_twiss()'s closed-orbit
+    continuation fallback). Assigning through `line.element_refs[...]`
+    instead replaces that dependency with a constant 0.0, so it survives
+    later sext_amp changes (verified: a slice zeroed this way stays 0.0
+    across a subsequent set_lattice_knobs(..., sext_amp=2.0) call, while an
+    untouched slice still scales with sext_amp as expected).
+
+    Call this AFTER set_lattice_knobs() (so sext_amp has already been
+    applied to the elements this will override) and before the tracker is
+    (re)built -- same ordering as install_extra_sextupole().
+
+    Raises ValueError if no slice overlaps [s_min, s_max], or if the
+    expected sol_slice_{ip}_* naming isn't found (main-solenoid slicing
+    changed since s_axis was last checked against 004a's build).
+
+    Returns (n_zeroed_total, covered_s_start, covered_s_end): the total
+    slice count zeroed across all IPs, and the [start, end] window actually
+    covered once s_min/s_max are snapped out to slice boundaries (the same
+    for every IP, since they all share `s_axis`).
+    """
+    if s_min >= s_max:
+        raise ValueError(f"s_min ({s_min}) must be < s_max ({s_max}).")
+
+    name_width = len(str(len(s_axis) - 2))
+    matching_indices = [
+        ii for ii in range(len(s_axis) - 1)
+        if s_axis[ii + 1] > s_min and s_axis[ii] < s_max
+    ]
+    if not matching_indices:
+        raise ValueError(
+            f"No main-solenoid slices overlap [{s_min}, {s_max}] -- window "
+            "too narrow relative to the slice grid, or outside the "
+            f"s-axis range [{s_axis[0]:g}, {s_axis[-1]:g}]."
+        )
+    covered_s_start = float(s_axis[matching_indices[0]])
+    covered_s_end = float(s_axis[matching_indices[-1] + 1])
+
+    n_zeroed = 0
+    for ip_name in ip_names:
+        for ii in matching_indices:
+            element_name = f"sol_slice_{ip_name}_{ii:0{name_width}d}"
+            if element_name not in line.element_names:
+                raise ValueError(
+                    f"Could not find {element_name!r} in the line -- the "
+                    "main solenoid slicing may have changed; update "
+                    "zero_sextupole_window's s_axis in lattice_knobs.py."
+                )
+            ref = line.element_refs[element_name]
+            for k in range(5):
+                ref.bx[order, k] = 0.0
+                ref.by[order, k] = 0.0
+            n_zeroed += 1
+
+    return n_zeroed, covered_s_start, covered_s_end
 
 
 def _continue_closed_orbit(

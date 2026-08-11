@@ -31,6 +31,9 @@ BUILD_DEFAULTS = {
     "x_offset": 0.0,
     "y_offset": 0.0,
     "extra_sext_strength": 0.0,
+    "sext_window_s_min": None,
+    "sext_window_s_max": None,
+    "sext_window_order": 2,
 }
 
 
@@ -59,6 +62,19 @@ def variant_suffix(**overrides: Any) -> str:
         "extra_sext_strength", BUILD_DEFAULTS["extra_sext_strength"])
     if extra_sext_strength != BUILD_DEFAULTS["extra_sext_strength"]:
         tags.append(f"xsext{format_tag_float(extra_sext_strength)}")
+    sext_window_s_min = overrides.get(
+        "sext_window_s_min", BUILD_DEFAULTS["sext_window_s_min"])
+    sext_window_s_max = overrides.get(
+        "sext_window_s_max", BUILD_DEFAULTS["sext_window_s_max"])
+    if sext_window_s_min is not None or sext_window_s_max is not None:
+        sext_window_order = overrides.get(
+            "sext_window_order", BUILD_DEFAULTS["sext_window_order"])
+        order_suffix = (
+            "" if sext_window_order == BUILD_DEFAULTS["sext_window_order"]
+            else f"o{sext_window_order}")
+        tags.append(
+            f"swin{format_tag_float(sext_window_s_min)}"
+            f"to{format_tag_float(sext_window_s_max)}{order_suffix}")
     if not tags:
         return ""
     return "__" + "__".join(tags)
@@ -170,6 +186,9 @@ def save_da_study(
     x_offset: float = BUILD_DEFAULTS["x_offset"],
     y_offset: float = BUILD_DEFAULTS["y_offset"],
     extra_sext_strength: float = BUILD_DEFAULTS["extra_sext_strength"],
+    sext_window_s_min: float | None = BUILD_DEFAULTS["sext_window_s_min"],
+    sext_window_s_max: float | None = BUILD_DEFAULTS["sext_window_s_max"],
+    sext_window_order: int = BUILD_DEFAULTS["sext_window_order"],
     field_tag: str = FIELD_TAG,
 ) -> tuple[Path, Path]:
     stem = make_study_stem(
@@ -215,6 +234,9 @@ def save_da_study(
         x_offset=float(x_offset),
         y_offset=float(y_offset),
         extra_sext_strength=float(extra_sext_strength),
+        sext_window_s_min=sext_window_s_min,
+        sext_window_s_max=sext_window_s_max,
+        sext_window_order=int(sext_window_order),
     )
     npz_path = _study_npz_path(stem)
     np.savez(npz_path, **arrays)
@@ -253,6 +275,9 @@ def save_ma_study(
     x_offset: float = BUILD_DEFAULTS["x_offset"],
     y_offset: float = BUILD_DEFAULTS["y_offset"],
     extra_sext_strength: float = BUILD_DEFAULTS["extra_sext_strength"],
+    sext_window_s_min: float | None = BUILD_DEFAULTS["sext_window_s_min"],
+    sext_window_s_max: float | None = BUILD_DEFAULTS["sext_window_s_max"],
+    sext_window_order: int = BUILD_DEFAULTS["sext_window_order"],
     field_tag: str = FIELD_TAG,
 ) -> tuple[Path, Path]:
     stem = make_study_stem(
@@ -298,6 +323,9 @@ def save_ma_study(
         x_offset=float(x_offset),
         y_offset=float(y_offset),
         extra_sext_strength=float(extra_sext_strength),
+        sext_window_s_min=sext_window_s_min,
+        sext_window_s_max=sext_window_s_max,
+        sext_window_order=int(sext_window_order),
     )
     npz_path = _study_npz_path(stem)
     np.savez(npz_path, **arrays)
