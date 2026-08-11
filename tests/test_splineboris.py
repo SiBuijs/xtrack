@@ -13,6 +13,7 @@ from pathlib import Path
 
 import xtrack as xt
 from xtrack._temp.boris_and_solenoid_map.solenoid_field import SolenoidField
+from xtrack._temp.splineboris.field_fitter import FieldFitter
 from xtrack._temp.splineboris.tube_fitter import TubeFitter, DEFAULT_N_FRAMES
 from xtrack._temp.splineboris.splineboris_sequence import SplineBorisSequence
 from xtrack.beam_elements.splineboris_src.spline_B_field_eval_python import evaluate_B
@@ -41,60 +42,6 @@ SOLENOID_MULTIPOLE_ORDER = 2
 SOLENOID_N_STEPS = 5000
 SOLENOID_Z_POINT_COUNT = SOLENOID_N_STEPS + 1
 
-@for_all_test_contexts
-def test_splineboris_to_dict_from_dict_roundtrip(test_context):
-    element = xt.SplineBoris(
-        length=1.2,
-        n_steps=4,
-        shift_x=1e-3,
-        shift_y=-2e-3,
-        hx=0.0,
-        radiation_flag=1,
-        bs=xt.Spline4(0.1, 0.2, 0.3, 0.4, 0.5),
-        by=(
-            xt.Spline4(1.0, 1.1, 1.2, 1.3, 1.4),
-            None,
-            xt.Spline4(3.0, 3.1, 3.2, 3.3, 3.4),
-        ),
-        bx=(
-            None,
-            xt.Spline4(-2.0, -2.1, -2.2, -2.3, -2.4),
-        ),
-        _context=test_context,
-    )
-
-    element_dict = element.to_dict()
-
-    assert 'bs' in element_dict
-    assert 'by' in element_dict
-    assert 'bx' in element_dict
-    assert 'Bs_hermite' not in element_dict
-    assert 'B_norm_hermite' not in element_dict
-    assert 'B_skew_hermite' not in element_dict
-    assert 'multipole_order' not in element_dict
-
-    roundtrip = xt.SplineBoris.from_dict(element_dict, _context=test_context)
-
-    ctor_dict = element_dict.copy()
-    ctor_dict.pop('__class__', None)
-    ctor_roundtrip = xt.SplineBoris(_context=test_context, **ctor_dict)
-
-    element_cpu = element.copy(_context=xo.ContextCpu())
-    roundtrip_cpu = roundtrip.copy(_context=xo.ContextCpu())
-    ctor_roundtrip_cpu = ctor_roundtrip.copy(_context=xo.ContextCpu())
-
-    for candidate in (roundtrip_cpu, ctor_roundtrip_cpu):
-        xo.assert_allclose(candidate.length, element_cpu.length, atol=0, rtol=0)
-        xo.assert_allclose(candidate.n_steps, element_cpu.n_steps, atol=0, rtol=0)
-        xo.assert_allclose(candidate.shift_x, element_cpu.shift_x, atol=0, rtol=0)
-        xo.assert_allclose(candidate.shift_y, element_cpu.shift_y, atol=0, rtol=0)
-        xo.assert_allclose(candidate.hx, element_cpu.hx, atol=0, rtol=0)
-        xo.assert_allclose(candidate.radiation_flag, element_cpu.radiation_flag, atol=0, rtol=0)
-        xo.assert_allclose(candidate.Bs_hermite, element_cpu.Bs_hermite, atol=0, rtol=0)
-        xo.assert_allclose(candidate.B_norm_hermite, element_cpu.B_norm_hermite, atol=0, rtol=0)
-        xo.assert_allclose(candidate.B_skew_hermite, element_cpu.B_skew_hermite, atol=0, rtol=0)
-
-
 @pytest.fixture(scope="module")
 def test_data_dir():
     return Path(__file__).parent.parent / "test_data"
@@ -102,9 +49,9 @@ def test_data_dir():
 @pytest.fixture
 def make_uniform_splineboris():
     def _make(Bx=0, By=0, Bs=0, s_start=0, s_end=1, n_steps=100,
-                multipole_order=1, radiation_flag=0, kn=None, ks=None):
-        # Uniform field: Hermite params (val_start, der_start, val_end, der_end, integral)
-        # For a constant field B, all boundary values = B, derivatives = 0, integral = B
+                multipole_order=1, radiation_flag=0, scale_b=1.0, kn=None, ks=None):
+        # Uniform field: Hermite params (val_start, der_start, val_end, der_end, mean)
+        # For a constant field B, all boundary values = B, derivatives = 0, mean = B
         Bx_h = [Bx, 0, Bx, 0, Bx]
         By_h = [By, 0, By, 0, By]
         Bs_h = [Bs, 0, Bs, 0, Bs]
@@ -123,6 +70,7 @@ def make_uniform_splineboris():
             bx=(xt.Spline4(*Bx_h),),
             length=s_end - s_start,
             n_steps=n_steps,
+            scale_b=scale_b,
             radiation_flag=radiation_flag,
         )
         return splineboris
@@ -130,15 +78,15 @@ def make_uniform_splineboris():
 
 @pytest.fixture(scope="module")
 def make_segment_field():
-    def _make(Bs_hermite, B_norm_hermite, B_skew_hermite, L, multipole_order_local, s_start=0.0):
+    def _make(bs, by, bx, L, multipole_order_local, s_start=0.0):
         # ensure we have simple lists/arrays
-        Bs_hermite_arr = np.asarray(Bs_hermite, dtype=float).tolist()
-        B_norm_list = [np.asarray(b, dtype=float).tolist() for b in B_norm_hermite]
-        B_skew_list = [np.asarray(b, dtype=float).tolist() for b in B_skew_hermite]
+        bs_arr = np.asarray(bs, dtype=float).tolist()
+        B_norm_list = [np.asarray(b, dtype=float).tolist() for b in by]
+        B_skew_list = [np.asarray(b, dtype=float).tolist() for b in bx]
         def field(x, y, z):
             s_loc = z - s_start
             Bx, By, Bs = evaluate_B(x, y, s_loc,
-                                    Bs_hermite_arr,
+                                    bs_arr,
                                     B_norm_list,
                                     B_skew_list,
                                     L,
@@ -150,6 +98,75 @@ def make_segment_field():
 @pytest.fixture(scope="module")
 def solenoid_field():
     return SolenoidField(**SOLENOID_MODEL_PARAMS)
+
+@pytest.fixture(scope="module")
+def solenoid_field_fitter(solenoid_field):
+    sf = solenoid_field
+
+    x_axis = np.linspace(
+        -SOLENOID_MULTIPOLE_ORDER * SOLENOID_DX / 2,
+        SOLENOID_MULTIPOLE_ORDER * SOLENOID_DX / 2,
+        SOLENOID_MULTIPOLE_ORDER + 1,
+    )
+    y_axis = np.linspace(
+        -SOLENOID_MULTIPOLE_ORDER * SOLENOID_DY / 2,
+        SOLENOID_MULTIPOLE_ORDER * SOLENOID_DY / 2,
+        SOLENOID_MULTIPOLE_ORDER + 1,
+    )
+    z_axis = np.linspace(0, SOLENOID_INTERVAL, SOLENOID_Z_POINT_COUNT)
+    x_grid, y_grid, z_grid = np.meshgrid(x_axis, y_axis, z_axis, indexing="ij")
+    bx, by, bz = sf.get_field(x_grid.ravel(), y_grid.ravel(), z_grid.ravel())
+
+    df_raw_data = pd.DataFrame(
+        np.column_stack(
+            [x_grid.ravel(), y_grid.ravel(), z_grid.ravel(), bx.ravel(), by.ravel(), bz.ravel()]
+        ),
+        columns=["X", "Y", "Z", "Bskew", "Bnorm", "Bs"],
+    ).set_index(["X", "Y", "Z"])
+
+    fitter = FieldFitter(
+        raw_data=df_raw_data,
+        xy_point=(0, 0),
+        distance_unit=1,
+        min_region_size=10,
+        deg=SOLENOID_MULTIPOLE_ORDER - 1,
+        field_tol=1e-4,
+    )
+    df_fit_pars = fitter.df_fit_pars
+
+    assert df_fit_pars is not None
+    assert not df_fit_pars.empty, "FieldFitter produced an empty fit-parameter table"
+
+    df_fit_pars_reset = df_fit_pars.reset_index()
+    required_cols = {
+        "field_component",
+        "derivative_x",
+        "s_start",
+        "s_end",
+        "idx_start",
+        "idx_end",
+        "param_name",
+        "param_value",
+    }
+    missing_cols = required_cols.difference(df_fit_pars_reset.columns)
+    assert not missing_cols, f"Missing required fit-parameter columns: {sorted(missing_cols)}"
+    assert {"Bskew", "Bnorm", "Bs"}.issubset(set(df_fit_pars_reset["field_component"])), (
+        "FieldFitter output is missing one or more field components (Bskew, Bnorm, Bs)"
+    )
+
+    s_start_min = float(df_fit_pars_reset["s_start"].min())
+    s_end_max = float(df_fit_pars_reset["s_end"].max())
+    idx_start_min = int(df_fit_pars_reset["idx_start"].min())
+    idx_end_max = int(df_fit_pars_reset["idx_end"].max())
+    point_count = idx_end_max - idx_start_min + 1
+
+    assert np.isclose(s_start_min, 0.0), f"Unexpected s_start min: {s_start_min}"
+    assert np.isclose(s_end_max, SOLENOID_INTERVAL), f"Unexpected s_end max: {s_end_max}"
+    assert idx_start_min == 0, f"Unexpected idx_start min: {idx_start_min}"
+    assert idx_end_max == SOLENOID_N_STEPS, f"Unexpected idx_end max: {idx_end_max}"
+    assert point_count == SOLENOID_Z_POINT_COUNT, f"Unexpected point_count: {point_count}"
+
+    return fitter
 
 @pytest.fixture(scope="module")
 def solenoid_tubefitter_fit_pars_df(solenoid_field):
@@ -211,6 +228,17 @@ def solenoid_tubefitter_fit_pars_df(solenoid_field):
     return fitter.df_fit_pars
 
 @pytest.fixture(scope="module")
+def undulator_fit_pars_df(test_data_dir):
+    return pd.read_csv(test_data_dir / "sls" / "undulator_fit_pars.csv", index_col=FIT_PARS_INDEX_COLS)
+
+@pytest.fixture(scope="module")
+def undulator_rotated_fit_pars_df(test_data_dir):
+    return pd.read_csv(
+        test_data_dir / "sls" / "undulator_fit_pars_rotated.csv",
+        index_col=FIT_PARS_INDEX_COLS,
+    )
+
+@pytest.fixture(scope="module")
 def undulator_tubefitter_fit_pars_df(test_data_dir):
     """
     Fit the same raw SLS undulator field map used for undulator_fit_pars_df
@@ -254,7 +282,6 @@ TUBEFITTER_NFRAMES_TEST_N_X = 3
 TUBEFITTER_NFRAMES_TEST_N_Y = 3
 TUBEFITTER_NFRAMES_TEST_N_Z = 201
 
-
 @pytest.fixture(scope="module")
 def tubefitter_noisy_sine_raw_data():
     rng = np.random.default_rng(12345)
@@ -282,21 +309,626 @@ def tubefitter_noisy_sine_raw_data():
         }
     ).set_index(["X", "Y", "Z"])
 
-
-@pytest.fixture(scope="module")
-def undulator_fit_pars_df(test_data_dir):
-    return pd.read_csv(test_data_dir / "sls" / "undulator_fit_pars.csv", index_col=FIT_PARS_INDEX_COLS)
-
-@pytest.fixture(scope="module")
-def undulator_rotated_fit_pars_df(test_data_dir):
-    return pd.read_csv(
-        test_data_dir / "sls" / "undulator_fit_pars_rotated.csv",
-        index_col=FIT_PARS_INDEX_COLS,
+def test_field_fitter_get_spline_data_matches_sequence(solenoid_field_fitter):
+    spline_data = solenoid_field_fitter.get_spline_data()
+    sequence = SplineBorisSequence(
+        df_fit_pars=solenoid_field_fitter.df_fit_pars,
+        multipole_order=SOLENOID_MULTIPOLE_ORDER,
     )
 
+    assert len(spline_data) == len(sequence.elements)
+    for piece, element, s_start, s_end in zip(
+        spline_data,
+        sequence.elements,
+        sequence.s_starts,
+        sequence.s_ends,
+    ):
+        assert set(piece) == {
+            "s_start", "s_end", "idx_start", "idx_end", "bs", "bx", "by"
+        }
+        assert isinstance(piece["bs"], xt.Spline4)
+        assert all(isinstance(spline, xt.Spline4) for spline in piece["bx"])
+        assert all(isinstance(spline, xt.Spline4) for spline in piece["by"])
+        assert len(piece["bx"]) == SOLENOID_MULTIPOLE_ORDER
+        assert len(piece["by"]) == SOLENOID_MULTIPOLE_ORDER
+        assert piece["s_start"] == s_start
+        assert piece["s_end"] == s_end
+        xo.assert_allclose(piece["bs"].as_list(), element.bs, rtol=0, atol=1e-14)
+        xo.assert_allclose(
+            [spline.as_list() for spline in piece["bx"]],
+            element.bx,
+            rtol=0,
+            atol=1e-14,
+        )
+        xo.assert_allclose(
+            [spline.as_list() for spline in piece["by"]],
+            element.by,
+            rtol=0,
+            atol=1e-14,
+        )
 
+    elements = [
+        xt.SplineBoris(
+            length=piece["s_end"] - piece["s_start"],
+            n_steps=max(1, piece["idx_end"] - piece["idx_start"]),
+            bs=piece["bs"],
+            bx=piece["bx"],
+            by=piece["by"],
+        )
+        for piece in spline_data
+    ]
+    line = xt.Line(elements=elements)
+    xo.assert_allclose(line.get_length(), sequence.length, rtol=0, atol=1e-14)
 
-# Test some common field angles, as well as some unusual ones
+def test_splineboris_tubefitter_solenoid_vs_variable_solenoid(
+        solenoid_field, solenoid_tubefitter_fit_pars_df):
+    """
+    Same comparison as ``test_splineboris_solenoid_vs_variable_solenoid``,
+    but fit with TubeFitter instead of FieldFitter -- see
+    ``solenoid_tubefitter_fit_pars_df``.
+
+    A paraxial solenoid's transverse field (Bx=-x*Bz'/2, By=-y*Bz'/2) needs
+    a q=2 term (Psi[0,2]) to represent dBy/dy, which TubeFitter never
+    exports. This test checks that tracking still agrees with
+    VariableSolenoid regardless, because the Schueren/Table-1 field
+    evaluator used by SplineBoris regenerates that q=2 content from the
+    exported (a_n, b_n, b_s) via div(B)=0 -- the same mechanism FieldFitter
+    has always relied on (it never fits or exports q>=2 terms either).
+    """
+    interval = SOLENOID_INTERVAL
+    multipole_order = SOLENOID_MULTIPOLE_ORDER
+
+    delta = np.array([0, 4])
+    p0 = xt.Particles(mass0=xt.ELECTRON_MASS_EV, q0=1,
+                    energy0=45.6e6,
+                    x=1e-3,
+                    px=-1e-3*(1+delta),
+                    y=1e-3,
+                    delta=delta)
+
+    sf = solenoid_field
+
+    df_fit_pars = solenoid_tubefitter_fit_pars_df
+    seq = SplineBorisSequence(
+        df_fit_pars=df_fit_pars,
+        multipole_order=multipole_order,
+        steps_per_point=1,
+    )
+
+    line_splineboris = seq.to_line()
+    line_splineboris.build_tracker()
+    p_splineboris = p0.copy()
+    line_splineboris.track(p_splineboris, turn_by_turn_monitor='ONE_TURN_EBE')
+    mon_splineboris = line_splineboris.record_last_track
+
+    n_steps = SOLENOID_N_STEPS
+    z_axis_ref = np.linspace(0, interval, n_steps)
+    Bz_axis = sf.get_field(0 * z_axis_ref, 0 * z_axis_ref, z_axis_ref)[2]
+    P0_J = p0.p0c[0] * qe / clight
+    brho = P0_J / qe / p0.q0
+    ks = Bz_axis / brho
+    ks_entry = ks[:-1]
+    ks_exit = ks[1:]
+    dz = z_axis_ref[1] - z_axis_ref[0]
+    line_varsol = xt.Line(elements=[
+        xt.VariableSolenoid(length=dz, ks_profile=[ks_entry[ii], ks_exit[ii]])
+        for ii in range(len(z_axis_ref) - 1)
+    ])
+    line_varsol.build_tracker()
+    p_varsol = p0.copy()
+    line_varsol.track(p_varsol, turn_by_turn_monitor='ONE_TURN_EBE')
+    mon_varsol = line_varsol.record_last_track
+
+    z_check = sf.z0 + sf.L * np.linspace(-2, 2, 1001)
+
+    n_part = mon_splineboris.x.shape[0]
+    for i_part in range(n_part):
+        s_varsol = 0.5 * (mon_varsol.s[i_part, :-1] + mon_varsol.s[i_part, 1:])
+        dx_ds_varsol = np.diff(mon_varsol.x[i_part, :]) / np.diff(mon_varsol.s[i_part, :])
+        dy_ds_varsol = np.diff(mon_varsol.y[i_part, :]) / np.diff(mon_varsol.s[i_part, :])
+
+        s_splineboris = 0.5 * (mon_splineboris.s[i_part, :-1] + mon_splineboris.s[i_part, 1:])
+        dx_ds_splineboris = np.diff(mon_splineboris.x[i_part, :]) / np.diff(mon_splineboris.s[i_part, :])
+        dy_ds_splineboris = np.diff(mon_splineboris.y[i_part, :]) / np.diff(mon_splineboris.s[i_part, :])
+
+        dx_ds_splineboris_check = np.interp(z_check, s_splineboris, dx_ds_splineboris)
+        dy_ds_splineboris_check = np.interp(z_check, s_splineboris, dy_ds_splineboris)
+
+        dx_ds_varsol_check = np.interp(z_check, s_varsol, dx_ds_varsol)
+        dy_ds_varsol_check = np.interp(z_check, s_varsol, dy_ds_varsol)
+
+        xo.assert_allclose(dx_ds_splineboris_check, dx_ds_varsol_check, rtol=0,
+                atol=3e-2 * (np.max(dx_ds_varsol_check) - np.min(dx_ds_varsol_check)))
+        xo.assert_allclose(dy_ds_splineboris_check, dy_ds_varsol_check, rtol=0,
+                atol=3e-2 * (np.max(dy_ds_varsol_check) - np.min(dy_ds_varsol_check)))
+
+def test_splineboris_tubefitter_vs_fieldfitter_undulator(
+        undulator_tubefitter_fit_pars_df, undulator_fit_pars_df):
+    """
+    Fit the same raw SLS undulator field map with both TubeFitter (global
+    sparse tube fit) and FieldFitter (sequential Hermite-piecewise regions,
+    reusing the undulator_fit_pars_df fixture), build a SplineBoris line from
+    each, and check that tracking a particle through both gives consistent
+    end coordinates -- i.e. that TubeFitter's fit of real, noisy field data is
+    good enough to reproduce FieldFitter's independently-fitted result.
+    """
+    multipole_order = 3
+
+    p_ref = xt.Particles(mass0=xt.ELECTRON_MASS_EV, q0=1, p0c=2.7e9)
+
+    line_tube = SplineBorisSequence(
+        df_fit_pars=undulator_tubefitter_fit_pars_df,
+        multipole_order=multipole_order,
+        steps_per_point=1,
+    ).to_line()
+    line_tube.particle_ref = p_ref.copy()
+
+    line_field = SplineBorisSequence(
+        df_fit_pars=undulator_fit_pars_df,
+        multipole_order=multipole_order,
+        steps_per_point=1,
+    ).to_line()
+    line_field.particle_ref = p_ref.copy()
+
+    p_tube = line_tube.particle_ref.copy()
+    p_tube.x = 1e-3
+    p_tube.px = 1e-4
+    p_tube.y = 0.5e-3
+    p_tube.py = -0.5e-4
+    line_tube.track(p_tube)
+
+    p_field = line_field.particle_ref.copy()
+    p_field.x = 1e-3
+    p_field.px = 1e-4
+    p_field.y = 0.5e-3
+    p_field.py = -0.5e-4
+    line_field.track(p_field)
+
+    # TubeFitter (global sparse fit) and FieldFitter (sequential per-region
+    # polynomial fit) are different fitting methods on the same noisy,
+    # measured field map, so their outputs aren't identical -- these
+    # tolerances just check the two stay in the same ballpark (sub-mm in
+    # position, sub-0.1 mrad in angle) over the whole undulator, not that
+    # they agree to numerical precision.
+    xo.assert_allclose(p_tube.x, p_field.x, rtol=0, atol=3e-4)
+    xo.assert_allclose(p_tube.px, p_field.px, rtol=0, atol=1e-4)
+    xo.assert_allclose(p_tube.y, p_field.y, rtol=0, atol=1e-4)
+    xo.assert_allclose(p_tube.py, p_field.py, rtol=0, atol=1e-4)
+    xo.assert_allclose(p_tube.zeta, p_field.zeta, rtol=0, atol=1e-6)
+    xo.assert_allclose(p_tube.delta, p_field.delta, rtol=0, atol=0)
+
+def test_tubefitter_n_frames_and_residual_tol_mutually_exclusive(tubefitter_noisy_sine_raw_data):
+    """Passing both n_frames and residual_tol is an ambiguous request, and should
+    raise rather than silently prioritizing one over the other."""
+    with pytest.raises(ValueError):
+        TubeFitter(
+            raw_data=tubefitter_noisy_sine_raw_data,
+            distance_unit=1.0,
+            deg=1,
+            n_frames=50,
+            residual_tol=0.05,
+        )
+
+def test_tubefitter_n_frames_default(tubefitter_noisy_sine_raw_data):
+    """With neither n_frames nor residual_tol given, TubeFitter should fall back
+    to DEFAULT_N_FRAMES (clamped into the valid range) without running a search."""
+    fitter = TubeFitter(raw_data=tubefitter_noisy_sine_raw_data, distance_unit=1.0, deg=1)
+
+    assert fitter.n_frames == DEFAULT_N_FRAMES
+    assert fitter.n_frames_search_trace is None
+
+@pytest.mark.filterwarnings("ignore:FigureCanvasAgg is non-interactive.*")
+def test_tubefitter_residual_tol_search_reaches_target(tubefitter_noisy_sine_raw_data):
+    """A loose residual_tol should be reachable well below the DOF ceiling, and
+    the selected n_frames should actually meet the target."""
+    target = 0.05
+    fitter = TubeFitter(
+        raw_data=tubefitter_noisy_sine_raw_data,
+        distance_unit=1.0,
+        deg=1,
+        residual_tol=target,
+    )
+
+    dof_ceiling = fitter._dof_ceiling()
+    assert 2 <= fitter.n_frames <= dof_ceiling
+    assert fitter.n_frames < dof_ceiling, (
+        "search should find a frame count well below the DOF ceiling for such "
+        "a loose target -- getting the ceiling suggests the search silently "
+        "fell back instead of converging"
+    )
+
+    assert fitter.n_frames_search_trace
+    assert fitter.n_frames in fitter.n_frames_search_trace
+    rel_bskew, rel_bnorm = fitter.n_frames_search_trace[fitter.n_frames]
+    assert max(rel_bskew, rel_bnorm) <= target
+
+@pytest.mark.filterwarnings("ignore:FigureCanvasAgg is non-interactive.*")
+def test_tubefitter_residual_tol_unreachable_falls_back(tubefitter_noisy_sine_raw_data, capsys):
+    """A residual_tol far below the noise floor can never be met, no matter how
+    many frames are used -- construction should still succeed, falling back to
+    the DOF ceiling with a warning instead of raising."""
+    target = 1e-5
+    fitter = TubeFitter(
+        raw_data=tubefitter_noisy_sine_raw_data,
+        distance_unit=1.0,
+        deg=1,
+        residual_tol=target,
+    )
+
+    dof_ceiling = fitter._dof_ceiling()
+    assert fitter.n_frames == dof_ceiling
+    assert fitter.n_frames_search_trace
+
+    captured = capsys.readouterr()
+    assert "WARNING" in captured.out
+
+@for_all_test_contexts
+def test_splineboris_to_dict_from_dict_roundtrip(test_context):
+    element = xt.SplineBoris(
+        length=1.2,
+        n_steps=4,
+        shift_x=1e-3,
+        shift_y=-2e-3,
+        scale_b=1.7,
+        radiation_flag=1,
+        bs=xt.Spline4(0.1, 0.2, 0.3, 0.4, 0.5),
+        by=(
+            xt.Spline4(1.0, 1.1, 1.2, 1.3, 1.4),
+            None,
+            xt.Spline4(3.0, 3.1, 3.2, 3.3, 3.4),
+        ),
+        bx=(
+            None,
+            xt.Spline4(-2.0, -2.1, -2.2, -2.3, -2.4),
+        ),
+        knl=[0.01, -0.02, 0.03],
+        ksl=[-0.04, 0.05],
+        _context=test_context,
+    )
+
+    element_dict = element.to_dict()
+
+    assert 'bs' in element_dict
+    assert 'by' in element_dict
+    assert 'bx' in element_dict
+    assert isinstance(element_dict['bs'], dict)
+    assert isinstance(element_dict['by'], list)
+    assert isinstance(element_dict['bx'], list)
+    assert element_dict['bs']['mean'] == 0.5
+    assert 'integral' not in element_dict['bs']
+    assert 'multipole_order' not in element_dict
+
+    legacy_ctor_dict = element_dict.copy()
+    legacy_ctor_dict.pop('__class__', None)
+    legacy_ctor_dict['bs'] = legacy_ctor_dict['bs'].copy()
+    legacy_ctor_dict['bs']['integral'] = legacy_ctor_dict['bs'].pop('mean')
+    with pytest.raises(ValueError, match='mean'):
+        xt.SplineBoris(_context=test_context, **legacy_ctor_dict)
+
+    roundtrip = xt.SplineBoris.from_dict(element_dict, _context=test_context)
+
+    ctor_dict = element_dict.copy()
+    ctor_dict.pop('__class__', None)
+    ctor_roundtrip = xt.SplineBoris(_context=test_context, **ctor_dict)
+
+    element_cpu = element.copy(_context=xo.ContextCpu())
+    roundtrip_cpu = roundtrip.copy(_context=xo.ContextCpu())
+    ctor_roundtrip_cpu = ctor_roundtrip.copy(_context=xo.ContextCpu())
+
+    for candidate in (roundtrip_cpu, ctor_roundtrip_cpu):
+        xo.assert_allclose(candidate.length, element_cpu.length, atol=0, rtol=0)
+        xo.assert_allclose(candidate.n_steps, element_cpu.n_steps, atol=0, rtol=0)
+        xo.assert_allclose(candidate.shift_x, element_cpu.shift_x, atol=0, rtol=0)
+        xo.assert_allclose(candidate.shift_y, element_cpu.shift_y, atol=0, rtol=0)
+        xo.assert_allclose(candidate.scale_b, element_cpu.scale_b, atol=0, rtol=0)
+        xo.assert_allclose(candidate.radiation_flag, element_cpu.radiation_flag, atol=0, rtol=0)
+        xo.assert_allclose(candidate.bs, element_cpu.bs, atol=0, rtol=0)
+        xo.assert_allclose(candidate.by, element_cpu.by, atol=0, rtol=0)
+        xo.assert_allclose(candidate.bx, element_cpu.bx, atol=0, rtol=0)
+        xo.assert_allclose(candidate.knl, element_cpu.knl, atol=0, rtol=0)
+        xo.assert_allclose(candidate.ksl, element_cpu.ksl, atol=0, rtol=0)
+
+def test_splineboris_multipole_kick_matches_stepwise_thin_multipoles():
+    length = 1.7
+    n_steps = 17
+    knl = np.array([1.2e-5, -3.4e-4, 1.5e-3])
+    ksl = np.array([-4e-6, 2.1e-5, -7e-4])
+
+    splineboris = xt.SplineBoris(
+        length=length,
+        n_steps=n_steps,
+        knl=knl,
+        ksl=ksl,
+    )
+
+    reference_elements = []
+    for _ in range(n_steps):
+        reference_elements.append(xt.Drift(length=0.5 * length / n_steps))
+        reference_elements.append(xt.Multipole(
+            knl=knl / n_steps,
+            ksl=ksl / n_steps,
+        ))
+        reference_elements.append(xt.Drift(length=0.5 * length / n_steps))
+    reference = xt.Line(elements=reference_elements)
+
+    p0 = xt.Particles(
+        p0c=7e9,
+        x=1.3e-3,
+        px=2.1e-4,
+        y=-0.7e-3,
+        py=-1.2e-4,
+        delta=3e-4,
+    )
+
+    p_splineboris = p0.copy()
+    p_splineboris_line = p0.copy()
+    p_ref = p0.copy()
+
+    splineboris.track(p_splineboris)
+    line_splineboris = xt.Line(elements=[splineboris.copy()])
+    line_splineboris.build_tracker()
+    line_splineboris.track(p_splineboris_line)
+    reference.track(p_ref)
+
+    xo.assert_allclose(p_splineboris_line.x, p_splineboris.x, rtol=0, atol=5e-14)
+    xo.assert_allclose(p_splineboris_line.px, p_splineboris.px, rtol=0, atol=5e-14)
+    xo.assert_allclose(p_splineboris_line.y, p_splineboris.y, rtol=0, atol=5e-14)
+    xo.assert_allclose(p_splineboris_line.py, p_splineboris.py, rtol=0, atol=5e-14)
+
+    xo.assert_allclose(p_splineboris.x, p_ref.x, rtol=0, atol=5e-11)
+    xo.assert_allclose(p_splineboris.px, p_ref.px, rtol=0, atol=5e-11)
+    xo.assert_allclose(p_splineboris.y, p_ref.y, rtol=0, atol=5e-11)
+    xo.assert_allclose(p_splineboris.py, p_ref.py, rtol=0, atol=5e-11)
+    xo.assert_allclose(p_splineboris.zeta, p_ref.zeta, rtol=0, atol=5e-11)
+
+def test_splineboris_multipole_field_contributes_to_mean_radiation():
+    length = 1.0
+    n_steps = 100
+    B_T = 2.0
+    p0c = 5e9
+    brho = p0c / clight
+    knl0 = B_T * length / brho
+
+    particles = xt.Particles(
+        p0c=p0c,
+        px=1e-4,
+        py=-1e-4,
+        delta=0,
+        mass0=xt.ELECTRON_MASS_EV,
+    )
+    particles_before = particles.copy()
+
+    splineboris = xt.SplineBoris(
+        length=length,
+        n_steps=n_steps,
+        knl=[knl0],
+        radiation_flag=1,
+    )
+    splineboris.track(particles)
+
+    gamma = (particles_before.energy / particles_before.mass0)[0]
+    gamma0 = particles_before.gamma0[0]
+    rho_0 = brho / B_T
+    mass0_kg = particles_before.mass0 * qe / clight**2
+    r0 = qe**2 / (4 * np.pi * epsilon_0 * mass0_kg * clight**2)
+    ps = (2 * r0 * clight * mass0_kg * clight**2 * gamma0**2 * gamma**2) / (3 * rho_0**2)
+    expected_delta_e_ev = -ps * (length / clight) / qe
+    tracked_delta_e_ev = ((particles.ptau - particles_before.ptau) * particles.p0c)[0]
+
+    xo.assert_allclose(tracked_delta_e_ev, expected_delta_e_ev, rtol=5e-3, atol=0)
+
+def test_splineboris_scale_b_does_not_scale_multipole_components():
+    length = 1.2
+    n_steps = 30
+    knl = [2.0e-3, -1.0e-2]
+    ksl = [-1.5e-3, 4.0e-3]
+
+    el_scale_1 = xt.SplineBoris(
+        length=length,
+        n_steps=n_steps,
+        knl=knl,
+        ksl=ksl,
+        scale_b=1.0,
+    )
+    el_scale_7 = xt.SplineBoris(
+        length=length,
+        n_steps=n_steps,
+        knl=knl,
+        ksl=ksl,
+        scale_b=7.0,
+    )
+
+    p_scale_1 = xt.Particles(
+        p0c=7e9,
+        x=1.3e-3,
+        px=2.1e-4,
+        y=-0.7e-3,
+        py=-1.2e-4,
+        delta=3e-4,
+    )
+    p_scale_7 = p_scale_1.copy()
+
+    xt.Line(elements=[el_scale_1]).track(p_scale_1)
+    xt.Line(elements=[el_scale_7]).track(p_scale_7)
+
+    xo.assert_allclose(p_scale_7.x, p_scale_1.x, rtol=0, atol=1e-15)
+    xo.assert_allclose(p_scale_7.px, p_scale_1.px, rtol=0, atol=1e-15)
+    xo.assert_allclose(p_scale_7.y, p_scale_1.y, rtol=0, atol=1e-15)
+    xo.assert_allclose(p_scale_7.py, p_scale_1.py, rtol=0, atol=1e-15)
+    xo.assert_allclose(p_scale_7.zeta, p_scale_1.zeta, rtol=0, atol=1e-15)
+
+def test_splineboris_spline_and_multipole_fields_add_for_mean_radiation():
+    length = 1.0
+    n_steps = 100
+    B_spline_T = 1.25
+    B_multipole_T = 0.75
+    B_total_T = B_spline_T + B_multipole_T
+    p0c = 5e9
+    brho = p0c / clight
+    knl0 = B_multipole_T * length / brho
+
+    by_h = [B_spline_T, 0, B_spline_T, 0, B_spline_T]
+
+    particles = xt.Particles(
+        p0c=p0c,
+        px=1e-4,
+        py=-1e-4,
+        delta=0,
+        mass0=xt.ELECTRON_MASS_EV,
+    )
+    particles_before = particles.copy()
+
+    splineboris = xt.SplineBoris(
+        length=length,
+        n_steps=n_steps,
+        by=(xt.Spline4(*by_h),),
+        knl=[knl0],
+        radiation_flag=1,
+    )
+    splineboris.track(particles)
+
+    gamma = (particles_before.energy / particles_before.mass0)[0]
+    gamma0 = particles_before.gamma0[0]
+    rho_0 = brho / B_total_T
+    mass0_kg = particles_before.mass0 * qe / clight**2
+    r0 = qe**2 / (4 * np.pi * epsilon_0 * mass0_kg * clight**2)
+    ps = (2 * r0 * clight * mass0_kg * clight**2 * gamma0**2 * gamma**2) / (3 * rho_0**2)
+    expected_delta_e_ev = -ps * (length / clight) / qe
+    tracked_delta_e_ev = ((particles.ptau - particles_before.ptau) * particles.p0c)[0]
+
+    xo.assert_allclose(tracked_delta_e_ev, expected_delta_e_ev, rtol=5e-3, atol=0)
+
+def test_splineboris_scale_b_scales_field_and_tracking(make_uniform_splineboris):
+    scale_b = 2.5
+    Bx = 0.03
+    By = -0.07
+    Bs = 0.01
+
+    scaled = make_uniform_splineboris(
+        Bx=Bx, By=By, Bs=Bs, n_steps=20, scale_b=scale_b)
+    reference = make_uniform_splineboris(
+        Bx=scale_b * Bx, By=scale_b * By, Bs=scale_b * Bs, n_steps=20)
+
+    xo.assert_allclose(scaled.scale_b, scale_b, atol=0, rtol=0)
+    xo.assert_allclose(
+        scaled.get_field(1e-3, -2e-3, 0.4),
+        reference.get_field(1e-3, -2e-3, 0.4),
+        atol=1e-14,
+        rtol=0,
+    )
+
+    particle_ref = xt.Particles(
+        mass0=xt.ELECTRON_MASS_EV,
+        q0=1.0,
+        energy0=1e9,
+    )
+
+    p_scaled = particle_ref.copy()
+    p_reference = particle_ref.copy()
+    for pp in (p_scaled, p_reference):
+        pp.x = 1e-3
+        pp.y = -2e-3
+        pp.px = 3e-4
+        pp.py = -4e-4
+
+    line_scaled = xt.Line(elements=[scaled])
+    line_reference = xt.Line(elements=[reference])
+    line_scaled.particle_ref = particle_ref.copy()
+    line_reference.particle_ref = particle_ref.copy()
+
+    line_scaled.track(p_scaled)
+    line_reference.track(p_reference)
+
+    xo.assert_allclose(p_scaled.x, p_reference.x, atol=1e-15, rtol=0)
+    xo.assert_allclose(p_scaled.y, p_reference.y, atol=1e-15, rtol=0)
+    xo.assert_allclose(p_scaled.px, p_reference.px, atol=1e-15, rtol=0)
+    xo.assert_allclose(p_scaled.py, p_reference.py, atol=1e-15, rtol=0)
+    xo.assert_allclose(p_scaled.zeta, p_reference.zeta, atol=1e-15, rtol=0)
+
+def test_splineboris_backtrack_twiss_checks_s():
+    def make_splineboris(length, scale=1.0):
+        return xt.SplineBoris(
+            bs=xt.Spline4(
+                scale * 0.020, scale * 0.003, scale * 0.017,
+                scale * -0.002, scale * 0.018),
+            by=(xt.Spline4(
+                scale * -0.010, scale * 0.004, scale * -0.012,
+                scale * 0.001, scale * -0.011),),
+            bx=(xt.Spline4(
+                scale * 0.006, scale * -0.002, scale * 0.009,
+                scale * 0.003, scale * 0.007),),
+            length=length,
+            n_steps=8,
+        )
+
+    splineboris_0 = make_splineboris(length=1.3, scale=1.0)
+    splineboris_1 = make_splineboris(length=0.7, scale=-0.6)
+
+    assert splineboris_0.has_backtrack
+    assert splineboris_1.has_backtrack
+
+    line = xt.Line(elements={
+        'sb0': splineboris_0,
+        'sb1': splineboris_1,
+        'end': xt.Marker(),
+    })
+    line.particle_ref = xt.Particles(
+        mass0=xt.ELECTRON_MASS_EV,
+        q0=1.0,
+        energy0=1e9,
+    )
+    line.build_tracker()
+
+    tw_forward = line.twiss(
+        method='4d',
+        start='sb0',
+        end='end',
+        init_at='sb0',
+        x=1.2e-3,
+        px=2.0e-4,
+        y=-0.8e-3,
+        py=-3.0e-4,
+        betx=1.0,
+        bety=1.0,
+    )
+    tw_backtrack = line.twiss(
+        method='4d',
+        start='sb0',
+        end='end',
+        init=tw_forward,
+        init_at='end',
+    )
+
+    xo.assert_allclose(
+        tw_forward.s,
+        [0.0, splineboris_0.length,
+         splineboris_0.length + splineboris_1.length,
+         splineboris_0.length + splineboris_1.length],
+        atol=1e-14,
+        rtol=0,
+    )
+    xo.assert_allclose(tw_backtrack.s, tw_forward.s, atol=1e-14, rtol=0)
+
+    for name in ('sb0', 'sb1', 'end', '_end_point'):
+        assert name in tw_forward.name
+        assert name in tw_backtrack.name
+
+    for column in ('x', 'px', 'y', 'py', 'delta'):
+        xo.assert_allclose(
+            tw_backtrack[column],
+            tw_forward[column],
+            atol=1e-12,
+            rtol=0,
+        )
+
+    for column in ('betx', 'bety', 'alfx', 'alfy'):
+        xo.assert_allclose(
+            tw_backtrack[column],
+            tw_forward[column],
+            atol=1e-9,
+            rtol=0,
+        )
+
 @pytest.mark.parametrize('field_angle', [0, np.pi/4, np.pi/2, 3*np.pi/4, np.pi, 4*np.pi/9, np.pi/7])
 def test_splineboris_homogeneous_analytic(field_angle, make_uniform_splineboris):
     """
@@ -330,8 +962,8 @@ def test_splineboris_homogeneous_analytic(field_angle, make_uniform_splineboris)
     p.px = 1e-3  # small transverse momentum to create a visible helix
 
     # Analytic solution for the helix angle
-    kin_xp = p.kin_xprime[0]
-    kin_yp = p.kin_yprime[0]
+    kin_xp = p.kin_xp[0]
+    kin_yp = p.kin_yp[0]
     x = p.x[0]
     y = p.y[0]
 
@@ -435,17 +1067,14 @@ def test_splineboris_homogeneous_analytic(field_angle, make_uniform_splineboris)
     line.track(p)
     x_end_splineboris = p.x[0]
     y_end_splineboris = p.y[0]
-    xp_final_splineboris = p.kin_xprime[0]
-    yp_final_splineboris = p.kin_yprime[0]
+    xp_final_splineboris = p.kin_xp[0]
+    yp_final_splineboris = p.kin_yp[0]
 
     xo.assert_allclose(x_final, x_end_splineboris, atol=1e-12, rtol=1e-5)
     xo.assert_allclose(y_final, y_end_splineboris, atol=1e-12, rtol=1e-5)
     xo.assert_allclose(xp_final, xp_final_splineboris, atol=1e-12, rtol=1e-5)
     xo.assert_allclose(yp_final, yp_final_splineboris, atol=1e-12, rtol=1e-5)
 
-
-
-# Test some common field angles, as well as some unusual ones
 @pytest.mark.parametrize('field_angle', [0, np.pi/4, np.pi/2, 3*np.pi/4, np.pi, 4*np.pi/9, np.pi/7])
 def test_splineboris_homogeneous_rbend(field_angle, make_uniform_splineboris):
     """
@@ -510,218 +1139,6 @@ def test_splineboris_homogeneous_rbend(field_angle, make_uniform_splineboris):
     xo.assert_allclose(px_end_rbend, px_final_splineboris, atol=1e-12, rtol=1e-5)
     xo.assert_allclose(py_end_rbend, py_final_splineboris, atol=1e-12, rtol=1e-5)
 
-
-
-def test_splineboris_tubefitter_solenoid_vs_variable_solenoid(
-        solenoid_field, solenoid_tubefitter_fit_pars_df):
-    """
-    Same comparison as ``test_splineboris_solenoid_vs_variable_solenoid``,
-    but fit with TubeFitter instead of FieldFitter -- see
-    ``solenoid_tubefitter_fit_pars_df``.
-
-    A paraxial solenoid's transverse field (Bx=-x*Bz'/2, By=-y*Bz'/2) needs
-    a q=2 term (Psi[0,2]) to represent dBy/dy, which TubeFitter never
-    exports. This test checks that tracking still agrees with
-    VariableSolenoid regardless, because the Schueren/Table-1 field
-    evaluator used by SplineBoris regenerates that q=2 content from the
-    exported (a_n, b_n, b_s) via div(B)=0 -- the same mechanism FieldFitter
-    has always relied on (it never fits or exports q>=2 terms either).
-    """
-    interval = SOLENOID_INTERVAL
-    multipole_order = SOLENOID_MULTIPOLE_ORDER
-
-    delta = np.array([0, 4])
-    p0 = xt.Particles(mass0=xt.ELECTRON_MASS_EV, q0=1,
-                    energy0=45.6e6,
-                    x=1e-3,
-                    px=-1e-3*(1+delta),
-                    y=1e-3,
-                    delta=delta)
-
-    sf = solenoid_field
-
-    df_fit_pars = solenoid_tubefitter_fit_pars_df
-    seq = SplineBorisSequence(
-        df_fit_pars=df_fit_pars,
-        multipole_order=multipole_order,
-        steps_per_point=1,
-    )
-
-    line_splineboris = seq.to_line()
-    line_splineboris.build_tracker()
-    p_splineboris = p0.copy()
-    line_splineboris.track(p_splineboris, turn_by_turn_monitor='ONE_TURN_EBE')
-    mon_splineboris = line_splineboris.record_last_track
-
-    n_steps = SOLENOID_N_STEPS
-    z_axis_ref = np.linspace(0, interval, n_steps)
-    Bz_axis = sf.get_field(0 * z_axis_ref, 0 * z_axis_ref, z_axis_ref)[2]
-    P0_J = p0.p0c[0] * qe / clight
-    brho = P0_J / qe / p0.q0
-    ks = Bz_axis / brho
-    ks_entry = ks[:-1]
-    ks_exit = ks[1:]
-    dz = z_axis_ref[1] - z_axis_ref[0]
-    line_varsol = xt.Line(elements=[
-        xt.VariableSolenoid(length=dz, ks_profile=[ks_entry[ii], ks_exit[ii]])
-        for ii in range(len(z_axis_ref) - 1)
-    ])
-    line_varsol.build_tracker()
-    p_varsol = p0.copy()
-    line_varsol.track(p_varsol, turn_by_turn_monitor='ONE_TURN_EBE')
-    mon_varsol = line_varsol.record_last_track
-
-    z_check = sf.z0 + sf.L * np.linspace(-2, 2, 1001)
-
-    n_part = mon_splineboris.x.shape[0]
-    for i_part in range(n_part):
-        s_varsol = 0.5 * (mon_varsol.s[i_part, :-1] + mon_varsol.s[i_part, 1:])
-        dx_ds_varsol = np.diff(mon_varsol.x[i_part, :]) / np.diff(mon_varsol.s[i_part, :])
-        dy_ds_varsol = np.diff(mon_varsol.y[i_part, :]) / np.diff(mon_varsol.s[i_part, :])
-
-        s_splineboris = 0.5 * (mon_splineboris.s[i_part, :-1] + mon_splineboris.s[i_part, 1:])
-        dx_ds_splineboris = np.diff(mon_splineboris.x[i_part, :]) / np.diff(mon_splineboris.s[i_part, :])
-        dy_ds_splineboris = np.diff(mon_splineboris.y[i_part, :]) / np.diff(mon_splineboris.s[i_part, :])
-
-        dx_ds_splineboris_check = np.interp(z_check, s_splineboris, dx_ds_splineboris)
-        dy_ds_splineboris_check = np.interp(z_check, s_splineboris, dy_ds_splineboris)
-
-        dx_ds_varsol_check = np.interp(z_check, s_varsol, dx_ds_varsol)
-        dy_ds_varsol_check = np.interp(z_check, s_varsol, dy_ds_varsol)
-
-        xo.assert_allclose(dx_ds_splineboris_check, dx_ds_varsol_check, rtol=0,
-                atol=3e-2 * (np.max(dx_ds_varsol_check) - np.min(dx_ds_varsol_check)))
-        xo.assert_allclose(dy_ds_splineboris_check, dy_ds_varsol_check, rtol=0,
-                atol=3e-2 * (np.max(dy_ds_varsol_check) - np.min(dy_ds_varsol_check)))
-
-
-def test_splineboris_tubefitter_vs_fieldfitter_undulator(
-        undulator_tubefitter_fit_pars_df, undulator_fit_pars_df):
-    """
-    Fit the same raw SLS undulator field map with both TubeFitter (global
-    sparse tube fit) and FieldFitter (sequential Hermite-piecewise regions,
-    reusing the undulator_fit_pars_df fixture), build a SplineBoris line from
-    each, and check that tracking a particle through both gives consistent
-    end coordinates -- i.e. that TubeFitter's fit of real, noisy field data is
-    good enough to reproduce FieldFitter's independently-fitted result.
-    """
-    multipole_order = 3
-
-    p_ref = xt.Particles(mass0=xt.ELECTRON_MASS_EV, q0=1, p0c=2.7e9)
-
-    line_tube = SplineBorisSequence(
-        df_fit_pars=undulator_tubefitter_fit_pars_df,
-        multipole_order=multipole_order,
-        steps_per_point=1,
-    ).to_line()
-    line_tube.particle_ref = p_ref.copy()
-
-    line_field = SplineBorisSequence(
-        df_fit_pars=undulator_fit_pars_df,
-        multipole_order=multipole_order,
-        steps_per_point=1,
-    ).to_line()
-    line_field.particle_ref = p_ref.copy()
-
-    p_tube = line_tube.particle_ref.copy()
-    p_tube.x = 1e-3
-    p_tube.px = 1e-4
-    p_tube.y = 0.5e-3
-    p_tube.py = -0.5e-4
-    line_tube.track(p_tube)
-
-    p_field = line_field.particle_ref.copy()
-    p_field.x = 1e-3
-    p_field.px = 1e-4
-    p_field.y = 0.5e-3
-    p_field.py = -0.5e-4
-    line_field.track(p_field)
-
-    # TubeFitter (global sparse fit) and FieldFitter (sequential per-region
-    # polynomial fit) are different fitting methods on the same noisy,
-    # measured field map, so their outputs aren't identical -- these
-    # tolerances just check the two stay in the same ballpark (sub-mm in
-    # position, sub-0.1 mrad in angle) over the whole undulator, not that
-    # they agree to numerical precision.
-    xo.assert_allclose(p_tube.x, p_field.x, rtol=0, atol=3e-4)
-    xo.assert_allclose(p_tube.px, p_field.px, rtol=0, atol=1e-4)
-    xo.assert_allclose(p_tube.y, p_field.y, rtol=0, atol=1e-4)
-    xo.assert_allclose(p_tube.py, p_field.py, rtol=0, atol=1e-4)
-    xo.assert_allclose(p_tube.zeta, p_field.zeta, rtol=0, atol=1e-6)
-    xo.assert_allclose(p_tube.delta, p_field.delta, rtol=0, atol=0)
-
-
-
-def test_tubefitter_n_frames_and_residual_tol_mutually_exclusive(tubefitter_noisy_sine_raw_data):
-    """Passing both n_frames and residual_tol is an ambiguous request, and should
-    raise rather than silently prioritizing one over the other."""
-    with pytest.raises(ValueError):
-        TubeFitter(
-            raw_data=tubefitter_noisy_sine_raw_data,
-            distance_unit=1.0,
-            deg=1,
-            n_frames=50,
-            residual_tol=0.05,
-        )
-
-
-def test_tubefitter_n_frames_default(tubefitter_noisy_sine_raw_data):
-    """With neither n_frames nor residual_tol given, TubeFitter should fall back
-    to DEFAULT_N_FRAMES (clamped into the valid range) without running a search."""
-    fitter = TubeFitter(raw_data=tubefitter_noisy_sine_raw_data, distance_unit=1.0, deg=1)
-
-    assert fitter.n_frames == DEFAULT_N_FRAMES
-    assert fitter.n_frames_search_trace is None
-
-
-@pytest.mark.filterwarnings("ignore:FigureCanvasAgg is non-interactive.*")
-def test_tubefitter_residual_tol_search_reaches_target(tubefitter_noisy_sine_raw_data):
-    """A loose residual_tol should be reachable well below the DOF ceiling, and
-    the selected n_frames should actually meet the target."""
-    target = 0.05
-    fitter = TubeFitter(
-        raw_data=tubefitter_noisy_sine_raw_data,
-        distance_unit=1.0,
-        deg=1,
-        residual_tol=target,
-    )
-
-    dof_ceiling = fitter._dof_ceiling()
-    assert 2 <= fitter.n_frames <= dof_ceiling
-    assert fitter.n_frames < dof_ceiling, (
-        "search should find a frame count well below the DOF ceiling for such "
-        "a loose target -- getting the ceiling suggests the search silently "
-        "fell back instead of converging"
-    )
-
-    assert fitter.n_frames_search_trace
-    assert fitter.n_frames in fitter.n_frames_search_trace
-    rel_bskew, rel_bnorm = fitter.n_frames_search_trace[fitter.n_frames]
-    assert max(rel_bskew, rel_bnorm) <= target
-
-
-@pytest.mark.filterwarnings("ignore:FigureCanvasAgg is non-interactive.*")
-def test_tubefitter_residual_tol_unreachable_falls_back(tubefitter_noisy_sine_raw_data, capsys):
-    """A residual_tol far below the noise floor can never be met, no matter how
-    many frames are used -- construction should still succeed, falling back to
-    the DOF ceiling with a warning instead of raising."""
-    target = 1e-5
-    fitter = TubeFitter(
-        raw_data=tubefitter_noisy_sine_raw_data,
-        distance_unit=1.0,
-        deg=1,
-        residual_tol=target,
-    )
-
-    dof_ceiling = fitter._dof_ceiling()
-    assert fitter.n_frames == dof_ceiling
-    assert fitter.n_frames_search_trace
-
-    captured = capsys.readouterr()
-    assert "WARNING" in captured.out
-
-
-
 def test_splineboris_undulator_vs_boris_spatial(undulator_fit_pars_df, make_segment_field):
     """
     Build a lightweight undulator from spline-fit parameters using SplineBorisSequence
@@ -763,20 +1180,20 @@ def test_splineboris_undulator_vs_boris_spatial(undulator_fit_pars_df, make_segm
     # ------------------------------------------------------------------
     boris_elems = []
     for elem, s_start, s_end in zip(seq.elements, seq.s_starts, seq.s_ends):
-        Bs_hermite = [elem.Bs_hermite[i] for i in range(5)]
-        B_norm_hermite = [
-            [elem.B_norm_hermite[i, j] for j in range(5)]
+        bs = [elem.bs[i] for i in range(5)]
+        by = [
+            [elem.by[i, j] for j in range(5)]
             for i in range(multipole_order)
         ]
-        B_skew_hermite = [
-            [elem.B_skew_hermite[i, j] for j in range(5)]
+        bx = [
+            [elem.bx[i, j] for j in range(5)]
             for i in range(multipole_order)
         ]
         L = float(elem.length)
         field_i = make_segment_field(
-            Bs_hermite,
-            B_norm_hermite,
-            B_skew_hermite,
+            bs,
+            by,
+            bx,
             L,
             multipole_order,
             s_start=float(s_start),
@@ -811,8 +1228,6 @@ def test_splineboris_undulator_vs_boris_spatial(undulator_fit_pars_df, make_segm
     xo.assert_allclose(p_spline.py, p_boris.py, rtol=1e-12, atol=5e-11)
     xo.assert_allclose(p_spline.zeta, p_boris.zeta, rtol=1e-12, atol=5e-11)
     xo.assert_allclose(p_spline.delta, p_boris.delta, rtol=1e-12, atol=5e-11)
-
-
 
 def test_splineboris_rotated_undulator_vs_boris_spatial(undulator_rotated_fit_pars_df, undulator_fit_pars_df, make_segment_field):
     '''
@@ -884,20 +1299,20 @@ def test_splineboris_rotated_undulator_vs_boris_spatial(undulator_rotated_fit_pa
     # ------------------------------------------------------------------
     boris_elems = []
     for elem, s_start, s_end in zip(seq.elements, seq.s_starts, seq.s_ends):
-        Bs_hermite = [elem.Bs_hermite[i] for i in range(5)]
-        B_norm_hermite = [
-            [elem.B_norm_hermite[i, j] for j in range(5)]
+        bs = [elem.bs[i] for i in range(5)]
+        by = [
+            [elem.by[i, j] for j in range(5)]
             for i in range(multipole_order)
         ]
-        B_skew_hermite = [
-            [elem.B_skew_hermite[i, j] for j in range(5)]
+        bx = [
+            [elem.bx[i, j] for j in range(5)]
             for i in range(multipole_order)
         ]
         L = float(elem.length)
         field_i = make_segment_field(
-            Bs_hermite,
-            B_norm_hermite,
-            B_skew_hermite,
+            bs,
+            by,
+            bx,
             L,
             multipole_order,
             s_start=float(s_start),
@@ -933,8 +1348,6 @@ def test_splineboris_rotated_undulator_vs_boris_spatial(undulator_rotated_fit_pa
     xo.assert_allclose(p_splineboris.zeta, p_boris.zeta, rtol=1e-12, atol=5e-11)
     xo.assert_allclose(p_splineboris.delta, p_boris.delta, rtol=1e-12, atol=5e-11)
 
-
-
 @fix_random_seed(645284)
 def test_splineboris_bend_radiation(make_uniform_splineboris):
     """
@@ -963,6 +1376,7 @@ def test_splineboris_bend_radiation(make_uniform_splineboris):
     gamma = (particles_mean.energy / particles_mean.mass0)[0]
     gamma0 = particles_mean.gamma0[0]
     particles_qntm_0 = particles_mean.copy()
+    particles_qntm_kick_0 = particles_mean.copy()
 
     # Calculate bend angle from field
     P0_J = particles_mean.p0c[0] / clight * qe
@@ -979,22 +1393,28 @@ def test_splineboris_bend_radiation(make_uniform_splineboris):
     # Create SplineBoris elements with radiation
     splineboris_mean = make_uniform_splineboris(Bx=0, By=B_T, Bs=0, s_start=s_start, s_end=s_end, n_steps=n_steps, radiation_flag=1)
     splineboris_qntm = make_uniform_splineboris(Bx=0, By=B_T, Bs=0, s_start=s_start, s_end=s_end, n_steps=n_steps, radiation_flag=2)
+    splineboris_qntm_kick = make_uniform_splineboris(Bx=0, By=B_T, Bs=0, s_start=s_start, s_end=s_end, n_steps=n_steps, radiation_flag=3)
 
     # Initialize random number generators
     particles_mean_0._init_random_number_generator()
     particles_qntm_0._init_random_number_generator()
+    particles_qntm_kick_0._init_random_number_generator()
 
     dct_mean_before = particles_mean_0.to_dict()
 
     # Track particles
     splineboris_mean.track(particles_mean_0)
     splineboris_qntm.track(particles_qntm_0)
+    splineboris_qntm_kick.track(particles_qntm_kick_0)
 
     dct_mean = particles_mean_0.to_dict()
     dct_qntm = particles_qntm_0.to_dict()
+    dct_qntm_kick = particles_qntm_kick_0.to_dict()
 
     # Test 1: Average and stochastic models should give same mean energy loss
     xo.assert_allclose(dct_mean['delta'], np.mean(dct_qntm['delta']),
+                       atol=0, rtol=5e-3)
+    xo.assert_allclose(dct_mean['delta'], np.mean(dct_qntm_kick['delta']),
                        atol=0, rtol=5e-3)
 
     # Test 2: Compare energy loss against Larmor formula
@@ -1066,7 +1486,17 @@ def test_splineboris_bend_radiation(make_uniform_splineboris):
     xo.assert_allclose(mean_photon_energy, E_ave_eV, rtol=1e-2, atol=0)
     xo.assert_allclose(std_photon_energy, np.sqrt(E_sq_ave_eV - E_ave_eV**2), rtol=2e-3, atol=0)
 
+    line.configure_radiation(model='quantum-kick')
+    record = line.start_internal_logging_for_elements_of_type(
+        xt.SplineBoris, capacity=record_capacity
+    )
+    particles_test = particles_mean_0.copy()
+    particles_test_before = particles_test.copy()
+    line.track(particles_test)
 
+    Delta_E_test = (particles_test.ptau - particles_test_before.ptau) * particles_test.p0c
+    assert -np.sum(Delta_E_test) > 0
+    assert record._index.num_recorded == 0
 
 def test_splineboris_variable_solenoid_radiation(solenoid_field, solenoid_tubefitter_fit_pars_df):
 
@@ -1339,12 +1769,13 @@ COMMON_TEST_CASES = [
         'id': 'px=0.03, py=0.02'
     }
 ]
+
 @pytest.mark.parametrize(
     'case,atol',
-    zip(
+    list(zip(
         [case['case'].copy() for case in COMMON_TEST_CASES],
         [3e-8, 3e-8, 3e-8, 3e-8, 3e-8, 3e-8, 2e-5, 1e-5, 2e-8, 1e-5, 2e-5],
-    ),
+    )),
     ids=[case['id'] for case in COMMON_TEST_CASES],
 )
 def test_splineboris_spin_uniform_solenoid(case, atol, make_uniform_splineboris):
@@ -1389,14 +1820,58 @@ def test_splineboris_spin_uniform_solenoid(case, atol, make_uniform_splineboris)
     xo.assert_allclose(p.spin_y[0], p_ref.spin_y[0], atol=atol, rtol=0)
     xo.assert_allclose(p.spin_z[0], p_ref.spin_z[0], atol=atol, rtol=0)
 
+def test_splineboris_spin_multipole_dipole_component():
+    spin_x = 0.1
+    spin_z = 0.2
+    spin_y = np.sqrt(1 - spin_x**2 - spin_z**2)
 
+    p = xt.Particles(
+        p0c=700e9,
+        mass0=xt.ELECTRON_MASS_EV,
+        anomalous_magnetic_moment=0.00115965218128,
+        x=1e-3,
+        px=1e-5,
+        y=2e-3,
+        py=2e-5,
+        delta=1e-3,
+        spin_x=spin_x,
+        spin_y=spin_y,
+        spin_z=spin_z,
+    )
+    p_ref = p.copy()
+
+    length = 0.02
+    k0 = 0.01
+    n_steps = 100
+
+    line_ref = xt.Line(elements=[
+        xt.Bend(length=length, angle=0.0, k0=k0),
+        xt.Marker(),
+    ])
+    line_ref.configure_spin(spin_model='auto')
+    line_ref.track(p_ref)
+
+    line_splineboris = xt.Line(elements=[
+        xt.SplineBoris(
+            length=length,
+            n_steps=n_steps,
+            knl=[k0 * length],
+        )
+    ])
+    line_splineboris.particle_ref = p.copy()
+    line_splineboris.configure_spin(spin_model='auto')
+    line_splineboris.track(p)
+
+    xo.assert_allclose(p.spin_x[0], p_ref.spin_x[0], atol=3e-8, rtol=0)
+    xo.assert_allclose(p.spin_y[0], p_ref.spin_y[0], atol=3e-8, rtol=0)
+    xo.assert_allclose(p.spin_z[0], p_ref.spin_z[0], atol=3e-8, rtol=0)
 
 @pytest.mark.parametrize(
     'case,atol',
-    zip(
+    list(zip(
         [case['case'].copy() for case in COMMON_TEST_CASES],
         [6e-8, 6e-8, 6e-8, 6e-8, 6e-8, 6e-8, 6e-5, 3e-5, 2e-7, 3e-5, 6e-5],
-    ),
+    )),
     ids=[case['id'] for case in COMMON_TEST_CASES],
 )
 def test_splineboris_spin_quadrupole(case, atol):
@@ -1431,7 +1906,7 @@ def test_splineboris_spin_quadrupole(case, atol):
     # --- SplineBoris ---
     # Uniform quadrupole: Hermite params (f_left, df_left, f_right, df_right, average)
     kn_1_hermite = [quad_gradient, 0, quad_gradient, 0, quad_gradient]
-    Bs_hermite = [0, 0, 0, 0, 0]
+    bs = [0, 0, 0, 0, 0]
 
     # Verify the polynomial evaluates to a constant gradient.
     # hermite_to_polynomial returns a poly in local coordinate s_local = s - s_start.
@@ -1441,7 +1916,7 @@ def test_splineboris_spin_quadrupole(case, atol):
     xo.assert_allclose(kn_1_poly(s_test - s_start), quad_gradient, rtol=1e-12, atol=1e-12)
 
     splineboris = xt.SplineBoris(
-        bs=xt.Spline4(*Bs_hermite),
+        bs=xt.Spline4(*bs),
         by=(None, xt.Spline4(*kn_1_hermite)),
         length=s_end - s_start,
         n_steps=n_steps,
@@ -1458,3 +1933,4 @@ def test_splineboris_spin_quadrupole(case, atol):
     xo.assert_allclose(p.spin_x[0], p_ref.spin_x[0], atol=atol, rtol=0)
     xo.assert_allclose(p.spin_y[0], p_ref.spin_y[0], atol=atol, rtol=0)
     xo.assert_allclose(p.spin_z[0], p_ref.spin_z[0], atol=atol, rtol=0)
+

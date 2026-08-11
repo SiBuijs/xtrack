@@ -13,7 +13,8 @@ from cpymad.madx import Madx
 import xobjects as xo
 import xpart as xp
 import xtrack as xt
-from xobjects.test_helpers import for_all_test_contexts, skip_if_forbid_compile
+from xobjects.test_helpers import (
+    allow_no_prebuilt_kernels, for_all_test_contexts, skip_if_forbid_compile)
 from xtrack.mad_loader import MadLoader
 from xtrack.slicing import Strategy, Uniform
 
@@ -35,7 +36,7 @@ from xtrack.slicing import Strategy, Uniform
 @pytest.mark.parametrize('model', ['adaptive', 'full', 'bend-kick-bend', 'rot-kick-rot'])
 @for_all_test_contexts
 def test_combined_function_dipole_against_ptc(test_context, k0, k1, k2, length,
-                                              use_multipole,  model):
+                                              use_multipole,  model, sandbox_cwd):
 
     p0 = xp.Particles(
         mass0=xp.PROTON_MASS_EV,
@@ -1102,9 +1103,9 @@ def test_import_thick_quad_from_madx_and_slice_native():
 
 
 @for_all_test_contexts
+@allow_no_prebuilt_kernels
 def test_fringe_implementations(test_context):
 
-    skip_if_forbid_compile()
 
     fringe = xt.DipoleEdge(k=0.12, fint=100, hgap=0.035, model='full')
 
@@ -1117,10 +1118,10 @@ def test_fringe_implementations(test_context):
     p_ng = p0.copy()
     p_ptc = p0.copy()
 
-    R_ng = line.compute_one_turn_matrix_finite_differences(particle_on_co=p0.copy())['R_matrix']
+    R_ng = line.get_R_matrix(particle_on_co=p0.copy())['R_matrix']
     line.track(p_ng)
     line.config.XTRACK_FRINGE_FROM_PTC = True
-    R_ptc = line.compute_one_turn_matrix_finite_differences(particle_on_co=p0.copy())['R_matrix']
+    R_ptc = line.get_R_matrix(particle_on_co=p0.copy())['R_matrix']
     line.track(p_ptc)
 
     p_ng.move(_context=xo.context_default)
@@ -1292,6 +1293,7 @@ def test_import_thick_with_apertures_and_slice_cpymad():
         'drift_elm..2',                 # drift 2
         'elm_aper..3',                  # exit edge aperture
         'elm..exit_map',                # exit edge (+transform)
+        'elm_aper..4',                  # closing aperture
         'elm_exit',                     # exit marker
     ])
 
@@ -1363,6 +1365,7 @@ def test_import_thick_with_apertures_and_slice_native():
         'drift_elm..2',                 # drift 2
         'elm_aper..3',                  # exit edge aperture
         'elm..exit_map',                # exit edge (+transform)
+        'elm_aper..4',                  # closing aperture
         'elm_exit',                     # exit marker
     ])
 
@@ -1499,9 +1502,9 @@ def test_sextupole_cpymad(test_context):
     xo.assert_allclose(elem.k2, 3, rtol=0, atol=1e-14)
     xo.assert_allclose(elem.k2s, 10, rtol=0, atol=1e-14)
 
-    line_mad.vv['knob_a'] = 0.5
-    line_mad.vv['knob_b'] = 0.6
-    line_mad.vv['knob_l'] = 0.7
+    line_mad['knob_a'] = 0.5
+    line_mad['knob_b'] = 0.6
+    line_mad['knob_l'] = 0.7
 
     xo.assert_allclose(elem.length, 0.7, rtol=0, atol=1e-14)
     xo.assert_allclose(elem.k2, 1.5, rtol=0, atol=1e-14)
@@ -1622,9 +1625,9 @@ def test_sextupole_native(test_context):
     xo.assert_allclose(elem.k2, 3, rtol=0, atol=1e-14)
     xo.assert_allclose(elem.k2s, 10, rtol=0, atol=1e-14)
 
-    line_mad.vv['knob_a'] = 0.5
-    line_mad.vv['knob_b'] = 0.6
-    line_mad.vv['knob_l'] = 0.7
+    line_mad['knob_a'] = 0.5
+    line_mad['knob_b'] = 0.6
+    line_mad['knob_l'] = 0.7
 
     xo.assert_allclose(elem.length, 0.7, rtol=0, atol=1e-14)
     xo.assert_allclose(elem.k2, 1.5, rtol=0, atol=1e-14)
@@ -1949,11 +1952,11 @@ def test_solenoid_shifted_and_rotated_multipolar_kick(test_context):
     line_test.build_tracker(_context=test_context)
 
     elements_sol = [solenoid_no_kick] + 3 * [
-        xt.XYShift(dx=mult_shift_x),
-        xt.YRotation(angle=np.rad2deg(-mult_rot_y_rad)),
+        xt.Translation(shift_x=mult_shift_x),
+        xt.Rotation(rot_y_rad=-mult_rot_y_rad),
         kick,
-        xt.YRotation(angle=np.rad2deg(mult_rot_y_rad)),
-        xt.XYShift(dx=-mult_shift_x),
+        xt.Rotation(rot_y_rad=mult_rot_y_rad),
+        xt.Translation(shift_x=-mult_shift_x),
         solenoid_no_kick
     ]
     line_ref = xt.Line(elements=elements_sol)
@@ -2105,12 +2108,12 @@ def test_solenoid_multipole_rotations():
     ########################################
     hrot_components_in = [
         env.new('hrot_drift0', xt.Drift, length=1),
-        env.new('hshift_in', xt.XYShift, dx=np.sin(XING_RAD) * L_SOL / 2),
-        env.new('hrot_in', xt.YRotation, angle=-np.rad2deg(XING_RAD))]
+        env.new('hshift_in', xt.Translation, shift_x=np.sin(XING_RAD) * L_SOL / 2),
+        env.new('hrot_in', xt.Rotation, rot_y_rad=-XING_RAD)]
 
     hrot_components_out = [
-        env.new('hrot_out', xt.YRotation, angle=np.rad2deg(XING_RAD)),
-        env.new('hshift_out', xt.XYShift, dx=np.sin(XING_RAD) * L_SOL / 2),
+        env.new('hrot_out', xt.Rotation, rot_y_rad=XING_RAD),
+        env.new('hshift_out', xt.Translation, shift_x=np.sin(XING_RAD) * L_SOL / 2),
         env.new('hrot_drift1', xt.Drift, length=1)]
 
     hrot_components_sol = [
@@ -2131,12 +2134,11 @@ def test_solenoid_multipole_rotations():
     ########################################
     vrot_components_in = [
         env.new('vrot_drift0', xt.Drift, length=1),
-        env.new('vshift_in', xt.XYShift, dy=np.sin(XING_RAD) * L_SOL / 2),
-        env.new('vrot_in', xt.XRotation, angle=np.rad2deg(XING_RAD))]
-    # TODO: Minus sign difference here as still inconsistent definition with XRotation and YRotation
+        env.new('vshift_in', xt.Translation, shift_y=np.sin(XING_RAD) * L_SOL / 2),
+        env.new('vrot_in', xt.Rotation, rot_x_rad=XING_RAD)]
     vrot_components_out = [
-        env.new('vrot_out', xt.XRotation, angle=-np.rad2deg(XING_RAD)),
-        env.new('vshift_out', xt.XYShift, dy=np.sin(XING_RAD) * L_SOL / 2),
+        env.new('vrot_out', xt.Rotation, rot_x_rad=-XING_RAD),
+        env.new('vshift_out', xt.Translation, shift_y=np.sin(XING_RAD) * L_SOL / 2),
         env.new('vrot_drift1', xt.Drift, length=1)]
 
     vrot_components_sol = [
@@ -2214,8 +2216,10 @@ def test_solenoid_multipole_rotations():
         ('mean', {'XTRACK_SYNRAD_KICK_SAME_AS_FIRST': True}),
         ('mean', {'XTRACK_SYNRAD_SCALE_SAME_AS_FIRST': True}),
         ('quantum', {}),
+        ('quantum-kick', {}),
     ],
 )
+@allow_no_prebuilt_kernels(skip_when_forbid_compile=False)
 def test_drift_like_solenoid_with_kicks_radiation(radiation_mode, config):
 
     if config.get('XTRACK_SYNRAD_KICK_SAME_AS_FIRST', False):
@@ -2281,8 +2285,10 @@ def test_drift_like_solenoid_with_kicks_radiation(radiation_mode, config):
         ('mean', {'XTRACK_SYNRAD_KICK_SAME_AS_FIRST': True}),
         ('mean', {'XTRACK_SYNRAD_SCALE_SAME_AS_FIRST': True}),
         ('quantum', {}),
+        ('quantum-kick', {}),
     ],
 )
+@allow_no_prebuilt_kernels(skip_when_forbid_compile=False)
 def test_solenoid_with_kicks_radiation(radiation_mode, config):
 
     if config.get('XTRACK_SYNRAD_KICK_SAME_AS_FIRST', False):
@@ -3077,3 +3083,43 @@ def test_api_bend():
     assert bend2.k0 == 0.
     assert bend2.h == 0.1
     assert bend2.k0_from_h == False
+
+
+def test_delta_dipole_fringe():
+    # Test momentum dependence of dipole fringe, as corrected with respect to the PTC implementation
+    
+    dd = np.linspace(-0.05, 0.05, 11)
+    p0 = xt.Particles(y=0.002, delta=dd)
+    p1 = p0.copy()
+
+    length = 0.05
+    b1 = 0.1
+    
+    def fieldvalue(x,y,z):  
+        # Polynomial dipole fringe field between 0 and 0.05 with max b1=0.1
+        # b1 = -1600 z^3 + 120 z^2 converted to tesla
+        return [0, (-1600*z**3 + 120*z**2 - 120*y**2*(1 - 40*z))* p0.rigidity0[0], (1600*y**3 + y*(-4800*z**2 + 240*z))* p0.rigidity0[0]]
+
+    # Backwards drift, fringe, backwards bend
+    drift = xt.Line(elements=[xt.Drift(length=length/2)])
+    bend = xt.Line(elements=[xt.Bend(k0=b1, length=length/2)])
+    exactfringe = xt.BorisSpatialIntegrator(fieldmap_callable=fieldvalue, s_start=0, s_end=length, n_steps=1000)
+
+    drift.track(p0, backtrack=True)
+    exactfringe.track(p0)
+    bend.track(p0, backtrack=True)
+    
+    # Xsuite fringe with same parameters
+    gap = 0.04
+    ss = np.linspace(0,length,100)
+    bvals = -1600 * ss**3 + 120 * ss**2
+    fint = np.trapezoid((b1 - bvals)*bvals / b1**2 / gap, ss)
+    PTCfringe = xt.Bend(length=0, k0=b1, edge_entry_model="full", edge_entry_fint=fint, edge_entry_hgap=gap/2, edge_exit_active=0)
+    
+    PTCfringe.track(p1)
+    
+    # Slopes of py vs delta should be similar, original implementation had sign difference
+    deg0 = np.polyfit(p0.delta, p0.py, 1)
+    deg1 = np.polyfit(p1.delta, p1.py, 1)
+    
+    assert np.allclose(deg0/deg1, 1, rtol=1e-2)

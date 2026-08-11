@@ -3,19 +3,24 @@
 # Copyright (c) CERN, 2021.                 #
 # ######################################### #
 
+import pathlib
+
 import numpy as np
 import json
 
 import xtrack as xt
 import xpart as xp
 import xobjects as xo
-from xobjects.test_helpers import for_all_test_contexts, skip_if_forbid_compile
+from xobjects.test_helpers import (
+    allow_no_prebuilt_kernels, for_all_test_contexts)
+
+TEST_DATA_FOLDER = pathlib.Path(__file__).parent / '../../xtrack/test_data'
 
 
 @for_all_test_contexts
+@allow_no_prebuilt_kernels
 def test_record_single_table(test_context):
 
-    skip_if_forbid_compile()
 
     class TestElementRecord(xo.HybridClass):
         _xofields = {
@@ -194,9 +199,9 @@ def test_record_single_table(test_context):
 
 
 @for_all_test_contexts
+@allow_no_prebuilt_kernels
 def test_record_with_twiss(test_context):
 
-    skip_if_forbid_compile()
 
     class TestElementRecord(xo.HybridClass):
         _xofields = {
@@ -264,14 +269,15 @@ def test_record_with_twiss(test_context):
     n_kicks0 = 5
     n_kicks1 = 3
 
-    path_line_particles = xt._pkg_root.parent / 'test_data' / 'hllhc15_noerrors_nobb/line_and_particle.json'
+    path_line_particles = TEST_DATA_FOLDER / 'hllhc15_noerrors_nobb/line_and_particle.json'
 
     with open(path_line_particles, 'r') as fid:
         input_data = json.load(fid)
     line = xt.Line.from_dict(input_data['line'])
     line.particle_ref = xp.Particles.from_dict(input_data['particle'])
-    line.insert(obj=TestElement(n_kicks=n_kicks0), what='test0', at=line.get_s_position('ip1'))
-    line.insert(obj=TestElement(n_kicks=n_kicks1), what='test1', at=line.get_s_position('ip5'))
+    tt = line.get_table()
+    line.insert(obj=TestElement(n_kicks=n_kicks0), what='test0', at=tt['s', 'ip1'])
+    line.insert(obj=TestElement(n_kicks=n_kicks1), what='test1', at=tt['s', 'ip5'])
 
     line._needs_rng = True
     line.build_tracker(_context=test_context)
@@ -282,9 +288,9 @@ def test_record_with_twiss(test_context):
 
 
 @for_all_test_contexts
+@allow_no_prebuilt_kernels
 def test_record_multiple_tables(test_context):
 
-    skip_if_forbid_compile()
 
     class Table1(xo.HybridClass):
         _xofields = {
@@ -541,9 +547,9 @@ def test_record_multiple_tables(test_context):
 
 
 @for_all_test_contexts
+@allow_no_prebuilt_kernels
 def test_record_standalone_mode(test_context):
 
-    skip_if_forbid_compile()
 
     class Table1(xo.HybridClass):
         _xofields = {

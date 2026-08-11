@@ -17,16 +17,20 @@ void RFMultipole_track_local_particle(RFMultipoleData el, LocalParticle* part0){
         /*length*/                0.,
         /*voltage*/               RFMultipoleData_get_voltage(el),
         /*frequency*/             RFMultipoleData_get_frequency(el),
-        /*lag*/                   RFMultipoleData_get_lag(el),
         /*harmonic*/              0.,
+        /*lag*/                   RFMultipoleData_get_lag(el),
+        /*phase*/                 RFMultipoleData_get_phase(el),
         /*transverse_voltage*/    0.,
         /*transverse_lag*/        0.,
+        /*transverse_phase*/      0.,
         /*absolute_time*/         0, // not used here
         /*order*/                 RFMultipoleData_get_order(el),
         /*knl*/                   RFMultipoleData_getp1_knl(el, 0),
         /*ksl*/                   RFMultipoleData_getp1_ksl(el, 0),
         /*pn*/                    RFMultipoleData_getp1_pn(el, 0),
         /*ps*/                    RFMultipoleData_getp1_ps(el, 0),
+        /*phase_n*/               RFMultipoleData_getp1_phase_n(el, 0),
+        /*phase_s*/               RFMultipoleData_getp1_phase_s(el, 0),
         /*num_kicks*/             1, // not used here
         /*model*/                 -1, // kick only
         /*default_model*/         0, // not used here
@@ -35,6 +39,7 @@ void RFMultipole_track_local_particle(RFMultipoleData el, LocalParticle* part0){
         /*radiation_flag*/        0, // not used here
         /*radiation_flag_parent*/ 0, // not used here
         /*lag_taper*/             0., // not used here
+        /*phase_taper*/           0., // not used here
         /*body_active*/           1,
         /*edge_entry_active*/     0, // not used here
         /*edge_exit_active*/      0  // not used here

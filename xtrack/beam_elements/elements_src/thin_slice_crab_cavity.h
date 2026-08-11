@@ -22,14 +22,18 @@ void ThinSliceCrabCavity_track_local_particle(ThinSliceCrabCavityData el, LocalP
         /*frequency*/             ThinSliceCrabCavityData_get__parent_frequency(el),
         /*harmonic*/              0.,
         /*lag*/                   0.,
+        /*phase*/                 0.,
         /*transverse_voltage*/    ThinSliceCrabCavityData_get__parent_crab_voltage(el),
         /*transverse_lag*/        ThinSliceCrabCavityData_get__parent_lag(el),
+        /*transverse_phase*/      ThinSliceCrabCavityData_get__parent_phase(el),
         /*absolute_time*/         ThinSliceCrabCavityData_get__parent_absolute_time(el),
         /*order*/                 -1, // not used here
         /*knl*/                   NULL,
         /*ksl*/                   NULL,
         /*pn*/                    NULL,
         /*ps*/                    NULL,
+        /*phase_n*/               NULL,
+        /*phase_s*/               NULL,
         /*num_kicks*/             1, // kick only
         /*model*/                 -1, // kick only
         /*default_model*/         6, // drift-kick-drift-expanded
@@ -38,6 +42,7 @@ void ThinSliceCrabCavity_track_local_particle(ThinSliceCrabCavityData el, LocalP
         /*radiation_flag*/        0, // not used here
         /*radiation_flag_parent*/ 0, // not used here
         /*lag_taper*/             ThinSliceCrabCavityData_get__parent_lag_taper(el),
+        /*phase_taper*/           ThinSliceCrabCavityData_get__parent_phase_taper(el),
         /*body_active*/           1,
         /*edge_entry_active*/     0, // not used here
         /*edge_exit_active*/      0  // not used here

@@ -6,7 +6,7 @@ import logging
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.StreamHandler())
 
-def _compute_correction(x_iter, response_matrix, n_micado=None, rcond=None,
+def _get_correction(x_iter, response_matrix, n_micado=None, rcond=None,
                         n_singular_values=None, corrector_limits=None):
 
     if isinstance(response_matrix, (list, tuple)):
@@ -291,7 +291,7 @@ class OrbitCorrectionSinglePlane:
                     break
                 pos_rms_prev = position.std()
 
-            correction = self._compute_correction(position=position,
+            correction = self._get_correction(position=position,
                                     n_micado=n_micado, rcond=rcond,
                                     n_singular_values=n_singular_values,
                                     corrector_limits=relative_limits)
@@ -315,7 +315,7 @@ class OrbitCorrectionSinglePlane:
         else:
             self._position_after = None
 
-    def _compute_tw_orbit(self, delta0=None):
+    def _get_tw_orbit(self, delta0=None):
         if self.mode == 'open':
             # Initialized with betx=1, bety=1 (use W_matrix to avoid compilation)
             twinit = xt.TwissInit(W_matrix=np.eye(6),
@@ -335,7 +335,7 @@ class OrbitCorrectionSinglePlane:
     def _measure_position(self, tw_orbit=None):
 
         if tw_orbit is None:
-            tw_orbit = self._compute_tw_orbit()
+            tw_orbit = self._get_tw_orbit()
 
         x_twiss_at_monitor = tw_orbit['x'][self._indices_monitor]
         y_twiss_at_monitor = tw_orbit['y'][self._indices_monitor]
@@ -350,7 +350,7 @@ class OrbitCorrectionSinglePlane:
 
         return position
 
-    def _compute_correction(self, position, n_micado=None,
+    def _get_correction(self, position, n_micado=None,
                             n_singular_values=None, rcond=None, corrector_limits=None):
 
         if rcond is None:
@@ -363,7 +363,7 @@ class OrbitCorrectionSinglePlane:
             n_micado = self.n_micado
 
 
-        correction = _compute_correction(position,
+        correction = _get_correction(position,
             response_matrix=(self.singular_vectors_out, self.singular_values, self.singular_vectors_in),
             n_micado=n_micado,
             rcond=rcond, n_singular_values=n_singular_values, corrector_limits=corrector_limits)
@@ -421,13 +421,28 @@ class OrbitCorrectionSinglePlane:
             self.line.vars[nn_knob] += kick
 
     def get_kick_values(self):
-        return np.array([self.line.vv[nn_knob] for nn_knob in self.correction_knobs])
+        return np.array([self.line[nn_knob] for nn_knob in self.correction_knobs])
 
     def clear_correction_knobs(self):
         for nn_knob in self.correction_knobs:
             self.line.vars[nn_knob] = 0
 
 class TrajectoryCorrection:
+    '''
+    Closed-orbit or transfer-line trajectory correction.
+
+    This object stores the response-matrix correction setup used by
+    :meth:`xtrack.Line.correct_trajectory`. It can be used to inspect and
+    customize the correction before applying it.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        correction = line.correct_trajectory(run=False)
+        correction.correct(n_singular_values=20)
+    '''
 
     def __init__(self, line,
                  start=None, end=None, twiss_table=None,
@@ -439,15 +454,14 @@ class TrajectoryCorrection:
                  corrector_limits_x=None, corrector_limits_y=None):
 
         '''
-        Trajectory correction using linearized response matrix from optics
-        table.
+        Build a trajectory correction from a linearized response matrix.
 
         Parameters
         ----------
 
         line : xtrack.Line
             Line object on which the trajectory correction is performed.
-                start : str
+        start : str
             Start of the line range in which the correction is performed.
             If `start` is provided `end` must also be provided.
             If `start` is None, the correction is performed on the periodic
@@ -470,6 +484,11 @@ class TrajectoryCorrection:
         corrector_names_y : list of str
             List of elements used as correctors in the vertical plane. They
             must have `knl` and `ksl` attributes.
+        monitor_alignment : dict or None
+            Optional monitor alignment information passed to the response
+            matrix computation.
+        x_init, px_init, y_init, py_init, zeta_init, delta_init : float
+            Initial trajectory coordinates used when correcting a line range.
         n_micado : int
             If `n_micado` is not None, the MICADO algorithm is used for the
             correction. In that case, the number of correctors to be used is
@@ -487,6 +506,19 @@ class TrajectoryCorrection:
             Limits for the vertical corrector strengths. If not None, it should be a tuple
             of two arrays (lower_limits, upper_limits) with the same length as
             the number of vertical correctors. If None, no limits are applied.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            correction = xt.TrajectoryCorrection(
+                line=line,
+                monitor_names_x=bpms_x,
+                corrector_names_x=correctors_x,
+                monitor_names_y=bpms_y,
+                corrector_names_y=correctors_y)
+            correction.correct()
         '''
 
         if isinstance(rcond, (tuple, list)):
@@ -574,6 +606,20 @@ class TrajectoryCorrection:
             If `n_iter` is 'auto', the correction stops when the rms of the
             position does not decrease by more than `stop_iter_factor` with
             respect to the previous iteration.
+        tol_position_std : float
+            Stop the automatic iteration when the rms position is below this
+            value.
+        delta0 : float or None
+            Closed-orbit momentum deviation used when recomputing the orbit
+            during iterative correction.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            correction = line.correct_trajectory(run=False)
+            correction.correct(planes='xy', n_singular_values=20)
         '''
 
         assert n_iter == 'auto' or np.isscalar(n_iter)
@@ -612,7 +658,7 @@ class TrajectoryCorrection:
         if self.y_correction is not None:
             a_correction = self.y_correction
 
-        tw_orbit = a_correction._compute_tw_orbit(delta0=delta0)
+        tw_orbit = a_correction._get_tw_orbit(delta0=delta0)
 
         if self.x_correction is not None:
             relative_limits_x = self.x_correction.corrector_limits
@@ -636,7 +682,7 @@ class TrajectoryCorrection:
                             corrector_limits=relative_limits_y)
 
             tw_orbit_prev = tw_orbit
-            tw_orbit = a_correction._compute_tw_orbit(delta0=delta0)
+            tw_orbit = a_correction._get_tw_orbit(delta0=delta0)
 
             if n_iter == 'auto' and self.x_correction is not None and 'x' in planes:
                 new_position = self.x_correction._measure_position(tw_orbit)
@@ -682,17 +728,33 @@ class TrajectoryCorrection:
         '''
         Thread the trajectory along the line. The correction is performed in
         portions of length `ds_thread`. For each portion the correction is
-        firs performed only on the new added part, then on the whole portion up
+        first performed only on the new added part, then on the whole portion up
         to the end of the new added part.
 
         Parameters
         ----------
         ds_thread : float
             Length of the portion added at each iteration.
+        rcond_short : float or tuple of float
+            Cutoff for small singular values used for the correction of the
+            newly added part.
         rcond_long : float or tuple of float
             Cutoff for small singular values (relative to the largest singular
             value) used for the correction of the whole portion up to the end
             of the new added part.
+
+        Returns
+        -------
+        threader : object
+            Object containing the threaded correction setup.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            correction = line.correct_trajectory(run=False)
+            threader = correction.thread(ds_thread=500)
         '''
 
         if self.start is not None or self.end is not None:
@@ -711,6 +773,15 @@ class TrajectoryCorrection:
 
         '''
         Set all correction knobs to zero. Erases all applied corrections.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            correction = line.correct_trajectory(run=False)
+            correction.correct(n_singular_values=20)
+            correction.clear_correction_knobs()
         '''
 
         if self.x_correction is not None:
@@ -720,6 +791,21 @@ class TrajectoryCorrection:
 
     @property
     def start(self):
+        '''
+        Start element of the corrected line range.
+
+        If the correction is configured for a periodic closed orbit, this is
+        None.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            correction = line.correct_trajectory(
+                run=False, start='mq.33l8.b1', end='mq.23l8.b1')
+            correction.start
+        '''
         if self.x_correction is not None:
             x_start = self.x_correction.start
         else:
@@ -739,6 +825,21 @@ class TrajectoryCorrection:
 
     @property
     def end(self):
+        '''
+        End element of the corrected line range.
+
+        If the correction is configured for a periodic closed orbit, this is
+        None.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            correction = line.correct_trajectory(
+                run=False, start='mq.33l8.b1', end='mq.23l8.b1')
+            correction.end
+        '''
         if self.x_correction is not None:
             x_end = self.x_correction.end
         else:
@@ -757,6 +858,17 @@ class TrajectoryCorrection:
             return x_end
     @property
     def line(self):
+        '''
+        Line on which the correction is configured.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            correction = line.correct_trajectory(run=False)
+            correction.line is line
+        '''
         if self.x_correction is not None:
             return self.x_correction.line
         if self.y_correction is not None:
@@ -764,6 +876,18 @@ class TrajectoryCorrection:
 
     @property
     def twiss_table(self):
+        '''
+        Twiss table used to build the response matrix.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            tw = line.twiss()
+            correction = line.correct_trajectory(run=False, twiss_table=tw)
+            correction.twiss_table is tw
+        '''
         if self.x_correction is not None:
             return self.x_correction.twiss_table
         if self.y_correction is not None:
@@ -854,7 +978,7 @@ def _thread(line, ds_thread, twiss_table=None, rcond_short = None, rcond_long = 
 
         # if verbose:
         #     ocprint = ocorr_only_added_part
-        #     tw_orbit_print = ocprint.x_correction._compute_tw_orbit()
+        #     tw_orbit_print = ocprint.x_correction._get_tw_orbit()
         #     x_meas_print = ocprint.x_correction._measure_position(tw_orbit_print)
         #     y_meas_print = ocprint.y_correction._measure_position(tw_orbit_print)
         #     str_2print = f'Stop at s={s_corr_end}, '
@@ -882,7 +1006,7 @@ def _thread(line, ds_thread, twiss_table=None, rcond_short = None, rcond_long = 
 
         if verbose:
             ocprint = ocorr
-            tw_orbit_print = ocprint.x_correction._compute_tw_orbit()
+            tw_orbit_print = ocprint.x_correction._get_tw_orbit()
             x_meas_print = ocprint.x_correction._measure_position(tw_orbit_print)
             y_meas_print = ocprint.y_correction._measure_position(tw_orbit_print)
             str_2print = f'Stop at s={s_corr_end}, '

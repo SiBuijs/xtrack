@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import xtrack as xt
 
-from xtrack.beam_elements.elements import SplineBoris, Spline4
+from xtrack.beam_elements.splineboris import SplineBoris, Spline4
 
 
 class SplineBorisSequence:
@@ -46,7 +46,7 @@ class SplineBorisSequence:
         "idx_end",
         "param_index",
     )
-    _HERMITE_PARAM_COUNT = len(SplineBoris._HERMITE_SUFFIXES)
+    _HERMITE_PARAM_COUNT = len(SplineBoris._SB_HERMITE_SUFFIXES)
     _HERMITE_PARAM_INDEXES = tuple(range(_HERMITE_PARAM_COUNT))
 
     def __init__(
@@ -111,7 +111,7 @@ class SplineBorisSequence:
             der_start=float(dpoly(l0)),
             val_end=float(poly(l1)),
             der_end=float(dpoly(l1)),
-            integral=float((ipoly(l1) - ipoly(l0)) / ds),
+            mean=float((ipoly(l1) - ipoly(l0)) / ds),
         )
 
     @classmethod
@@ -160,7 +160,7 @@ class SplineBorisSequence:
         s_ends = []
 
         zero_spline = Spline4(
-            val_start=0.0, der_start=0.0, val_end=0.0, der_end=0.0, integral=0.0
+            val_start=0.0, der_start=0.0, val_end=0.0, der_end=0.0, mean=0.0
         )
 
         for i in range(n_regions):

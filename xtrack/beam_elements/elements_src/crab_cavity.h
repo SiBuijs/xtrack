@@ -19,14 +19,18 @@ void CrabCavity_track_local_particle(CrabCavityData el, LocalParticle* part0)
         /*frequency*/             CrabCavityData_get_frequency(el),
         /*harmonic*/              0.,
         /*lag*/                   0.,
+        /*phase*/                 0.,
         /*transverse_voltage*/    CrabCavityData_get_crab_voltage(el),
         /*transverse_lag*/        CrabCavityData_get_lag(el),
+        /*transverse_phase*/      CrabCavityData_get_phase(el),
         /*absolute_time*/         CrabCavityData_get_absolute_time(el),
         /*order*/                 -1, // not used here
         /*knl*/                   NULL,
         /*ksl*/                   NULL,
         /*pn*/                    NULL,
         /*ps*/                    NULL,
+        /*phase_n*/               NULL,
+        /*phase_s*/               NULL,
         /*num_kicks*/             CrabCavityData_get_num_kicks(el),
         /*model*/                 CrabCavityData_get_model(el),
         /*default_model*/         6, // drift-kick-drift-expanded
@@ -35,6 +39,7 @@ void CrabCavity_track_local_particle(CrabCavityData el, LocalParticle* part0)
         /*radiation_flag*/        0, // not used here
         /*radiation_flag_parent*/ 0, // not used here
         /*lag_taper*/             CrabCavityData_get_lag_taper(el),
+        /*phase_taper*/           CrabCavityData_get_phase_taper(el),
         /*body_active*/           1,
         /*edge_entry_active*/     0, // not used here
         /*edge_exit_active*/      0  // not used here

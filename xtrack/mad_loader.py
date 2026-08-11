@@ -27,6 +27,7 @@ Loader.add_<name>(mad_elem,line,buffer) to add a new element to line
 
 if the want to control how the xobject is created
 """
+import math
 from typing import List, Union
 
 import numpy as np
@@ -327,6 +328,7 @@ class ElementAssembler:
             xtel.name_associated_aperture = name_associated_aperture
         name = generate_repeated_name(line, self.name)
         line.append(name, xtel)
+        return xtel
 
 
 class ElementAssemblerWithExpr(ElementAssembler):
@@ -371,17 +373,17 @@ class Aperture:
 
     def aperture(self):
         if len(self.mad_el.aper_vx) > 2:
-            builder = self.Assembler(
+            assembler = self.Assembler(
                     self.name + "_aper",
                     self.classes.LimitPolygon,
                     x_vertices=self.mad_el.aper_vx,
                     y_vertices=self.mad_el.aper_vy,
                 )
             if self.dx or self.dy or self.aper_tilt:
-                builder.shift_x = self.dx
-                builder.shift_y = self.dy
-                builder.rot_s_rad = self.aper_tilt
-            return [builder]
+                assembler.shift_x = self.dx
+                assembler.shift_y = self.dy
+                assembler.rot_s_rad = self.aper_tilt
+            return [assembler]
         else:
             conveter = getattr(self.loader, "convert_" + self.apertype, None)
             if conveter is None:
@@ -623,11 +625,12 @@ class MadLoader:
                     eldata["offset"] = [madel.mech_sep / 2 * self.bv, madel.v_pos]
                     eldata["assembly_id"] = madel.assembly_id
                     eldata["slot_id"] = madel.slot_id
-                    eldata["aperture"] = [
-                        madel.apertype,
-                        list(madel.aperture),
-                        list(madel.aper_tol),
-                    ]
+                    if hasattr(madel, "apertype"):
+                        eldata["aperture"] = [
+                            madel.apertype,
+                            list(madel.aperture),
+                            list(madel.aper_tol),
+                        ]
                     layout_data[nn] = eldata
 
             line.metadata["layout_data"] = layout_data
@@ -1120,6 +1123,12 @@ class MadLoader:
         return self.make_composite_element([el], mad_elem)
 
     def convert_rfcavity(self, ee): # bv done
+
+        if ee.madeval is not None:
+            PI = self.line.vars['pi']
+        else:
+            PI = math.pi
+
         # TODO LRAD
         freq_harm_kwargs = {}
         if ee.harmon:
@@ -1132,16 +1141,16 @@ class MadLoader:
         else:
             scale_voltage = 1.
         if self.bv == -1:
-            lag_deg = -ee.lag * 360 + 180
+            lag_rad = -ee.lag * 2 * PI + PI
         elif self.bv == 1:
-            lag_deg = ee.lag * 360
+            lag_rad = ee.lag * 2 * PI
         else:
             raise ValueError(f"bv should be 1 or -1, not {self.bv}")
         el = self.Assembler(
             ee.name,
             self.classes.Cavity,
             voltage=scale_voltage * ee.volt * 1e6,
-            lag=lag_deg,
+            phase=lag_rad,
             length=ee.l,
             **freq_harm_kwargs,
         )
@@ -1198,10 +1207,14 @@ class MadLoader:
             raise ValueError("Multiwire configuration not supported")
 
     def convert_crabcavity(self, ee):
-        if self.bv == -1:
-            lll = 180 - ee.lag * 360
+        if ee.madeval is not None:
+            PI = self.line.vars['pi']
         else:
-            lll = ee.lag * 360
+            PI = math.pi
+        if self.bv == -1:
+            lll_rad = -ee.lag * 2 * PI + PI
+        else:
+            lll_rad = ee.lag * 2 * PI
 
         el = self.Assembler(
                 ee.name,
@@ -1209,7 +1222,7 @@ class MadLoader:
                 length=ee.l,
                 frequency=ee.freq * 1e6,
                 crab_voltage=ee.volt * 1e6 * self.bv,
-                lag=lll,
+                phase=lll_rad,
             )
         return self.make_composite_element([el], ee)
 
@@ -1325,27 +1338,27 @@ class MadLoader:
     def convert_srotation(self, ee):
         if self.bv == -1:
             raise NotImplementedError("SRotation for bv=-1 are not yet supported.")
-        angle = ee.angle*180/np.pi
+        angle = ee.angle
         el = self.Assembler(
-            ee.name, self.classes.SRotation, angle=angle
+            ee.name, self.classes.Rotation, rot_s_rad=angle
         )
         return self.make_composite_element([el], ee)
 
     def convert_xrotation(self, ee):
         if self.bv == -1:
             raise NotImplementedError("XRotation for bv=-1 are not yet supported.")
-        angle = ee.angle*180/np.pi
+        angle = ee.angle
         el = self.Assembler(
-            ee.name, self.classes.XRotation, angle=angle
+            ee.name, self.classes.Rotation, rot_x_rad=angle
         )
         return self.make_composite_element([el], ee)
 
     def convert_yrotation(self, ee):
         if self.bv == -1:
             raise NotImplementedError("YRotation for bv=-1 are not yet supported.")
-        angle = ee.angle*180/np.pi
+        angle = ee.angle
         el = self.Assembler(
-            ee.name, self.classes.YRotation, angle=angle
+            ee.name, self.classes.Rotation, rot_y_rad=angle
         )
         return self.make_composite_element([el], ee)
 
@@ -1353,7 +1366,7 @@ class MadLoader:
         if self.bv == -1:
             raise NotImplementedError("Translation for bv=-1 are not yet supported.")
         el_transverse = self.Assembler(
-            ee.name, self.classes.XYShift, dx=ee.dx, dy=ee.dy
+            ee.name, self.classes.Translation, shift_x=ee.dx, shift_y=ee.dy
         )
         if ee.ds:
             raise NotImplementedError # Need to implement ShiftS element

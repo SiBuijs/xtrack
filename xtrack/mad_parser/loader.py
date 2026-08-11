@@ -1,3 +1,4 @@
+import warnings
 from typing import Dict, Optional, List, Set, Tuple, Union
 
 import numpy as np
@@ -30,6 +31,24 @@ TRANSLATE_PARAMS = {
     "harmon": "harmonic",
 }
 
+BEAM_TO_PARTICLE_REF = {
+    "mass": "mass0",
+    "charge": "q0",
+    "energy": "energy0",
+    "pc": "p0c",
+    "brho": "rigidity0",
+    "gamma": "gamma0",
+    "beta": "beta0",
+}
+
+BEAM_PARTICLE_ALIASES = {
+    "antiproton": "anti-proton",
+    "anti-proton": "anti-proton",
+    "posmuon": "muon+",
+    "negmuon": "muon-",
+    "ion": "ion",
+}
+
 CONSTANTS = {
     "pi": np.pi,
     "twopi": np.pi * 2,
@@ -59,8 +78,12 @@ _APERTURE_TYPES = {
 }
 
 
+class MADLoaderWarning(UserWarning):
+    pass
+
+
 def _warn(msg):
-    print(f'Warning: {msg}')
+    warnings.warn(msg, MADLoaderWarning)
 
 
 def get_params(params, parent):
@@ -92,20 +115,22 @@ class MadxLoader:
             self,
             env: xt.Environment = None,
             default_to_zero: bool = False,
+            install_limits: bool = True,
             s_tol: float = 1e-9,
             _rbend_correct_k0: bool = False,
     ):
+        self.env = env or xt.Environment()
+        self.install_limits = install_limits
+        self.s_tol = s_tol
+        self.composers = {}
+
         self._madx_elem_hierarchy: Dict[str, List[str]] = {}
         self._both_direction_elements: Set[str] = set()
         self._builtin_types = set()
         self._parameter_cache = {}
-
-        self.env = env or xt.Environment()
-        self.env.default_to_zero = default_to_zero
-        self.builders = {}
-        self.s_tol = s_tol
         self._rbend_correct_k0 = _rbend_correct_k0
 
+        self.env.default_to_zero = default_to_zero
         self._init_environment()
 
     def _init_environment(self):
@@ -140,10 +165,10 @@ class MadxLoader:
         self._new_builtin("multipole", "Multipole", knl=6 * [0])
         self._new_builtin("solenoid", "UniformSolenoid")
         self._new_builtin("crabcavity", "CrabCavity")
-        self._new_builtin("xrotation", "XRotation")
-        self._new_builtin("yrotation", "YRotation")
-        self._new_builtin("srotation", "SRotation")
-        self._new_builtin("translation", "XYShift")
+        self._new_builtin("xrotation", "Rotation")
+        self._new_builtin("yrotation", "Rotation")
+        self._new_builtin("srotation", "Rotation")
+        self._new_builtin("translation", "Translation")
         self._new_builtin("dipedge", "DipoleEdge")
 
     def load_file(self, file):
@@ -166,9 +191,10 @@ class MadxLoader:
             self._madx_elem_hierarchy.update(hierarchy)
 
             self._parse_elements(parsed_dict["elements"])
-            builders = self._parse_lines(parsed_dict["lines"])
+            composers = self._parse_lines(parsed_dict["lines"])
             self._parse_parameters(parsed_dict["parameters"])
-            self.builders.update(builders)
+            self._parse_beams(parsed_dict["beams"])
+            self.composers.update(composers)
 
         # Handle variables obtained from arrow operations
         for var_name in self.env._xdeps_vref._owner.keys():
@@ -217,7 +243,7 @@ class MadxLoader:
             self._new_element(name, parent, self.env, **params)
 
     def _parse_lines(self, lines: Dict[str, LineType]):
-        builders = {}
+        composers = {}
 
         for name, line_params in lines.items():
             params = line_params.copy()
@@ -231,39 +257,84 @@ class MadxLoader:
                 elif refer == 'exit':
                     refer = 'end'
                 length = params.get('l', None)
-                builder = self.env.new_line(name=name, refer=refer,
-                                               length=length,
-                                               s_tol=self.s_tol,
-                                               compose=True)
-                self._parse_components(builder, params.pop('elements'))
+                composer = self.env.new_line(
+                    name=name,
+                    refer=refer,
+                    length=length,
+                    s_tol=self.s_tol,
+                    compose=True,
+                )
+                self._parse_components(composer, params.pop('elements'))
             elif line_type == 'line':
                 components = self._parse_line_components(params.pop('elements'))
-                builder = self.env.new_line(name=name, components=components,
-                                            compose=True)
+                composer = self.env.new_line(name=name, components=components, compose=True)
             else:
                 raise ValueError(
                     f'Only a MAD-X sequence or a line type can be used to build'
                     f'a line, but got: {line_type}!'
                 )
 
-            builders[name] = builder
+            composers[name] = composer
 
-            self.env._last_loaded_builders = builders
+            self.env._last_loaded_composers = composers
 
-        return builders
+        return composers
 
     def _parse_parameters(self, parameters: Dict[str, Dict[str, str]]):
         for element, el_params in parameters.items():
             params, extras = get_params(el_params, parent=element)
             self._set_element(element, self.env, **params, extra=extras)
 
-    def _parse_components(self, builder, elements: List[Tuple[str, Union[ElementType, LineType]]]):
+    def _parse_beams(self, beams: List[Dict[str, VarType]]):
+        for beam_params in beams:
+            self._parse_beam(beam_params)
+
+    def _parse_beam(self, beam_params: Dict[str, VarType]):
+        params = beam_params.copy()
+        sequence = params.pop('sequence', None)
+        particle = params.pop('particle', None)
+
+        particle_ref_kwargs = {}
+        if particle is not None:
+            particle_name = BEAM_PARTICLE_ALIASES.get(str(particle).lower(), str(particle).lower())
+            if particle_name != 'ion':
+                particle_ref_kwargs['pdg_id_0'] = particle_name
+
+        for key, ref_key in BEAM_TO_PARTICLE_REF.items():
+            if key not in params:
+                continue
+            value = params.pop(key)
+            if key in {'mass', 'energy', 'pc'}:
+                value = value * 1e9
+            particle_ref_kwargs[ref_key] = value
+
+        if params:
+            # Anything left here is a MAD-X beam option we do not map to the
+            # reference particle and therefore ignore.
+            _warn(f'Ignoring unsupported beam parameters {params}.')
+
+        beam_name = 'madx_beam' if sequence is None else f'madx_beam_for_{sequence}'
+        self.env.new_particle(beam_name, force=True, **particle_ref_kwargs)
+        self.env.particle_ref = beam_name
+
+        if sequence is None:
+            for line in self.env.lines.values():
+                line.particle_ref = beam_name
+        elif sequence in self.env.lines:
+            self.env.lines[sequence].particle_ref = beam_name
+        else:
+            _warn(f'Cannot set the beam on {sequence} as it does not exist.')
+
+    def _parse_components(
+            self, composer,
+            elements: List[Tuple[str, Union[ElementType, LineType]]]
+    ):
         for name, element in elements:
             params = element.copy()
             parent = params.pop('parent', None)
             assert parent != 'sequence'
             params, extras = get_params(params, parent=parent)
-            self._new_element(name, parent, builder, **params, extra=extras)
+            self._new_element(name, parent, composer, **params, extra=extras)
 
     def _parse_line_components(self, elements):
         components = []
@@ -294,7 +365,10 @@ class MadxLoader:
             elif parent is None:
                 # If it's a reference to a single element, we multiply it and
                 # add it. Reversal will not affect it.
-                components += body.get('_repeat', 1) * [name]
+                element = [name]
+                if self.install_limits and (aper_name := self.env[name].name_associated_aperture):
+                    element.insert(0, aper_name)
+                components += repeat * element
             else:
                 raise ValueError('Only an element reference or a line is accepted')
 
@@ -305,7 +379,7 @@ class MadxLoader:
             self.env.new(name, xt_type, **kwargs)
         self._builtin_types.add(name)
 
-    def _new_element(self, name, parent, builder, **kwargs):
+    def _new_element(self, name, parent, composer, **kwargs):
         should_clone = parent is not None
 
         if should_clone:
@@ -322,22 +396,22 @@ class MadxLoader:
 
         el_params = self._convert_element_params(name, kwargs)
 
-        if aperture and 'at' in el_params:  # placing mode
-            builder.place(aperture, at=0, from_=f'{name}@start')
+        if aperture and self.install_limits and 'at' in el_params:  # placing mode
+            composer.place(aperture, at=0, from_=f'{name}@start')
 
         if should_clone:
-            self._clone_element(name, parent, builder, el_params)
+            self._clone_element(name, parent, composer, el_params)
         else:
             # If parent is None, we must be in a sequence, and so we are
             # placing the element: in MAD-X this requires an `at` param, but
             # we can be a bit more lax, as Xsuite will automatically place the
-            # element after the previous one if there is not `at`.
-            self._place_element(name, el_params, builder)
+            # element after the previous one if there is no `at`.
+            self._place_element(name, el_params, composer)
 
         if aperture:
-            builder._element_dict[name].name_associated_aperture = aperture
+            composer._element_dict[name].name_associated_aperture = aperture
 
-    def _place_element(self, name, el_params, builder):
+    def _place_element(self, name, el_params, composer):
         """Place an element in the sequence.
 
         This is the case when `parent` is None.
@@ -354,9 +428,9 @@ class MadxLoader:
         if (extras := el_params.pop('extra', None)):
             _warn(f'Ignoring extra parameters {extras} for element `{name}`!')
 
-        builder.place(name, **el_params)
+        composer.place(name, **el_params)
 
-    def _clone_element(self, name, parent, builder, el_params):
+    def _clone_element(self, name, parent, composer, el_params):
         """Clone an element, and possibly place it if we are in a sequence.
 
         Here `parent` is not None.
@@ -369,14 +443,14 @@ class MadxLoader:
                 _warn(f'Ignoring extra parameters {dropped_extra} for element '
                       f'`{name}`: it is a clone of itself overriding `extra`.')
             el_params.pop('k0_from_h', None)
-            builder.place(name, **el_params)
+            composer.place(name, **el_params)
         else:
             # `force=True` is needed to overwrite existing elements. In MAD-X
             # when an element name is repeated between lines, the first one
             # is retained: we do not simulate this behaviour here.
-            builder.new(name, parent, force=True, **el_params)
+            composer.new(name, parent, force=True, **el_params)
 
-    def _set_element(self, name, builder, **kwargs):
+    def _set_element(self, name, composer, **kwargs):
         self._parameter_cache[name].update(kwargs)
 
         if 'aperture' in kwargs and 'apertype' not in kwargs:
@@ -386,15 +460,15 @@ class MadxLoader:
         extra = kwargs.pop('extra', None)
 
         el_params = self._convert_element_params(name, kwargs)
-        builder.set(name, **el_params)
+        composer.set(name, **el_params)
 
         if extra:
-            if not hasattr(builder.element_dict[name], 'extra'):
-                builder.element_dict[name].extra = {}
+            if not hasattr(composer.element_dict[name], 'extra'):
+                composer.element_dict[name].extra = {}
             for kk, vv in extra.items():
-                builder.ref[name].extra[kk] = vv
+                composer.ref[name].extra[kk] = vv
 
-        builder.element_dict[name].name_associated_aperture = aperture
+        composer.element_dict[name].name_associated_aperture = aperture
 
     def _convert_element_params(self, name, params):
         parent_name = self._mad_base_type(name)
@@ -431,7 +505,7 @@ class MadxLoader:
 
         elif parent_name in {'rfcavity', 'crabcavity'}:
             if (lag := params.pop('lag', None)):
-                params['lag'] = lag * 360
+                params['phase'] = lag * self.env.vars['pi'] * 2
             if (volt := params.pop('volt', None)):
                 if parent_name == 'crabcavity':
                     params['crab_voltage'] = volt * 1e6
@@ -482,13 +556,23 @@ class MadxLoader:
         elif parent_name == 'marker':
             params.pop('isthick', None)
             params.pop('length', None)
-        elif parent_name in {'srotation', 'xrotation', 'yrotation'}:
+        elif parent_name == 'srotation':
             if (angle := params.pop('angle', None)):
-                params['angle'] = (angle * 180) / np.pi
+                params['rot_s_rad'] = angle
+        elif parent_name == 'xrotation':
+            if (angle := params.pop('angle', None)):
+                params['rot_x_rad'] = angle
+        elif parent_name == 'yrotation':
+            if (angle := params.pop('angle', None)):
+                params['rot_y_rad'] = angle
         elif parent_name == 'translation':
             if (ds := params.pop('ds', None)):
                 raise NotImplementedError('`ds` parameter not supported yet for '
                                           '`translation` elements.')
+            if (dx := params.pop('dx', None)):
+                params['shift_x'] = dx
+            if (dy := params.pop('dy', None)):
+                params['shift_y'] = dy
 
         if 'edge_entry_fint' in params and 'edge_exit_fint' not in params:
             params['edge_exit_fint'] = params['edge_entry_fint']
@@ -514,7 +598,7 @@ class MadxLoader:
         params : dict
             The parameters of the element, including the aperture parameters.
         force : bool, optional
-            If True, the ``force`` parameter is passed to the builder when
+            If True, the ``force`` parameter is passed to the composer when
             creating the aperture element: this will overwrite any existing
             aperture element with the same name. If False, an error will be
             raised if an aperture element with the same name already exists.
@@ -530,8 +614,12 @@ class MadxLoader:
         simply a polygon, instead of applying the MAD-X logic (testing first for
         a simple shape and then for a polygon).
         """
+        # MAD-X might save aperture parameters even if no aperture is actually
+        # specified, so we pop these first
+        aper_offsets = params.pop('aper_offset', (0, 0))
+
         if not {'apertype', 'aperture', 'aper_vx', 'aper_vy'} & set(params):
-            # No aperture parameters, nothing to do
+            # No aperture specified, nothing to do
             return
 
         if 'aper_vx' in params or 'aper_vy' in params:
@@ -555,7 +643,6 @@ class MadxLoader:
             # Ensure if defined, aperture is a list
             aperture = [aperture]
 
-        aper_offsets = params.pop('aper_offset', (0, 0))
         if len(aper_offsets) == 1:
             x_offset = aper_offsets[0]
             y_offset = 0.
@@ -618,6 +705,10 @@ class MadxLoader:
             if (aper_vy := params.pop('aper_vy', None)):
                 aper_params['y_vertices'] = aper_vy
 
+        if not force and aper_name in self.env:
+            _warn(f'Aperture `{aper_name}` redefinition ignored for compatibility with MAD-X.')
+            return aper_name
+
         return self.env.new(aper_name, _APERTURE_TYPES[apertype], force=force,
                             **aper_params)
 
@@ -662,7 +753,7 @@ class MadxLoader:
 
 
 def load_madx_lattice(file=None, string=None, reverse_lines=None, s_tol=1e-6,
-                      _rbend_correct_k0=False, end_compose=True) -> xt.Environment:
+                      _rbend_correct_k0=False, end_compose=True, **kwargs) -> xt.Environment:
 
     if file is not None and string is not None:
         raise ValueError('Only one of `file` or `string` can be provided!')
@@ -670,7 +761,7 @@ def load_madx_lattice(file=None, string=None, reverse_lines=None, s_tol=1e-6,
     if file is None and string is None:
         raise ValueError('Either `file` or `string` must be provided!')
 
-    loader = MadxLoader(s_tol=s_tol, _rbend_correct_k0=_rbend_correct_k0)
+    loader = MadxLoader(s_tol=s_tol, _rbend_correct_k0=_rbend_correct_k0, **kwargs)
 
     if file is not None:
         if not isinstance(file, (tuple, list)):
@@ -718,10 +809,10 @@ def load_madx_lattice(file=None, string=None, reverse_lines=None, s_tol=1e-6,
 
         new_env = xt.Environment(lines=all_lines)
 
-        # Adapt builders
+        # Adapt composers
         for nn in env.lines.keys():
-            bb = env.lines[nn].builder.__class__(new_env)
-            bb.__dict__.update(env.lines[nn].builder.__dict__)
+            bb = env.lines[nn].composer.__class__(new_env)
+            bb.__dict__.update(env.lines[nn].composer.__dict__)
             bb.env = new_env
             this_rename = new_env.lines[nn]._renamed_elements
             for cc in bb.components:

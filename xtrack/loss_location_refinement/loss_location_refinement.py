@@ -196,6 +196,9 @@ class LossLocationRefinement:
                     interp_line.discard_tracker() # Free tracker data
                     del interp_line
                     for nn in elements_to_delete:
+                        if nn.startswith('||drift_'):
+                            ll = self.line.get(nn).length
+                            del self.line.env._drift_cache[ll]
                         sz = self.line.env._element_dict[nn]._xobject._size
                         oo = self.line.env._element_dict[nn]._xobject._offset
                         self.line._buffer.free(oo, sz)
@@ -207,11 +210,25 @@ def check_for_active_shifts_and_rotations(line, i_aper_0, i_aper_1):
     presence_shifts_rotations = False
     for ii in range(i_aper_0, i_aper_1):
         ee = line.get(line.element_names[ii])
-        if ee.__class__ is SRotation:
+        if ee.__class__ is xt.SRotation:
             if not np.isclose(ee.angle, 0, rtol=0, atol=1e-15):
                 presence_shifts_rotations = True
                 break
-        if ee.__class__ is XYShift:
+        if ee.__class__ is xt.Rotation:
+            if not np.isclose(ee.rot_s_rad, 0, rtol=0, atol=1e-15):
+                presence_shifts_rotations = True
+                break
+            if not np.isclose(ee.rot_x_rad, 0, rtol=0, atol=1e-15):
+                presence_shifts_rotations = True
+                break
+            if not np.isclose(ee.rot_y_rad, 0, rtol=0, atol=1e-15):
+                presence_shifts_rotations = True
+                break
+        if ee.__class__ in [xt.Translation]:
+            if not np.allclose([ee.shift_x, ee.shift_y], 0, rtol=0, atol=1e-15):
+                presence_shifts_rotations = True
+                break
+        if ee.__class__ is xt.XYShift:
             if not np.allclose([ee.dx, ee.dy], 0, rtol=0, atol=1e-15):
                 presence_shifts_rotations = True
                 break

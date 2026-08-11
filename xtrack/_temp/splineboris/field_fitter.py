@@ -60,7 +60,7 @@ class FieldFitter:
             self,
             raw_data,
             xy_point=(0, 0),
-            distance_unit=0.001,
+            distance_unit=1.,
             min_region_size=10,
             deg=2,
             field_tol=1e-3,
@@ -82,16 +82,111 @@ class FieldFitter:
         self.df_fit_pars = None
         self._set_raw_data(raw_data)
 
+        self.fit()
+
     # PUBLIC
     # Method that calls all the other methods to arrive at a fit.
-    def fit(self):
+    def fit(self, plot_fields=False, fit_par_path=None):
         if self.df_raw_data is None:
             raise RuntimeError("Raw data must be provided before calling fit().")
         self._set_df_on_axis()
         self._find_regions()
         self._fit_slices()
+        self.print_residuals()
+        
+        if fit_par_path is not None:
+            self.save_fit_pars(file_path=fit_par_path)
+        
+        if plot_fields:
+            for der in range(0, self.deg + 1):
+                self.plot_fields(der=der)
+            self.plot_integrated_fields()
 
+    def compute_residuals(self, mode='signed', aggregate=None):
+        """
+        Compute relative residuals between on-axis raw data and fit.
 
+        Parameters
+        ----------
+        mode : {'signed', 'squared', 'abs'}, optional
+            Residual transformation:
+
+            - ``'signed'``  -> ``(raw - fit) / abs(raw)``
+            - ``'squared'`` -> ``((raw - fit) / abs(raw))**2``
+            - ``'abs'``     -> ``abs((raw - fit) / abs(raw))``
+        aggregate : {None, 'sum', 'mean', 'rms'}, optional
+            If ``None`` return a DataFrame with per-sample residuals and the same
+            shape/index/columns as ``df_on_axis_raw``.
+            Otherwise return a Series aggregated over the longitudinal axis for
+            each ``(field_component, derivative_x)`` column.
+
+        Returns
+        -------
+        pd.DataFrame or pd.Series
+            Residuals in the requested representation.
+        """
+        if self.df_on_axis_raw is None or self.df_on_axis_fit is None:
+            raise RuntimeError('Call fit() before compute_residuals().')
+
+        diff = self.df_on_axis_raw - self.df_on_axis_fit
+        raw_abs = self.df_on_axis_raw.abs().replace(0.0, np.nan)
+        rel = diff / raw_abs
+
+        if mode == 'signed':
+            residuals = rel
+        elif mode == 'squared':
+            residuals = rel**2
+        elif mode == 'abs':
+            residuals = rel.abs()
+        else:
+            raise ValueError("mode must be one of {'signed', 'squared', 'abs'}.")
+
+        if aggregate is None:
+            return residuals
+        if aggregate == 'sum':
+            return residuals.sum(axis=0)
+        if aggregate == 'mean':
+            return residuals.mean(axis=0)
+        if aggregate == 'rms':
+            return np.sqrt((rel**2).mean(axis=0))
+
+        raise ValueError(
+            "aggregate must be one of {None, 'sum', 'mean', 'rms'}."
+        )
+
+    def print_residuals(self, mode='signed', aggregate='mean', include_total=False):
+        """
+        Print residuals in a readable format.
+
+        Parameters
+        ----------
+        mode : {'signed', 'squared', 'abs'}, optional
+            Residual representation passed to :meth:`compute_residuals`.
+        aggregate : {None, 'sum', 'mean', 'rms'}, optional
+            Aggregation passed to :meth:`compute_residuals`.
+        include_total : bool, optional
+            If ``True`` and residuals are aggregated (Series), print the scalar
+            sum over all channels as an additional line.
+
+        Returns
+        -------
+        pd.DataFrame or pd.Series
+            The residual object that was printed.
+        """
+        residuals = self.compute_residuals(mode=mode, aggregate=aggregate)
+        print(f'Residuals (mode={mode!r}, aggregate={aggregate!r}):')
+        with pd.option_context(
+            'display.max_rows', None,
+            'display.max_columns', None,
+            'display.width', None,
+        ):
+            print(residuals)
+
+        if include_total and isinstance(residuals, pd.Series):
+            print('Total over all channels:')
+            print(float(residuals.sum()))
+
+        return residuals
 
     @staticmethod
     def _poly(s0, s1, coeffs):
@@ -156,6 +251,188 @@ class FieldFitter:
         The DataFrame has a MultiIndex with levels ``('field_component', 'derivative_x', 'region_name', 's_start', 's_end', 'idx_start', 'idx_end', 'param_index')``.
         """
         self.df_fit_pars.to_csv(file_path, index=True)
+
+    def get_spline_data(self):
+        """Return fitted field data suitable for constructing SplineBoris elements.
+
+        The fitted regions of the different field components need not have the
+        same longitudinal boundaries. This method splits them at every boundary
+        and returns one dictionary for each resulting interval. The dictionaries
+        contain only fitted field data and interval metadata; tracking choices
+        such as ``n_steps``, field-map shifts, and radiation settings remain the
+        responsibility of the caller.
+
+        Returns
+        -------
+        list[dict]
+            Each dictionary contains ``s_start``, ``s_end``, ``idx_start``,
+            ``idx_end``, ``bs``, ``bx``, and ``by``. ``bs`` is an
+            :class:`xtrack.Spline4`; ``bx`` and ``by`` are tuples of
+            :class:`xtrack.Spline4` with ``multipole_order`` entries.
+        """
+        multipole_order = self.deg + 1
+
+        if not isinstance(multipole_order, (int, np.integer)):
+            raise TypeError("multipole_order must be an integer")
+        if multipole_order <= 0:
+            raise ValueError("multipole_order must be a positive integer")
+        if self.df_fit_pars is None or len(self.df_fit_pars) == 0:
+            raise RuntimeError("Call fit() before get_spline_data().")
+
+        index_columns = (
+            "field_component",
+            "derivative_x",
+            "region_name",
+            "s_start",
+            "s_end",
+            "idx_start",
+            "idx_end",
+            "param_index",
+        )
+        if all(column in self.df_fit_pars.columns for column in index_columns):
+            df_fit_pars = self.df_fit_pars.copy()
+        else:
+            df_fit_pars = self.df_fit_pars.reset_index()
+
+        required_columns = (*index_columns, "param_value")
+        missing_columns = [
+            column for column in required_columns
+            if column not in df_fit_pars.columns
+        ]
+        if missing_columns:
+            raise ValueError(
+                "df_fit_pars is missing required columns: "
+                f"{missing_columns}"
+            )
+
+        boundary_pairs = {
+            (float(row[s_column]), int(row[idx_column]))
+            for _, row in df_fit_pars.iterrows()
+            for s_column, idx_column in (
+                ("s_start", "idx_start"),
+                ("s_end", "idx_end"),
+            )
+        }
+        boundary_pairs = sorted(boundary_pairs, key=lambda pair: pair[0])
+
+        zero_spline = xt.Spline4(
+            val_start=0.0,
+            der_start=0.0,
+            val_end=0.0,
+            der_end=0.0,
+            mean=0.0,
+        )
+        spline_data = []
+
+        for (s_start, idx_start), (s_end, idx_end) in zip(
+            boundary_pairs[:-1], boundary_pairs[1:]
+        ):
+            if s_end <= s_start:
+                continue
+
+            mask = (
+                (df_fit_pars["s_start"] <= s_start)
+                & (df_fit_pars["s_end"] >= s_end)
+            )
+            valid_parameters = df_fit_pars[mask]
+            if valid_parameters.empty:
+                continue
+
+            bs = zero_spline
+            bx_by_order = {}
+            by_by_order = {}
+
+            groups = valid_parameters.groupby(
+                ["field_component", "derivative_x", "s_start", "s_end"]
+            )
+            for (component, derivative, piece_start, piece_end), group in groups:
+                derivative = int(derivative)
+                if component in ("Bx", "By", "Bskew", "Bnorm"):
+                    if derivative >= multipole_order:
+                        continue
+
+                group = group.sort_values("param_index")
+                parameter_indices = tuple(group["param_index"].astype(int))
+                parameter_values = group["param_value"].to_numpy(dtype=float)
+                expected_indices = tuple(
+                    range(len(xt.SplineBoris._SB_HERMITE_SUFFIXES))
+                )
+                group_key = (
+                    component,
+                    derivative,
+                    float(piece_start),
+                    float(piece_end),
+                )
+                if parameter_indices != expected_indices:
+                    raise ValueError(
+                        f"Malformed Hermite group {group_key}: expected exactly "
+                        f"{len(expected_indices)} rows with param_index values "
+                        f"{list(expected_indices)}"
+                    )
+                if not np.isfinite(parameter_values).all():
+                    raise ValueError(
+                        f"Malformed Hermite group {group_key}: all Hermite "
+                        "values must be finite"
+                    )
+
+                spline = self._spline_for_sub_interval(
+                    piece_start=float(piece_start),
+                    piece_end=float(piece_end),
+                    hermite_values=parameter_values,
+                    sub_interval_start=s_start,
+                    sub_interval_end=s_end,
+                )
+                if component == "Bs":
+                    bs = spline
+                elif component in ("Bx", "Bskew"):
+                    bx_by_order[derivative] = spline
+                elif component in ("By", "Bnorm"):
+                    by_by_order[derivative] = spline
+
+            spline_data.append({
+                "s_start": s_start,
+                "s_end": s_end,
+                "idx_start": idx_start,
+                "idx_end": idx_end,
+                "bs": bs,
+                "bx": tuple(
+                    bx_by_order.get(order, zero_spline)
+                    for order in range(multipole_order)
+                ),
+                "by": tuple(
+                    by_by_order.get(order, zero_spline)
+                    for order in range(multipole_order)
+                ),
+            })
+
+        return spline_data
+
+    @staticmethod
+    def _spline_for_sub_interval(
+        piece_start,
+        piece_end,
+        hermite_values,
+        sub_interval_start,
+        sub_interval_end,
+    ):
+        """Express fitted Hermite data on a sub-interval of its fit region."""
+        poly = FieldFitter._poly(piece_start, piece_end, hermite_values)
+        derivative = poly.deriv()
+        integral = poly.integ()
+
+        local_start = float(sub_interval_start - piece_start)
+        local_end = float(sub_interval_end - piece_start)
+        length = local_end - local_start
+
+        return xt.Spline4(
+            val_start=float(poly(local_start)),
+            der_start=float(derivative(local_start)),
+            val_end=float(poly(local_end)),
+            der_end=float(derivative(local_end)),
+            mean=float(
+                (integral(local_end) - integral(local_start)) / length
+            ),
+        )
 
     # PRIVATE
     # This method extracts on-axis data from the raw DataFrame and fits it to polynomials.
@@ -297,14 +574,14 @@ class FieldFitter:
         index_width = len(str(n_pieces - 1)) if n_pieces > 1 else 1
         for i in range(n_pieces):
             if field_component == "Bskew":
-                prefix = f"Bskew_{der_order}"
+                prefix = f"bx_{der_order}"
             elif field_component == "Bnorm":
-                prefix = f"Bnorm_{der_order}"
+                prefix = f"by_{der_order}"
             elif field_component == "Bs":
                 prefix = "Bs"
             else:
                 raise ValueError(f"Unknown field_component: {field_component!r}")
-            pars = [f"{prefix}_{s}" for s in xt.SplineBoris._HERMITE_SUFFIXES]
+            pars = [f"{prefix}_{s}" for s in xt.SplineBoris._SB_HERMITE_SUFFIXES]
 
             idx_start = idx_extrema[i]
             idx_end = idx_extrema[i+1]

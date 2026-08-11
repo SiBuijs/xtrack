@@ -12,7 +12,7 @@ from scipy.interpolate import interp1d
 
 
 # Run the scripts in the following folder to regenerate the reference files
-BMAD_REF_FILES = Path(xt.__file__).parent / '../test_data/spin_refs_bmad'
+BMAD_REF_FILES = Path(__file__).parent / '../test_data/spin_refs_bmad'
 
 COMMON_TEST_CASES = [
     {
@@ -152,10 +152,10 @@ COMMON_TEST_CASES = [
 
 @pytest.mark.parametrize(
     'case,atol',
-    zip(
+    list(zip(
         [case['case'].copy() for case in COMMON_TEST_CASES],
         [4e-06, 4e-05, 3e-05, 2e-05, 3e-05, 4e-05, 0.04, 0.02, 3e-05, 0.02, 0.04],
-    ),
+    )),
     ids=[case['id'] for case in COMMON_TEST_CASES],
 )
 def test_kicker(case, atol):
@@ -198,10 +198,10 @@ def test_kicker(case, atol):
 
 @pytest.mark.parametrize(
     'case,atol',
-    zip(
+    list(zip(
         [case['case'].copy() for case in COMMON_TEST_CASES],
         [3e-8, 3e-8, 3e-8, 3e-8, 3e-8, 3e-8, 2e-5, 1e-5, 2e-8, 1e-5, 2e-5],
-    ),
+    )),
     ids=[case['id'] for case in COMMON_TEST_CASES],
 )
 def test_uniform_solenoid(case, atol):
@@ -247,10 +247,10 @@ def test_uniform_solenoid(case, atol):
 @pytest.mark.filterwarnings('ignore::FutureWarning')
 @pytest.mark.parametrize(
     'case,atol',
-    zip(
+    list(zip(
         [case['case'].copy() for case in COMMON_TEST_CASES],
         [3e-8, 3e-8, 3e-8, 3e-8, 3e-8, 3e-8, 2e-5, 1e-5, 2e-8, 1e-5, 2e-5],
-    ),
+    )),
     ids=[case['id'] for case in COMMON_TEST_CASES],
 )
 def test_legacy_solenoid(case, atol):
@@ -295,10 +295,10 @@ def test_legacy_solenoid(case, atol):
 
 @pytest.mark.parametrize(
     'case,atol',
-    zip(
+    list(zip(
         [case['case'].copy() for case in COMMON_TEST_CASES],
         [7e-6, 7e-6, 7e-6, 7e-6, 7e-6, 7e-6, 7e-3, 4e-3, 8e-6, 4e-3, 7e-3],
-    ),
+    )),
     ids=[case['id'] for case in COMMON_TEST_CASES],
 )
 def test_bend(case, atol):
@@ -339,6 +339,33 @@ def test_bend(case, atol):
     xo.assert_allclose(p.spin_z[0], ref['spin_z'], atol=atol, rtol=0)
 
 
+@pytest.mark.parametrize(
+    'edge_model', ['suppressed', 'linear', 'full', 'dipole-only'])
+@pytest.mark.parametrize(
+    'rbend_model', ['adaptive', 'curved-body', 'straight-body'])
+def test_spin_rbend_and_edge_models(edge_model, rbend_model):
+    env = xt.Environment()
+
+    angle = 0.1
+    env.new('rb', 'RBend', length_straight=2., angle=angle,
+            edge_entry_model=edge_model, edge_exit_model=edge_model,
+            rbend_model=rbend_model)
+
+    anomalous_magnetic_moment = 1.15965218091e-3
+
+    line = env.new_line(components=['rb'])
+    line.set_particle_ref('electron', energy0=5e9,
+                          anomalous_magnetic_moment=anomalous_magnetic_moment)
+
+    tw = line.twiss4d(betx=1, bety=1, spin=True, spin_x=1)
+
+    spin_angle = np.atan2(tw.spin_z, tw.spin_x)
+    expected_spin_angle = (
+        anomalous_magnetic_moment * line.particle_ref.gamma0[0] * angle)
+
+    xo.assert_allclose(spin_angle[-1], expected_spin_angle, rtol=1e-8)
+
+
 @pytest.mark.parametrize('h', [0.0, 0.1], ids=['straight', 'polar'])
 def test_spin_drift(h):
     bend = xt.Bend(
@@ -377,10 +404,10 @@ def test_spin_drift(h):
 
 @pytest.mark.parametrize(
     'case,atol',
-    zip(
+    list(zip(
         [case['case'].copy() for case in COMMON_TEST_CASES],
         [6e-8, 6e-8, 6e-8, 6e-8, 6e-8, 6e-8, 6e-5, 3e-5, 2e-7, 3e-5, 6e-5],
-    ),
+    )),
     ids=[case['id'] for case in COMMON_TEST_CASES],
 )
 def test_quadrupole(case, atol):
@@ -454,7 +481,7 @@ def test_polarization_lep_base():
     # Make the tables the same length
     start, end = 'ip1', 'bemi.ql1a.l1'
     spin_bmad = spin_bmad.rows[start.upper():end.upper()]
-    tw = line.twiss4d(polarization=True).rows[start:end]
+    tw = line.twiss4d(polarization_analysis=True).rows[start:end]
 
     bmad_polarization_eq = spin_summary_bmad['Polarization Limit DK']
     bmad_pol_time_s = 60 * spin_summary_bmad['Polarization Time BKS (minutes, turns)'][0]
@@ -530,7 +557,7 @@ def test_polarization_lep_spin_bump():
     # Make the tables the same length
     start, end = 'ip1', 'bemi.ql1a.l1'
     spin_bmad = spin_bmad.rows[start.upper():end.upper()]
-    tw = line.twiss4d(polarization=True).rows[start:end]
+    tw = line.twiss4d(polarization_analysis=True).rows[start:end]
 
     bmad_polarization_eq = spin_summary_bmad['Polarization Limit DK']
     bmad_pol_time_s = 60 * spin_summary_bmad['Polarization Time BKS (minutes, turns)'][0]
@@ -606,7 +633,7 @@ def test_polarization_lep_sext_corr():
     # Make the tables the same length
     start, end = 'ip1', 'bemi.ql1a.l1'
     spin_bmad = spin_bmad.rows[start.upper():end.upper()]
-    tw = line.twiss4d(polarization=True).rows[start:end]
+    tw = line.twiss4d(polarization_analysis=True).rows[start:end]
 
     bmad_polarization_eq = spin_summary_bmad['Polarization Limit DK']
     bmad_pol_time_s = 60 * spin_summary_bmad['Polarization Time BKS (minutes, turns)'][0]
@@ -664,7 +691,7 @@ def test_polarization_lep_sext_corr():
     line['on_coupl_sol_bump.6'] = 0
     line['on_coupl_sol_bump.8'] = 0
 
-    tw = line.twiss4d(polarization=True)
+    tw = line.twiss4d(polarization_analysis=True)
     xo.assert_allclose(
         line.particle_ref.anomalous_magnetic_moment[0]*line.particle_ref.gamma0[0],
         103.45, rtol=0, atol=1e-9)
@@ -682,8 +709,8 @@ def test_spin_y_rotation():
 
     line = env.new_line(
         length=1., components=[
-            env.new('yrot', xt.YRotation, angle=12, at=0.2),
-            env.new('inv_yrot', xt.YRotation, angle=-12, at=0.4),
+            env.new('yrot', xt.Rotation, rot_y_rad=np.deg2rad(12), at=0.2),
+            env.new('inv_yrot', xt.Rotation, rot_y_rad=np.deg2rad(-12), at=0.4),
         ]
     )
 
@@ -742,8 +769,8 @@ def test_spin_x_rotation():
 
     line = env.new_line(
         length=1., components=[
-            env.new('xrot', xt.XRotation, angle=12, at=0.2),
-            env.new('inv_xrot', xt.XRotation, angle=-12, at=0.4),
+            env.new('xrot', xt.Rotation, rot_x_rad=np.deg2rad(12), at=0.2),
+            env.new('inv_xrot', xt.Rotation, rot_x_rad=np.deg2rad(-12), at=0.4),
         ]
     )
 
@@ -802,8 +829,8 @@ def test_spin_s_rotation():
 
     line = env.new_line(
         length=1., components=[
-            env.new('srot', xt.SRotation, angle=12, at=0.2),
-            env.new('inv_srot', xt.SRotation, angle=-12, at=0.4),
+            env.new('srot', xt.Rotation, rot_s_rad=np.deg2rad(12), at=0.2),
+            env.new('inv_srot', xt.Rotation, rot_s_rad=np.deg2rad(-12), at=0.4),
         ]
     )
 
@@ -864,9 +891,10 @@ def test_spin_rot_s_rad():
 
     line_ref = env.new_line(
         length=1., components=[
-            env.new('srot', xt.SRotation, angle=np.rad2deg(0.1)),
+            env.new('srot', xt.Rotation, rot_s_rad=0.1),
             env.new('mref', xt.Magnet, k0=0.1, length=0.2),
-            env.new('inv_srot', xt.SRotation, angle=np.rad2deg(-0.1))]
+            env.new('inv_srot', xt.Rotation, rot_s_rad=-0.1),
+        ]
     )
 
     tw_test = line_test.twiss(

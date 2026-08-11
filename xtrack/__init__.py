@@ -4,7 +4,6 @@
 # ######################################### #
 
 from .general import _pkg_root, _print, START, END
-
 from .particles import (Particles, PROTON_MASS_EV, ELECTRON_MASS_EV,
                         enable_pyheadtail_interface, disable_pyheadtail_interface, masses)
 
@@ -13,8 +12,8 @@ from .beam_elements import *
 from .random import *
 from .tracker_data import TrackerData
 from .line import Line, Node, freeze_longitudinal, _temp_knobs, EnergyProgram
-from .environment import Environment, get_environment
-from .builder import Builder, Place
+from .environment import Environment, EnvXfields, get_environment
+from .composer import Composer, Place
 from .tracker import Tracker, Log
 from .match import (Vary, Target, TargetList, VaryList, TargetInequality, Action,
                     TargetRelPhaseAdvance, TargetSet, GreaterThan, LessThan,
@@ -22,6 +21,7 @@ from .match import (Vary, Target, TargetList, VaryList, TargetInequality, Action
 from .targets import (TargetLuminosity, TargetSeparationOrthogonalToCrossing,
                       TargetSeparation)
 from .twiss import TwissInit, TwissTable
+from .aperture import Aperture, ApertureBuilder
 from .rdt import rdt_first_order_perturbation
 from .loss_location_refinement import LossLocationRefinement
 from .internal_record import (RecordIdentifier, RecordIndex, new_io_buffer,
@@ -57,4 +57,3 @@ from xdeps import FunctionPieceWiseLinear
 from .table import Table
 
 from ._version import __version__
-

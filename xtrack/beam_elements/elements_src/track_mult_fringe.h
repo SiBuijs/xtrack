@@ -30,7 +30,6 @@ void MultFringe_track_single_particle(
     }
 
     const double beta0 = LocalParticle_get_beta0(part);
-    const double q = LocalParticle_get_q0(part) * LocalParticle_get_charge_ratio(part);
     const double direction = is_exit ? -1 : 1;
 
     // Particle coordinates
@@ -42,6 +41,7 @@ void MultFringe_track_single_particle(
     const double pt = LocalParticle_get_ptau(part);
 
     const double rpp = LocalParticle_get_rpp(part);
+    const double chi = LocalParticle_get_chi(part);
 
     double rx = 1;
     double ix = 0;
@@ -78,10 +78,10 @@ void MultFringe_track_single_particle(
             }
         }
 
-        double nj = -q * direction / (4 * (component + 1));
+        double nj = -direction / (4 * (component + 1));
         double nf = (component + 2) / component;
-        double kj = kn_total;
-        double ksj = ks_total;
+        double kj = kn_total * chi;
+        double ksj = ks_total * chi;
         double u, v, du, dv;
 
 

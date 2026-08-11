@@ -314,7 +314,7 @@ def test_misalign_vs_madng(angle, tilt):
     """
     mng.send(ng_script)
 
-    p_ng = particles_from_madng(mng.tbl, mng.mybeam.beta, at='$end', slice_=0)
+    p_ng = particles_from_madng(mng.tbl, mng.mybeam.beta, at='$end', slice_=-2)
     assert p_ng.x.size > 0
 
     xo.assert_allclose(p_ng.x, p_xt.x, atol=1e-14, rtol=1e-9)
@@ -616,7 +616,7 @@ def test_thin_slice_misaligned_bend_valid_invalid(transformations, valid):
     line = env.new_line(components=[
         env.new(
             name='b',
-            parent='Bend',
+            prototype='Bend',
             angle=0.1,
             k0=0,
             length=2,

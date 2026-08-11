@@ -4,7 +4,8 @@ import pytest
 
 import numpy as np
 from scipy.constants import c as clight
-from xobjects.test_helpers import skip_if_forbid_compile
+from xobjects.test_helpers import (
+    allow_no_prebuilt_kernels, skip_if_forbid_compile)
 
 import xobjects as xo
 import xtrack as xt
@@ -24,6 +25,7 @@ CONFIGURATIONS_TO_TEST = [
 ]
 
 @pytest.mark.parametrize('conf', CONFIGURATIONS_TO_TEST)
+@allow_no_prebuilt_kernels(skip_when_forbid_compile=False)
 def test_tapering_and_twiss_with_radiation(conf):
 
     if conf['radiation_method'] == 'scale_as_co':
@@ -73,7 +75,7 @@ def test_tapering_and_twiss_with_radiation(conf):
     print('Twiss with radiation')
     # Twiss(es) with radiation
     tw = line.twiss(radiation_method=conf['radiation_method'],
-                    eneloss_and_damping=True, **extra_kwargs)
+                    radiation_analysis=True, **extra_kwargs)
     print('Done')
 
     assert tw.radiation_method == (conf['radiation_method'] or 'kick_as_co')
@@ -81,7 +83,7 @@ def test_tapering_and_twiss_with_radiation(conf):
     # Check twiss at_s
     print('Twiss at_s')
     i_ele = len(tw.s) // 3
-    tws = line.twiss(radiation_method=conf['radiation_method'], eneloss_and_damping=True, **extra_kwargs).rows[i_ele]
+    tws = line.twiss(radiation_method=conf['radiation_method'], radiation_analysis=True, **extra_kwargs).rows[i_ele]
     print('Done')
 
     line.config.XTRACK_CAVITY_PRESERVE_ANGLE = False
@@ -125,22 +127,22 @@ def test_tapering_and_twiss_with_radiation(conf):
     xo.assert_allclose(tw.betx[i_ele], tws.betx, rtol=1e-3, atol=0)
     xo.assert_allclose(tw.bety[i_ele], tws.bety, rtol=1e-3, atol=0)
 
-    eneloss = tw.eneloss_turn
+    eneloss = tw.energy_loss
     assert eneloss/line.particle_ref.energy0 > 0.01
     xo.assert_allclose(
-        line['rf'].voltage*np.sin((line['rf'].lag + line['rf'].lag_taper)/180*np.pi),
+        line['rf'].voltage*np.sin(line['rf'].phase + line['rf'].phase_taper + (line['rf'].lag + line['rf'].lag_taper)/180*np.pi),
         eneloss/4, rtol=3e-5)
     xo.assert_allclose(
-        line['rf1'].voltage*np.sin((line['rf'].lag + line['rf'].lag_taper)/180*np.pi),
+        line['rf1'].voltage*np.sin(line['rf1'].phase + line['rf1'].phase_taper + (line['rf1'].lag + line['rf1'].lag_taper)/180*np.pi),
         eneloss/4, rtol=3e-5)
     xo.assert_allclose(
-        line['rf2a'].voltage*np.sin((line['rf'].lag + line['rf'].lag_taper)/180*np.pi),
+        line['rf2a'].voltage*np.sin(line['rf2a'].phase + line['rf2a'].phase_taper + (line['rf2a'].lag + line['rf2a'].lag_taper)/180*np.pi),
         eneloss/4*0.6, rtol=3e-5)
     xo.assert_allclose(
-        line['rf2b'].voltage*np.sin((line['rf'].lag + line['rf'].lag_taper)/180*np.pi),
+        line['rf2b'].voltage*np.sin(line['rf2b'].phase + line['rf2b'].phase_taper + (line['rf2b'].lag + line['rf2b'].lag_taper)/180*np.pi),
         eneloss/4*0.4, rtol=3e-5)
     xo.assert_allclose(
-        line['rf3'].voltage*np.sin((line['rf'].lag + line['rf'].lag_taper)/180*np.pi),
+        line['rf3'].voltage*np.sin(line['rf3'].phase + line['rf3'].phase_taper + (line['rf3'].lag + line['rf3'].lag_taper)/180*np.pi),
         eneloss/4, rtol=3e-5)
 
 def test_tapering_zero_mean():

@@ -44,7 +44,7 @@ from scipy.sparse import lil_matrix
 from scipy.sparse.linalg import lsmr
 
 from xtrack._temp.splineboris.div_b_check import report_raw_div_b
-from xtrack.beam_elements.elements import Spline4, SplineBoris
+from xtrack.beam_elements.splineboris import Spline4, SplineBoris
 
 _REQUIRED_COLUMNS = ("Bx", "By", "Bs")
 _INDEX_NAMES = ("X", "Y", "Z")
@@ -314,7 +314,7 @@ class TubeFitter:
         shares the same region grid (``self.frames``), so no boundary
         reconciliation across fields is needed -- each region's 5 stored
         Hermite params map directly onto a ``Spline4`` (``param_index``
-        0..4 == val_start, der_start, val_end, der_end, integral), with no
+        0..4 == val_start, der_start, val_end, der_end, mean), with no
         ``hermite_to_polynomial`` round-trip. See
         ``examples/splineboris/claude_notes/`` for the reasoning
         (``SplineBorisSequence`` remains the right tool for ``FieldFitter``
@@ -339,7 +339,7 @@ class TubeFitter:
             raise ValueError("multipole_order must be a positive integer")
 
         zero_spline = Spline4(
-            val_start=0.0, der_start=0.0, val_end=0.0, der_end=0.0, integral=0.0
+            val_start=0.0, der_start=0.0, val_end=0.0, der_end=0.0, mean=0.0
         )
 
         df = self.df_fit_pars.reset_index()
@@ -884,7 +884,7 @@ class TubeFitter:
                     prefix = f"Bnorm_{der}"
                 else:
                     prefix = "Bs"
-                pars = [f"{prefix}_{s}" for s in xt.SplineBoris._HERMITE_SUFFIXES]
+                pars = [f"{prefix}_{s}" for s in xt.SplineBoris._SB_HERMITE_SUFFIXES]
 
                 for i_reg in range(self.n_regions):
                     idx_start = int(idx_extrema[i_reg])
