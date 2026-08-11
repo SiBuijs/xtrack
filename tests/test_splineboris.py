@@ -497,6 +497,85 @@ def test_splineboris_tubefitter_vs_fieldfitter_undulator(
     xo.assert_allclose(p_tube.zeta, p_field.zeta, rtol=0, atol=1e-6)
     xo.assert_allclose(p_tube.delta, p_field.delta, rtol=0, atol=0)
 
+def test_tubefitter_to_multipole_line_matches_mean_field():
+    """
+    ``TubeFitter.to_multipole_line()`` converts each region's fitted mean
+    field into ``knl``/``ksl`` via the same rigidity-normalized relation
+    ``xt.Multipole`` itself uses internally (see
+    ``track_magnet_kick.h::evaluate_field_from_strengths``):
+    ``knl[n] = length / brho0 * d^n By/dx^n``,
+    ``ksl[n] = length / brho0 * d^n Bx/dx^n``.
+
+    Use a synthetic, z-uniform field with an *exact* dipole + normal-quad +
+    skew-quad on-axis expansion (By = B0 + G*x + Gs*y, Bx = A0 + G*y + Gs*x
+    -- the physically valid multipole combination, i.e. Maxwell-consistent,
+    unlike a field with x-only dependence in both components) so every
+    region's Hermite mean equals the same known constant, and the resulting
+    knl/ksl can be checked analytically rather than merely checking that
+    the method runs.
+    """
+    B0, G, A0, Gs = 0.5, 20.0, 0.1, -8.0
+
+    xs = np.linspace(-0.002, 0.002, 5)
+    ys = np.linspace(-0.002, 0.002, 5)
+    zs = np.linspace(0.0, 1.0, 21)
+    xg, yg, zg = np.meshgrid(xs, ys, zs, indexing="ij")
+    by = B0 + G * xg + Gs * yg
+    bx = A0 + G * yg + Gs * xg
+    df_raw_data = pd.DataFrame({
+        "X": xg.ravel(), "Y": yg.ravel(), "Z": zg.ravel(),
+        "Bx": bx.ravel(), "By": by.ravel(), "Bs": np.zeros(xg.size),
+    }).set_index(["X", "Y", "Z"])
+
+    fitter = TubeFitter(df_raw_data, n_frames=6, distance_unit=1.0, deg=1, kernel="tent")
+    fitter.fit()
+
+    p0c = 2.7e9
+    q0 = 1.0
+    brho0 = p0c / (clight * q0)
+
+    multipole_order = 3  # order 2 is beyond what was fit (deg=1) -> must be zero
+    line = fitter.to_multipole_line(multipole_order=multipole_order, p0c=p0c, q0=q0)
+
+    assert isinstance(line, xt.Line)
+    assert len(line.elements) == fitter.n_regions
+    assert all(isinstance(el, xt.Multipole) for el in line.elements)
+    assert all(el.isthick for el in line.elements)
+
+    expected_knl = [B0, G, 0.0]
+    expected_ksl = [A0, Gs, 0.0]
+    for el in line.elements:
+        xo.assert_allclose(np.array(el.knl) / el.length * brho0, expected_knl, rtol=1e-5, atol=1e-8)
+        xo.assert_allclose(np.array(el.ksl) / el.length * brho0, expected_ksl, rtol=1e-5, atol=1e-8)
+
+    xo.assert_allclose(sum(el.length for el in line.elements), 1.0, rtol=0, atol=1e-10)
+
+def test_tubefitter_to_multipole_line_drops_bs_with_warning(capsys):
+    """Bs (the on-axis solenoid field) has no Multipole equivalent -- it should
+    be silently dropped from knl/ksl, but only after printing a warning when it
+    was actually significant enough to be fit."""
+    xs = np.linspace(-0.002, 0.002, 5)
+    ys = np.linspace(-0.002, 0.002, 5)
+    zs = np.linspace(0.0, 1.0, 21)
+    xg, yg, zg = np.meshgrid(xs, ys, zs, indexing="ij")
+    df_raw_data = pd.DataFrame({
+        "X": xg.ravel(), "Y": yg.ravel(), "Z": zg.ravel(),
+        "Bx": np.zeros(xg.size), "By": np.full(xg.size, 0.5), "Bs": np.full(xg.size, 0.3),
+    }).set_index(["X", "Y", "Z"])
+
+    fitter = TubeFitter(df_raw_data, n_frames=6, distance_unit=1.0, deg=1, kernel="tent")
+    fitter.fit()
+    assert fitter.component_to_fit.get(("Bs", 0)) is True
+
+    capsys.readouterr()
+    line = fitter.to_multipole_line(multipole_order=2, p0c=2.7e9, q0=1.0)
+    captured = capsys.readouterr()
+
+    assert "no Multipole equivalent" in captured.out
+    for el in line.elements:
+        assert el.knl[0] != 0.0  # By dipole still present
+        assert not hasattr(el, "ks")  # Multipole has no field to carry Bs at all
+
 def test_tubefitter_n_frames_and_residual_tol_mutually_exclusive(tubefitter_noisy_sine_raw_data):
     """Passing both n_frames and residual_tol is an ambiguous request, and should
     raise rather than silently prioritizing one over the other."""

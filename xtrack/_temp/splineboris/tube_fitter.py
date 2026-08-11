@@ -385,6 +385,95 @@ class TubeFitter:
 
         return xt.Line(elements=elements, element_names=names)
 
+    def to_multipole_line(
+        self,
+        multipole_order: int,
+        p0c: float,
+        q0: float = 1.0,
+    ) -> xt.Line:
+        """Build an ``xt.Line`` of thick ``Multipole`` elements from ``df_fit_pars``.
+
+        Uses the same region grid as ``to_line()``, but replaces each
+        region's ``SplineBoris`` (full spatial field integration) with a
+        single ``Multipole`` -- a rigidity-normalized multipole kick over
+        that region's length.
+
+        Each ``knl``/``ksl`` order is derived from the corresponding
+        ``Bnorm``/``Bskew`` Hermite ``mean`` parameter (``param_index`` 4 --
+        the field averaged over the region, ``Bnorm``/``Bskew`` already
+        being the on-axis multipole coefficients ``d^n By/dx^n`` and
+        ``d^n Bx/dx^n``), via the same relation ``xt.Multipole`` itself
+        uses (see ``track_magnet_kick.h::evaluate_field_from_strengths``):
+        ``knl[n] = length / brho0 * mean(d^n By/dx^n)``,
+        ``ksl[n] = length / brho0 * mean(d^n Bx/dx^n)``, with
+        ``brho0 = p0c / (clight * q0)``.
+
+        This discards everything ``to_line()`` keeps beyond the per-region
+        average: longitudinal field variation within a region, the
+        boundary-derivative (Hermite) terms, and the on-axis solenoid field
+        ``Bs`` (no multipole equivalent, dropped with a warning if
+        significant) -- so it is a coarse approximation, useful as a quick
+        comparison baseline against the full ``SplineBoris`` line rather
+        than a faithful field model.
+
+        Parameters
+        ----------
+        multipole_order :
+            Number of multipole orders (``knl``/``ksl`` length) per element.
+            Orders at or beyond what was fit (``self.deg + 1``) are zero.
+        p0c :
+            Reference momentum times c [eV], used to compute the reference
+            rigidity ``brho0``.
+        q0 :
+            Reference charge [elementary charges]. Default 1.0.
+        """
+        if self.df_fit_pars is None:
+            raise RuntimeError("Call fit() before to_multipole_line().")
+        if multipole_order <= 0:
+            raise ValueError("multipole_order must be a positive integer")
+
+        brho0 = p0c / (sc.constants.c * q0)
+
+        if self.component_to_fit.get(("Bs", 0), False):
+            print(
+                "[TubeFitter] to_multipole_line(): the fitted Bs (solenoid) "
+                "field component has no Multipole equivalent and is dropped."
+            )
+
+        df = self.df_fit_pars.reset_index()
+        df = df[(df["param_index"] == 4) & (df["field_component"] != "Bs")]
+
+        regions: dict[tuple[float, float], dict] = {}
+        for (s_start, s_end, fc, der), grp in df.groupby(
+            ["s_start", "s_end", "field_component", "derivative_x"], sort=True
+        ):
+            region = regions.setdefault((s_start, s_end), {"knl": {}, "ksl": {}})
+            mean_value = float(grp["param_value"].iloc[0])
+            der = int(der)
+            if fc == "Bnorm":
+                region["knl"][der] = mean_value
+            elif fc == "Bskew":
+                region["ksl"][der] = mean_value
+
+        elements = []
+        names = []
+        name_width = len(str(self.n_regions - 1)) if self.n_regions > 1 else 1
+        for i_reg, (s_start, s_end) in enumerate(sorted(regions)):
+            region = regions[(s_start, s_end)]
+            length = float(s_end - s_start)
+            knl = [region["knl"].get(o, 0.0) * length / brho0 for o in range(multipole_order)]
+            ksl = [region["ksl"].get(o, 0.0) * length / brho0 for o in range(multipole_order)]
+
+            elements.append(xt.Multipole(
+                knl=knl,
+                ksl=ksl,
+                length=length,
+                isthick=True,
+            ))
+            names.append(f"tubefitter_mult_{i_reg:0{name_width}d}")
+
+        return xt.Line(elements=elements, element_names=names)
+
     # ------------------------------------------------------------------
     # Data setup
     # ------------------------------------------------------------------
