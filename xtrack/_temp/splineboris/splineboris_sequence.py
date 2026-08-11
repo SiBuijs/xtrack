@@ -7,18 +7,20 @@ from xtrack.beam_elements.elements import SplineBoris, Spline4
 
 class SplineBorisSequence:
     '''
-    Create a sequence of ``SplineBoris`` elements from FieldFitter output.
+    Create a sequence of ``SplineBoris`` elements from fitted spline
+    parameters (as produced by ``FieldFitter`` or ``TubeFitter``).
 
     Different field components (Bs, Bx, By, derivatives) may have different
-    s-ranges in the FieldFitter output.  This class finds all unique
+    s-ranges in the fit-parameter table.  This class finds all unique
     s-boundaries and creates one ``SplineBoris`` element per region, using
     every parameter valid for that range.
 
     Parameters
     ----------
     df_fit_pars : pd.DataFrame
-        DataFrame from FieldFitter containing fit parameters.  Must have
-        columns: ``field_component``, ``derivative_x``, ``region_name``,
+        Fit-parameter DataFrame, as produced by ``FieldFitter.df_fit_pars``
+        or ``TubeFitter.df_fit_pars``.  Must have columns:
+        ``field_component``, ``derivative_x``, ``region_name``,
         ``s_start``, ``s_end``, ``idx_start``, ``idx_end``, ``param_index``,
         ``param_name``, ``param_value``.
     multipole_order : int
@@ -33,7 +35,7 @@ class SplineBorisSequence:
         Radiation flag for the SplineBoris elements.  Default is 0.
     '''
 
-    # Index columns used by FieldFitter and saved CSV files.
+    # Index columns used by FieldFitter/TubeFitter and saved CSV files.
     FIELD_FIT_INDEX_COLUMNS = (
         "field_component",
         "derivative_x",
@@ -265,7 +267,7 @@ class SplineBorisSequence:
         shift_y=0.0,
         radiation_flag=0,
     ):
-        """Build a ``SplineBorisSequence`` from a CSV file produced by `FieldFitter.save_fit_pars`."""
+        """Build a ``SplineBorisSequence`` from a CSV file produced by `FieldFitter.save_fit_pars` or `TubeFitter.save_fit_pars`."""
         df = pd.read_csv(csv_path, index_col=list(cls.FIELD_FIT_INDEX_COLUMNS))
         return cls(
             df_fit_pars=df,

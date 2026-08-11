@@ -241,14 +241,13 @@ class FieldFitter:
                     field_extrema = np.append(field_extrema, len(series) - 1)
 
                     # split long regions while ensuring each part has at least `min_region_size` points
-                    this_min_region_size = self.min_region_size if der == 0 else self.min_region_size // 2
                     new_extrema = [int(field_extrema[0])]
                     for left, right in zip(field_extrema[:-1], field_extrema[1:]):
                         length = int(right - left)
-                        if length < this_min_region_size:
+                        if length < self.min_region_size:
                             new_extrema.append(int(right))
                             continue
-                        n_parts = int(np.floor(length / this_min_region_size))
+                        n_parts = int(np.floor(length / self.min_region_size))
                         if n_parts <= 1:
                             new_extrema.append(int(right))
                             continue

@@ -13,7 +13,6 @@ from pathlib import Path
 
 import xtrack as xt
 from xtrack._temp.boris_and_solenoid_map.solenoid_field import SolenoidField
-from xtrack._temp.splineboris.field_fitter import FieldFitter
 from xtrack._temp.splineboris.tube_fitter import TubeFitter, DEFAULT_N_FRAMES
 from xtrack._temp.splineboris.splineboris_sequence import SplineBorisSequence
 from xtrack.beam_elements.splineboris_src.spline_B_field_eval_python import evaluate_B
@@ -151,76 +150,6 @@ def make_segment_field():
 @pytest.fixture(scope="module")
 def solenoid_field():
     return SolenoidField(**SOLENOID_MODEL_PARAMS)
-
-@pytest.fixture(scope="module")
-def solenoid_vs_varsol_fit_pars_df(solenoid_field):
-    sf = solenoid_field
-
-    x_axis = np.linspace(
-        -SOLENOID_MULTIPOLE_ORDER * SOLENOID_DX / 2,
-        SOLENOID_MULTIPOLE_ORDER * SOLENOID_DX / 2,
-        SOLENOID_MULTIPOLE_ORDER + 1,
-    )
-    y_axis = np.linspace(
-        -SOLENOID_MULTIPOLE_ORDER * SOLENOID_DY / 2,
-        SOLENOID_MULTIPOLE_ORDER * SOLENOID_DY / 2,
-        SOLENOID_MULTIPOLE_ORDER + 1,
-    )
-    z_axis = np.linspace(0, SOLENOID_INTERVAL, SOLENOID_Z_POINT_COUNT)
-    x_grid, y_grid, z_grid = np.meshgrid(x_axis, y_axis, z_axis, indexing="ij")
-    bx, by, bz = sf.get_field(x_grid.ravel(), y_grid.ravel(), z_grid.ravel())
-
-    df_raw_data = pd.DataFrame(
-        np.column_stack(
-            [x_grid.ravel(), y_grid.ravel(), z_grid.ravel(), bx.ravel(), by.ravel(), bz.ravel()]
-        ),
-        columns=["X", "Y", "Z", "Bskew", "Bnorm", "Bs"],
-    ).set_index(["X", "Y", "Z"])
-
-    fitter = FieldFitter(
-        raw_data=df_raw_data,
-        xy_point=(0, 0),
-        distance_unit=1,
-        min_region_size=10,
-        deg=SOLENOID_MULTIPOLE_ORDER - 1,
-        field_tol=1e-4,
-    )
-    fitter.fit()
-    df_fit_pars = fitter.df_fit_pars
-
-    assert df_fit_pars is not None
-    assert not df_fit_pars.empty, "FieldFitter produced an empty fit-parameter table"
-
-    df_fit_pars_reset = df_fit_pars.reset_index()
-    required_cols = {
-        "field_component",
-        "derivative_x",
-        "s_start",
-        "s_end",
-        "idx_start",
-        "idx_end",
-        "param_name",
-        "param_value",
-    }
-    missing_cols = required_cols.difference(df_fit_pars_reset.columns)
-    assert not missing_cols, f"Missing required fit-parameter columns: {sorted(missing_cols)}"
-    assert {"Bskew", "Bnorm", "Bs"}.issubset(set(df_fit_pars_reset["field_component"])), (
-        "FieldFitter output is missing one or more field components (Bskew, Bnorm, Bs)"
-    )
-
-    s_start_min = float(df_fit_pars_reset["s_start"].min())
-    s_end_max = float(df_fit_pars_reset["s_end"].max())
-    idx_start_min = int(df_fit_pars_reset["idx_start"].min())
-    idx_end_max = int(df_fit_pars_reset["idx_end"].max())
-    point_count = idx_end_max - idx_start_min + 1
-
-    assert np.isclose(s_start_min, 0.0), f"Unexpected s_start min: {s_start_min}"
-    assert np.isclose(s_end_max, SOLENOID_INTERVAL), f"Unexpected s_end max: {s_end_max}"
-    assert idx_start_min == 0, f"Unexpected idx_start min: {idx_start_min}"
-    assert idx_end_max == SOLENOID_N_STEPS, f"Unexpected idx_end max: {idx_end_max}"
-    assert point_count == SOLENOID_Z_POINT_COUNT, f"Unexpected point_count: {point_count}"
-
-    return df_fit_pars
 
 @pytest.fixture(scope="module")
 def solenoid_tubefitter_fit_pars_df(solenoid_field):
@@ -581,96 +510,6 @@ def test_splineboris_homogeneous_rbend(field_angle, make_uniform_splineboris):
     xo.assert_allclose(px_end_rbend, px_final_splineboris, atol=1e-12, rtol=1e-5)
     xo.assert_allclose(py_end_rbend, py_final_splineboris, atol=1e-12, rtol=1e-5)
 
-
-
-def test_splineboris_solenoid_vs_variable_solenoid(solenoid_field, solenoid_vs_varsol_fit_pars_df):
-    """
-    Test SplineBoris element against VariableSolenoid for a solenoid field.
-
-    This test creates a solenoid field, fits it with polynomial splines, tracks particles
-    through both SplineBoris and VariableSolenoid, and compares the trajectories.
-    """
-    # Set basic parameters
-    interval = SOLENOID_INTERVAL
-    multipole_order = SOLENOID_MULTIPOLE_ORDER
-    n_steps = SOLENOID_N_STEPS
-
-    # Make initial particles
-    delta = np.array([0, 4])
-    p0 = xt.Particles(mass0=xt.ELECTRON_MASS_EV, q0=1,
-                    energy0=45.6e6,  # 45.6 MeV
-                    x=1e-3,  # Start slightly off-axis
-                    px=-1e-3*(1+delta),
-                    y=1e-3,
-                    delta=delta)
-
-    # Make solenoid field instance
-    sf = solenoid_field
-
-    # Build solenoid using SplineBorisSequence - automatically creates one SplineBoris
-    # element per polynomial piece with n_steps based on the data point count
-    df_fit_pars = solenoid_vs_varsol_fit_pars_df
-    seq = SplineBorisSequence(
-        df_fit_pars=df_fit_pars,
-        multipole_order=multipole_order,
-        steps_per_point=1,  # one integration step per data point
-    )
-
-    # Get the Line of SplineBoris elements and track
-    line_splineboris = seq.to_line()
-    line_splineboris.build_tracker()
-    p_splineboris = p0.copy()
-    line_splineboris.track(p_splineboris, turn_by_turn_monitor='ONE_TURN_EBE')
-    mon_splineboris = line_splineboris.record_last_track
-
-    # --- VariableSolenoid reference (paraxial approximation, on-axis Bz only) ---
-    z_axis_ref = np.linspace(0, interval, n_steps)
-    # Get on-axis Bz
-    Bz_axis = sf.get_field(0 * z_axis_ref, 0 * z_axis_ref, z_axis_ref)[2]
-    P0_J = p0.p0c[0] * qe / clight
-    brho = P0_J / qe / p0.q0
-    ks = Bz_axis / brho
-    ks_entry = ks[:-1]
-    ks_exit = ks[1:]
-    dz = z_axis_ref[1] - z_axis_ref[0]
-    line_varsol = xt.Line(elements=[
-        xt.VariableSolenoid(length=dz, ks_profile=[ks_entry[ii], ks_exit[ii]])
-        for ii in range(len(z_axis_ref) - 1)
-    ])
-    line_varsol.build_tracker()
-    p_varsol = p0.copy()
-    line_varsol.track(p_varsol, turn_by_turn_monitor='ONE_TURN_EBE')
-    mon_varsol = line_varsol.record_last_track
-
-    # Define check points in the solenoid region
-    z_check = sf.z0 + sf.L * np.linspace(-2, 2, 1001)
-
-    # Compare trajectories for each particle
-    n_part = mon_splineboris.x.shape[0]
-    for i_part in range(n_part):
-
-        # VariableSolenoid trajectory derivatives
-        s_varsol = 0.5 * (mon_varsol.s[i_part, :-1] + mon_varsol.s[i_part, 1:])
-        dx_ds_varsol = np.diff(mon_varsol.x[i_part, :]) / np.diff(mon_varsol.s[i_part, :])
-        dy_ds_varsol = np.diff(mon_varsol.y[i_part, :]) / np.diff(mon_varsol.s[i_part, :])
-
-        # SplineBoris trajectory derivatives
-        s_splineboris = 0.5 * (mon_splineboris.s[i_part, :-1] + mon_splineboris.s[i_part, 1:])
-        dx_ds_splineboris = np.diff(mon_splineboris.x[i_part, :]) / np.diff(mon_splineboris.s[i_part, :])
-        dy_ds_splineboris = np.diff(mon_splineboris.y[i_part, :]) / np.diff(mon_splineboris.s[i_part, :])
-
-        # Interpolate at check points
-        dx_ds_splineboris_check = np.interp(z_check, s_splineboris, dx_ds_splineboris)
-        dy_ds_splineboris_check = np.interp(z_check, s_splineboris, dy_ds_splineboris)
-
-        dx_ds_varsol_check = np.interp(z_check, s_varsol, dx_ds_varsol)
-        dy_ds_varsol_check = np.interp(z_check, s_varsol, dy_ds_varsol)
-
-        # Assert that SplineBoris matches the VariableSolenoid reference
-        xo.assert_allclose(dx_ds_splineboris_check, dx_ds_varsol_check, rtol=0,
-                atol=2.8e-2 * (np.max(dx_ds_varsol_check) - np.min(dx_ds_varsol_check)))
-        xo.assert_allclose(dy_ds_splineboris_check, dy_ds_varsol_check, rtol=0,
-                atol=2.8e-2 * (np.max(dy_ds_varsol_check) - np.min(dy_ds_varsol_check)))
 
 
 def test_splineboris_tubefitter_solenoid_vs_variable_solenoid(
@@ -1229,7 +1068,7 @@ def test_splineboris_bend_radiation(make_uniform_splineboris):
 
 
 
-def test_splineboris_variable_solenoid_radiation(solenoid_field, solenoid_vs_varsol_fit_pars_df):
+def test_splineboris_variable_solenoid_radiation(solenoid_field, solenoid_tubefitter_fit_pars_df):
 
     delta=np.array([0, 4])
     p0 = xt.Particles(mass0=xt.ELECTRON_MASS_EV, q0=1,
@@ -1240,7 +1079,7 @@ def test_splineboris_variable_solenoid_radiation(solenoid_field, solenoid_vs_var
     sf = solenoid_field
 
     # --- SplineBoris tracking ---
-    df_fit_pars = solenoid_vs_varsol_fit_pars_df
+    df_fit_pars = solenoid_tubefitter_fit_pars_df
 
     seq = SplineBorisSequence(
         df_fit_pars=df_fit_pars,

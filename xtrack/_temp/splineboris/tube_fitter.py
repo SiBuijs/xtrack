@@ -44,6 +44,7 @@ from scipy.sparse import lil_matrix
 from scipy.sparse.linalg import lsmr
 
 from xtrack._temp.splineboris.div_b_check import report_raw_div_b
+from xtrack.beam_elements.elements import Spline4, SplineBoris
 
 _REQUIRED_COLUMNS = ("Bx", "By", "Bs")
 _INDEX_NAMES = ("X", "Y", "Z")
@@ -296,6 +297,93 @@ class TubeFitter:
         if self.df_fit_pars is None:
             raise RuntimeError("Call fit() before save_fit_pars().")
         self.df_fit_pars.to_csv(file_path, index=True)
+
+    def to_line(
+        self,
+        multipole_order: int,
+        steps_per_point: int = 1,
+        shift_x: float = 0.0,
+        shift_y: float = 0.0,
+        radiation_flag: int = 0,
+    ) -> xt.Line:
+        """Build an ``xt.Line`` of ``SplineBoris`` elements from ``df_fit_pars``.
+
+        Unlike ``FieldFitter`` (whose regions come from independent
+        peak-finding per field/derivative and can straddle each other),
+        every ``(field_component, derivative_x)`` in ``df_fit_pars`` here
+        shares the same region grid (``self.frames``), so no boundary
+        reconciliation across fields is needed -- each region's 5 stored
+        Hermite params map directly onto a ``Spline4`` (``param_index``
+        0..4 == val_start, der_start, val_end, der_end, integral), with no
+        ``hermite_to_polynomial`` round-trip. See
+        ``examples/splineboris/claude_notes/`` for the reasoning
+        (``SplineBorisSequence`` remains the right tool for ``FieldFitter``
+        output).
+
+        Parameters
+        ----------
+        multipole_order :
+            Number of multipole orders (``Bx``/``By`` derivative slots) per
+            ``SplineBoris`` element. Orders at or beyond what was fit
+            (``self.deg + 1``) are filled with a zero ``Spline4``.
+        steps_per_point :
+            Multiplier for integration steps per raw data point.
+        shift_x, shift_y :
+            Transverse shift [m] passed through to every element.
+        radiation_flag :
+            Radiation flag passed through to every element.
+        """
+        if self.df_fit_pars is None:
+            raise RuntimeError("Call fit() before to_line().")
+        if multipole_order <= 0:
+            raise ValueError("multipole_order must be a positive integer")
+
+        zero_spline = Spline4(
+            val_start=0.0, der_start=0.0, val_end=0.0, der_end=0.0, integral=0.0
+        )
+
+        df = self.df_fit_pars.reset_index()
+        regions: dict[tuple[float, float], dict] = {}
+        for (s_start, s_end, fc, der), grp in df.groupby(
+            ["s_start", "s_end", "field_component", "derivative_x"], sort=True
+        ):
+            region = regions.setdefault((s_start, s_end), {
+                "idx_start": int(grp["idx_start"].iloc[0]),
+                "idx_end": int(grp["idx_end"].iloc[0]),
+                "by": {}, "bx": {}, "bs": zero_spline,
+            })
+            grp_sorted = grp.sort_values("param_index")
+            spline = Spline4(*grp_sorted["param_value"].to_numpy(dtype=float))
+            der = int(der)
+            if fc == "Bs":
+                region["bs"] = spline
+            elif fc == "Bnorm":
+                region["by"][der] = spline
+            elif fc == "Bskew":
+                region["bx"][der] = spline
+
+        elements = []
+        names = []
+        name_width = len(str(self.n_regions - 1)) if self.n_regions > 1 else 1
+        for i_reg, (s_start, s_end) in enumerate(sorted(regions)):
+            region = regions[(s_start, s_end)]
+            by_tuple = tuple(region["by"].get(o, zero_spline) for o in range(multipole_order))
+            bx_tuple = tuple(region["bx"].get(o, zero_spline) for o in range(multipole_order))
+            n_steps = max(1, (region["idx_end"] - region["idx_start"]) * steps_per_point)
+
+            elements.append(SplineBoris(
+                bs=region["bs"],
+                by=by_tuple,
+                bx=bx_tuple,
+                length=float(s_end - s_start),
+                n_steps=n_steps,
+                shift_x=shift_x,
+                shift_y=shift_y,
+                radiation_flag=radiation_flag,
+            ))
+            names.append(f"tubefitter_{i_reg:0{name_width}d}")
+
+        return xt.Line(elements=elements, element_names=names)
 
     # ------------------------------------------------------------------
     # Data setup
