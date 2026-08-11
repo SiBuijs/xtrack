@@ -65,6 +65,16 @@ import xtrack as xt
 
 from xtrack._temp.splineboris.tube_fitter import TubeFitter
 
+# This script is developed against editable xtrack/xobjects/xsuite checkouts
+# that routinely run ahead of (or otherwise mismatch) the cached prebuilt
+# kernels. Several code paths compile their own kernels independently of
+# Line.build_tracker() -- e.g. compensate_radiation_energy_loss() uses
+# xt.MultiSetter, which goes through xobjects.struct.compile_kernels()
+# directly and has no use_prebuilt_kernels kwarg to set per call. This
+# module-level flag is the one switch that disables the prebuilt-kernel
+# lookup everywhere, regardless of call site.
+xo.context_cpu.allow_no_prebuilt_kernel = True
+
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent.parent
 RESULTS_DIR = HERE / "results"
@@ -143,10 +153,12 @@ def _fit_undulator():
 
     fitter = TubeFitter(
         raw_data=df_raw_data,
-        n_frames=400,
+        #residual_tol=2e-4,
+        n_frames=1701,          # Empirically found to give the 2e-4 residual tolerance
         distance_unit=1e-3,
         deg=MULTIPOLE_ORDER - 1,
         field_tol=1e-3,
+        kernel="tent",
     )
     fitter.fit()
     return fitter
@@ -205,6 +217,14 @@ def _correct_undulator_orbit(undulator_line, offset_x=0.0, corrector_values=None
     ], s_tol=5e-3)
 
     _apply_shift_x(undulator_line, offset_x)
+
+    # Build explicitly with use_prebuilt_kernels=False: match()/build_tracker()
+    # would otherwise default to a serial CPU context, which tries to look up
+    # a prebuilt kernel via the `xsuite` package -- fragile across the mixed
+    # editable-checkout environments this script is developed/run in (see
+    # claude_notes). Forcing JIT compilation here sidesteps that lookup
+    # entirely, regardless of which xsuite/xobjects happen to be resolved.
+    undulator_line.build_tracker(use_prebuilt_kernels=False)
 
     if corrector_values is None:
         opt = undulator_line.match(
@@ -453,10 +473,12 @@ def _run_case(case, undulator_lines, *, n_turns, n_part, fit_start_turn, offset_
     _insert_undulators(env, line, case["kind"], case["places"], undulator_lines)
 
     line.discard_tracker()
+    line.build_tracker(use_prebuilt_kernels=False)
     line.configure_radiation(model="mean")
     line.compensate_radiation_energy_loss()
 
     line.discard_tracker()
+    line.build_tracker(use_prebuilt_kernels=False)
     tw = line.twiss6d(radiation_analysis=True, polarization_analysis=True, strengths=True)
 
     eq_x = float(tw.eq_gemitt_x)
@@ -496,7 +518,8 @@ def _run_case(case, undulator_lines, *, n_turns, n_part, fit_start_turn, offset_
 
     line.configure_radiation(model="quantum")
     line.discard_tracker()
-    line.build_tracker(_context=xo.ContextCpu(omp_num_threads="auto"))
+    line.build_tracker(_context=xo.ContextCpu(omp_num_threads="auto"),
+                        use_prebuilt_kernels=False)
     line.config.XTRACK_GLOBAL_XY_LIMIT = GLOBAL_XY_LIMIT
 
     print(f"Tracking {n_part} particles for {n_turns} turns (quantum radiation)")
