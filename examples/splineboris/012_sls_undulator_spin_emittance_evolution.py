@@ -27,6 +27,13 @@ tracked polarization -- here restricted to turns >= ``FIT_START_TURN``
 (default 2000) to skip the initial transient before the bunch/spin
 distribution has settled.
 
+The bunch is generated at 1/3 of the Twiss equilibrium emittance (in each of
+x/y/zeta) and an exponential ``eps(n) = (eps_0 - eps_eq)*exp(-alpha*n) +
+eps_eq`` is fit to each tracked emittance curve, matching
+``examples/fcc_ee_solenoid/014_emittance_evolution.py`` (``fcc_da_ma``
+branch) -- including how the fit (and Twiss-predicted) parameters are printed
+in a text box on each emittance panel.
+
 An optional ``--offset-x`` applies a rigid transverse (horizontal)
 misalignment to the undulator elements before the orbit is corrected --
 same mechanism as ``007_sls_undulator_tune_displacement.py``'s
@@ -62,6 +69,7 @@ import pandas as pd
 import xobjects as xo
 import xpart as xp
 import xtrack as xt
+from scipy.optimize import curve_fit
 
 from xtrack._temp.splineboris.tube_fitter import TubeFitter
 
@@ -389,6 +397,32 @@ def _compute_polarization(mon, n_turns):
     return spin_x_mean, spin_y_mean, spin_z_mean, polarization
 
 
+def _fit_damping_rate(turns, gemitt, eps_eq_guess, eps_init):
+    """Fit eps_eq and the damping rate alpha, with the initial emittance
+    fixed to the value observed at the start of tracking.
+
+    Model: eps(n) = (eps_init - eps_eq) * exp(-alpha * n) + eps_eq
+    Matches examples/fcc_ee_solenoid/014_emittance_evolution.py's
+    _fit_damping_rate (fcc_da_ma branch).
+    """
+
+    def model(turns_arr, eps_eq, alpha):
+        return (eps_init - eps_eq) * np.exp(-alpha * turns_arr) + eps_eq
+
+    mask = np.isfinite(gemitt)
+    if mask.sum() < 3:
+        return np.nan, np.nan
+
+    popt, _ = curve_fit(
+        model, turns[mask], gemitt[mask], p0=[eps_eq_guess, 2.0 * 1e-3], maxfev=10_000,
+    )
+    return float(popt[0]), float(popt[1])
+
+
+def _analytic_emittance(turns, eps_init, eps_eq, damp_turn):
+    return (eps_init - eps_eq) * np.exp(-2.0 * damp_turn * turns) + eps_eq
+
+
 def _fit_linear_depolarization(turns, polarization, t_rev0, fit_start_turn):
     """Straight-line fit P(n) = P0 + slope*n over turns >= fit_start_turn,
     matching examples/fcc_ee_solenoid/015_spin_polarization.py's
@@ -415,22 +449,61 @@ def _fit_linear_depolarization(turns, polarization, t_rev0, fit_start_turn):
 # ------------------------------------------------------------------ #
 
 def _plot_case_figure(*, turns, gemitt_x, gemitt_y, gemitt_z, eq_x, eq_y, eq_z,
+                       damp_turns, fit_eps_eq, fit_alpha, twiss_eps_init,
                        polarization, fit_p0, fit_slope, fit_tau_depol_turns,
                        fit_start_turn, p_inf, tau_pol_s, p_eq_twiss,
                        p_eq_derived, title):
     fig, axes = plt.subplots(4, 1, figsize=(6.4, 9.0), sharex=True)
 
     emitt_series = [
-        (gemitt_x, eq_x, r"$\varepsilon_x$ [m$\cdot$rad]"),
-        (gemitt_y, eq_y, r"$\varepsilon_y$ [m$\cdot$rad]"),
-        (gemitt_z, eq_z, r"$\varepsilon_\zeta$ [m$\cdot$rad]"),
+        (gemitt_x, eq_x, damp_turns[0], fit_eps_eq[0], fit_alpha[0],
+         twiss_eps_init[0], "x", r"$\varepsilon_x$ [m$\cdot$rad]"),
+        (gemitt_y, eq_y, damp_turns[1], fit_eps_eq[1], fit_alpha[1],
+         twiss_eps_init[1], "y", r"$\varepsilon_y$ [m$\cdot$rad]"),
+        (gemitt_z, eq_z, damp_turns[2], fit_eps_eq[2], fit_alpha[2],
+         twiss_eps_init[2], r"\zeta", r"$\varepsilon_\zeta$ [m$\cdot$rad]"),
     ]
-    for ax, (gemitt, eq, ylabel) in zip(axes[:3], emitt_series):
+    for ax, (gemitt, eq, damp, eps_eq_fit, alpha_fit, eps_init_tw, sym, ylabel) in zip(
+            axes[:3], emitt_series):
+        eps_init = gemitt[0]
         ax.plot(turns, gemitt, label="tracked")
         ax.axhline(eq, linestyle="--", color="C2", label=r"$\varepsilon_\mathrm{eq}$ (Twiss)")
+
+        if np.isfinite(alpha_fit):
+            fit_curve = (eps_init - eps_eq_fit) * np.exp(-alpha_fit * turns) + eps_eq_fit
+            ax.plot(turns, fit_curve, "--", color="C3", label="fit")
+
+        analytic = _analytic_emittance(turns, eps_init, eq, damp)
+        ax.plot(turns, analytic, ":", color="C4", label=r"Twiss $-2\lambda t$")
+
         ax.set_ylabel(ylabel)
         ax.set_ylim(bottom=0)
         ax.legend(loc="upper left", fontsize=7)
+
+        alpha_tw = 2.0 * damp
+        tau_tw = 1.0 / alpha_tw
+        fit_lines = ["fit:"]
+        if np.isfinite(alpha_fit):
+            tau_fit = 1.0 / alpha_fit
+            fit_lines += [
+                fr"  $\varepsilon_{{{sym},0}} = {eps_init:.3e}$",
+                fr"  $\varepsilon_{{{sym},\mathrm{{eq}}}} = {eps_eq_fit:.3e}$",
+                fr"  $\alpha_{{{sym}}} = {alpha_fit:.3e}\ \mathrm{{turn}}^{{-1}}$",
+                fr"  $\tau_{{{sym}}} = {tau_fit:.3e}\ \mathrm{{turns}}$",
+            ]
+        else:
+            fit_lines += ["  (failed)"]
+        twiss_lines = [
+            "Twiss:",
+            fr"  $\varepsilon_{{{sym},0}} = {eps_init_tw:.3e}$",
+            fr"  $\varepsilon_{{{sym},\mathrm{{eq}}}} = {eq:.3e}$",
+            fr"  $\alpha_{{{sym}}} = {alpha_tw:.3e}\ \mathrm{{turn}}^{{-1}}$",
+            fr"  $\tau_{{{sym}}} = {tau_tw:.3e}\ \mathrm{{turns}}$",
+        ]
+        info_text = "\n".join(fit_lines + twiss_lines)
+        ax.text(0.98, 0.03, info_text, transform=ax.transAxes,
+                ha="right", va="bottom", fontsize=6.5, linespacing=1.4,
+                bbox=dict(boxstyle="round", facecolor="white", alpha=0.85, edgecolor="0.7"))
 
     ax_pol = axes[3]
     ax_pol.plot(turns, polarization, label="tracked")
@@ -489,6 +562,7 @@ def _run_case(case, undulator_lines, *, n_turns, n_part, fit_start_turn, offset_
     p_eq_twiss = float(tw.spin_polarization_eq)
     tau_depol_twiss_s = float(tw.spin_t_depol_component_s)
     t_rev0 = float(tw.t_rev0)
+    damp_turns = np.asarray(tw.damping_constants_turns, dtype=float)
 
     print(f"eq_gemitt_x    = {eq_x:.6e} m*rad")
     print(f"eq_gemitt_y    = {eq_y:.6e} m*rad")
@@ -496,14 +570,16 @@ def _run_case(case, undulator_lines, *, n_turns, n_part, fit_start_turn, offset_
     print(f"P_inf = {p_inf:.6f}   tau_pol = {tau_pol_s:.6e} s")
     print(f"tau_depol (Twiss) = {tau_depol_twiss_s:.6e} s   P_eq (Twiss) = {p_eq_twiss:.6e}")
 
-    nemitt_x = max(float(tw.eq_nemitt_x), MIN_NEMITT)
-    nemitt_y = max(float(tw.eq_nemitt_y), MIN_NEMITT)
+    # Bunch generated at 1/3 of the Twiss equilibrium emittance, matching
+    # examples/fcc_ee_solenoid/014_emittance_evolution.py (fcc_da_ma branch).
+    nemitt_x = max(float(tw.eq_nemitt_x) / 3.0, MIN_NEMITT)
+    nemitt_y = max(float(tw.eq_nemitt_y) / 3.0, MIN_NEMITT)
 
     particles = xp.generate_matched_gaussian_bunch(
         num_particles=n_part,
         nemitt_x=nemitt_x,
         nemitt_y=nemitt_y,
-        sigma_z=np.sqrt(eq_z * tw.bets0),
+        sigma_z=np.sqrt(eq_z / 3.0 * tw.bets0),
         line=line,
         particle_on_co=tw.particle_on_co,
         engine="single-rf-harmonic",
@@ -531,6 +607,27 @@ def _run_case(case, undulator_lines, *, n_turns, n_part, fit_start_turn, offset_
     gemitt_x, gemitt_y, gemitt_z = _compute_geometric_emittances(mon, tw, n_turns)
     spin_x_mean, spin_y_mean, spin_z_mean, polarization = _compute_polarization(mon, n_turns)
 
+    fit_eps_init = np.array([gemitt_x[0], gemitt_y[0], gemitt_z[0]])
+    fit_results = [
+        _fit_damping_rate(turns, gemitt_x, eq_x, fit_eps_init[0]),
+        _fit_damping_rate(turns, gemitt_y, eq_y, fit_eps_init[1]),
+        _fit_damping_rate(turns, gemitt_z, eq_z, fit_eps_init[2]),
+    ]
+    fit_eps_eq = np.array([r[0] for r in fit_results])
+    fit_alpha = np.array([r[1] for r in fit_results])
+    # The bunch is generated at 1/3 of the Twiss equilibrium emittance (see
+    # generate_matched_gaussian_bunch call above), so that is the
+    # Twiss-predicted initial emittance for the fit comparison box.
+    twiss_eps_init = np.array([eq_x, eq_y, eq_z]) / 3.0
+
+    plane_symbols = ["x", "y", "zeta"]
+    for symbol, eps0, eps_eq_fit, alpha_fit, eq_tw, damp_tw in zip(
+            plane_symbols, fit_eps_init, fit_eps_eq, fit_alpha, [eq_x, eq_y, eq_z], damp_turns):
+        tau_fit = 1.0 / alpha_fit if np.isfinite(alpha_fit) else np.nan
+        print(f"  eps_{symbol},0 = {eps0:.6e}  eps_{symbol},eq (fit) = {eps_eq_fit:.6e} "
+              f"[Twiss: {eq_tw:.6e}]  tau_{symbol} (fit) = {tau_fit:.6e} turns "
+              f"[Twiss damp_turns: {damp_tw:.6e}]")
+
     fit_p0, fit_slope, fit_tau_depol_turns, fit_tau_depol_s = _fit_linear_depolarization(
         turns, polarization, t_rev0, fit_start_turn)
 
@@ -546,7 +643,9 @@ def _run_case(case, undulator_lines, *, n_turns, n_part, fit_start_turn, offset_
 
     fig = _plot_case_figure(
         turns=turns, gemitt_x=gemitt_x, gemitt_y=gemitt_y, gemitt_z=gemitt_z,
-        eq_x=eq_x, eq_y=eq_y, eq_z=eq_z, polarization=polarization,
+        eq_x=eq_x, eq_y=eq_y, eq_z=eq_z,
+        damp_turns=damp_turns, fit_eps_eq=fit_eps_eq, fit_alpha=fit_alpha,
+        twiss_eps_init=twiss_eps_init, polarization=polarization,
         fit_p0=fit_p0, fit_slope=fit_slope, fit_tau_depol_turns=fit_tau_depol_turns,
         fit_start_turn=fit_start_turn, p_inf=p_inf, tau_pol_s=tau_pol_s,
         p_eq_twiss=p_eq_twiss, p_eq_derived=p_eq_derived, title=title,
@@ -566,6 +665,8 @@ def _run_case(case, undulator_lines, *, n_turns, n_part, fit_start_turn, offset_
         spin_x_mean=spin_x_mean, spin_y_mean=spin_y_mean, spin_z_mean=spin_z_mean,
         polarization=polarization,
         eq_gemitt_x=eq_x, eq_gemitt_y=eq_y, eq_gemitt_zeta=eq_z,
+        damp_turns=damp_turns, fit_eps_eq=fit_eps_eq, fit_alpha=fit_alpha,
+        twiss_eps_init=twiss_eps_init,
         p_inf=p_inf, tau_pol_s=tau_pol_s, tau_depol_twiss_s=tau_depol_twiss_s,
         p_eq_twiss=p_eq_twiss,
         fit_p0=fit_p0, fit_slope=fit_slope, fit_tau_depol_turns=fit_tau_depol_turns,
@@ -599,6 +700,10 @@ def _replot_case(case, *, n_turns, n_part, offset_x):
     eq_x = float(data["eq_gemitt_x"])
     eq_y = float(data["eq_gemitt_y"])
     eq_z = float(data["eq_gemitt_zeta"])
+    damp_turns = data["damp_turns"]
+    fit_eps_eq = data["fit_eps_eq"]
+    fit_alpha = data["fit_alpha"]
+    twiss_eps_init = data["twiss_eps_init"]
     p_inf = float(data["p_inf"])
     tau_pol_s = float(data["tau_pol_s"])
     tau_depol_twiss_s = float(data["tau_depol_twiss_s"])
@@ -610,6 +715,8 @@ def _replot_case(case, *, n_turns, n_part, offset_x):
     fig = _plot_case_figure(
         turns=data["turns"], gemitt_x=data["gemitt_x"], gemitt_y=data["gemitt_y"],
         gemitt_z=data["gemitt_z"], eq_x=eq_x, eq_y=eq_y, eq_z=eq_z,
+        damp_turns=damp_turns, fit_eps_eq=fit_eps_eq, fit_alpha=fit_alpha,
+        twiss_eps_init=twiss_eps_init,
         polarization=data["polarization"],
         fit_p0=float(data["fit_p0"]), fit_slope=float(data["fit_slope"]),
         fit_tau_depol_turns=float(data["fit_tau_depol_turns"]),
