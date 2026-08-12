@@ -45,6 +45,9 @@ from scipy.sparse.linalg import lsmr
 
 from xtrack._temp.splineboris.div_b_check import report_raw_div_b
 from xtrack.beam_elements.splineboris import Spline4, SplineBoris
+from xtrack.beam_elements.splineboris_src.spline_B_field_eval_python import (
+    hermite_to_polynomial,
+)
 
 _REQUIRED_COLUMNS = ("Bx", "By", "Bs")
 _INDEX_NAMES = ("X", "Y", "Z")
@@ -390,6 +393,9 @@ class TubeFitter:
         multipole_order: int,
         p0c: float,
         q0: float = 1.0,
+        field_at: str = "mean",
+        shift_x: float = 0.0,
+        shift_y: float = 0.0,
     ) -> xt.Line:
         """Build an ``xt.Line`` of thick ``Multipole`` elements from ``df_fit_pars``.
 
@@ -399,22 +405,22 @@ class TubeFitter:
         that region's length.
 
         Each ``knl``/``ksl`` order is derived from the corresponding
-        ``Bnorm``/``Bskew`` Hermite ``mean`` parameter (``param_index`` 4 --
-        the field averaged over the region, ``Bnorm``/``Bskew`` already
-        being the on-axis multipole coefficients ``d^n By/dx^n`` and
-        ``d^n Bx/dx^n``), via the same relation ``xt.Multipole`` itself
-        uses (see ``track_magnet_kick.h::evaluate_field_from_strengths``):
-        ``knl[n] = length / brho0 * mean(d^n By/dx^n)``,
-        ``ksl[n] = length / brho0 * mean(d^n Bx/dx^n)``, with
+        ``Bnorm``/``Bskew`` Hermite field value (see ``field_at``),
+        ``Bnorm``/``Bskew`` already being the on-axis multipole coefficients
+        ``d^n By/dx^n`` and ``d^n Bx/dx^n``, via the same relation
+        ``xt.Multipole`` itself uses (see
+        ``track_magnet_kick.h::evaluate_field_from_strengths``):
+        ``knl[n] = length / brho0 * field(d^n By/dx^n)``,
+        ``ksl[n] = length / brho0 * field(d^n Bx/dx^n)``, with
         ``brho0 = p0c / (clight * q0)``.
 
-        This discards everything ``to_line()`` keeps beyond the per-region
-        average: longitudinal field variation within a region, the
-        boundary-derivative (Hermite) terms, and the on-axis solenoid field
-        ``Bs`` (no multipole equivalent, dropped with a warning if
-        significant) -- so it is a coarse approximation, useful as a quick
-        comparison baseline against the full ``SplineBoris`` line rather
-        than a faithful field model.
+        This discards everything ``to_line()`` keeps beyond a single field
+        value per region: longitudinal field variation within a region
+        (except at the sampled point), the remaining boundary-derivative
+        (Hermite) terms, and the on-axis solenoid field ``Bs`` (no multipole
+        equivalent, dropped with a warning if significant) -- so it is a
+        coarse approximation, useful as a quick comparison baseline against
+        the full ``SplineBoris`` line rather than a faithful field model.
 
         Parameters
         ----------
@@ -426,11 +432,25 @@ class TubeFitter:
             rigidity ``brho0``.
         q0 :
             Reference charge [elementary charges]. Default 1.0.
+        field_at :
+            Which field value along each region is used to derive
+            ``knl``/``ksl``. ``"mean"`` (default) -- the region-averaged
+            field (Hermite ``param_index=4``, a true integral over the
+            region divided by its length). ``"midpoint"`` -- the field
+            value at the region's longitudinal midpoint, reconstructed from
+            the full Hermite quartic via ``hermite_to_polynomial`` (the same
+            reconstruction ``to_line()``'s ``SplineBoris`` elements use
+            internally to evaluate the field at any point within a region).
+        shift_x, shift_y :
+            Transverse shift [m] passed through to every ``Multipole``
+            element (same meaning as ``to_line()``'s ``shift_x``/``shift_y``).
         """
         if self.df_fit_pars is None:
             raise RuntimeError("Call fit() before to_multipole_line().")
         if multipole_order <= 0:
             raise ValueError("multipole_order must be a positive integer")
+        if field_at not in ("mean", "midpoint"):
+            raise ValueError(f"field_at must be 'mean' or 'midpoint', got {field_at!r}")
 
         brho0 = p0c / (sc.constants.c * q0)
 
@@ -441,19 +461,25 @@ class TubeFitter:
             )
 
         df = self.df_fit_pars.reset_index()
-        df = df[(df["param_index"] == 4) & (df["field_component"] != "Bs")]
+        df = df[df["field_component"] != "Bs"]
 
         regions: dict[tuple[float, float], dict] = {}
         for (s_start, s_end, fc, der), grp in df.groupby(
             ["s_start", "s_end", "field_component", "derivative_x"], sort=True
         ):
             region = regions.setdefault((s_start, s_end), {"knl": {}, "ksl": {}})
-            mean_value = float(grp["param_value"].iloc[0])
+            if field_at == "mean":
+                value = float(grp.loc[grp["param_index"] == 4, "param_value"].iloc[0])
+            else:
+                coeffs = grp.sort_values("param_index")["param_value"].to_numpy(dtype=float)
+                length = float(s_end - s_start)
+                poly = hermite_to_polynomial(0.0, length, coeffs)
+                value = float(poly(0.5 * length))
             der = int(der)
             if fc == "Bnorm":
-                region["knl"][der] = mean_value
+                region["knl"][der] = value
             elif fc == "Bskew":
-                region["ksl"][der] = mean_value
+                region["ksl"][der] = value
 
         elements = []
         names = []
@@ -469,6 +495,8 @@ class TubeFitter:
                 ksl=ksl,
                 length=length,
                 isthick=True,
+                shift_x=shift_x,
+                shift_y=shift_y,
             ))
             names.append(f"tubefitter_mult_{i_reg:0{name_width}d}")
 
