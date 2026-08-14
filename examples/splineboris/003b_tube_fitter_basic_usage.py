@@ -41,9 +41,9 @@ n_frames = 1000
 # If you choose n_frames, the fitter will simply use that number of frames.
 # If you choose residual_tol, the fitter will search for the smallest number of frames
 # that meets the specified residual tolerance.
-# Some reference times (depdendent on the machine):
+# Some reference times (depdendent on the machine and field map (simona_field_map.txt here)):
 # 1000 frames takes ~30 seconds, lands at ~0.57% residual
-# residual_tol=1e-3 takes ~ seconds and lands at n_frames=2324
+# residual_tol=1e-3 takes ~5 minutes and lands at n_frames=2324
 
 
 import time
