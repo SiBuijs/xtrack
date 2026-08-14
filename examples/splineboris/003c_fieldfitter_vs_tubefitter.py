@@ -64,38 +64,10 @@ tube_fitter = TubeFitter(
     n_frames=TUBE_N_FRAMES,
     distance_unit=dz,
     deg=deg,
-    kernel="tent",
     field_tol=1e-3,
     y_symmetry=True,
 )
 tube_fitter.fit()
-
-# Same n_frames/deg/field_tol, only the longitudinal B-spline kernel differs
-# -- isolates the effect of kernel order (tent=O(h^2), quadratic=O(h^3),
-# cubic=O(h^4)) from everything else. See
-# examples/splineboris/claude_notes/tubefitter_nframes_nonmonotonic.md for
-# why this comparison matters.
-tube_fitter_quadratic = TubeFitter(
-    raw_data=df_raw_tubefitter,
-    n_frames=TUBE_N_FRAMES,
-    distance_unit=dz,
-    deg=deg,
-    kernel="quadratic",
-    field_tol=1e-3,
-    y_symmetry=True,
-)
-tube_fitter_quadratic.fit()
-
-tube_fitter_cubic = TubeFitter(
-    raw_data=df_raw_tubefitter,
-    n_frames=TUBE_N_FRAMES,
-    distance_unit=dz,
-    deg=deg,
-    kernel="cubic",
-    field_tol=1e-3,
-    y_symmetry=True,
-)
-tube_fitter_cubic.fit()
 
 # --- SplineBoris field-prediction residual: FieldFitter vs TubeFitter -----
 # Both fitters only ever export q=0 (skew) and q=1 (norm) content; the
@@ -110,12 +82,6 @@ seq_field_fitter = SplineBorisSequence(
 )
 seq_tube_fitter = SplineBorisSequence(
     df_fit_pars=tube_fitter.df_fit_pars, multipole_order=multipole_order, steps_per_point=1,
-)
-seq_tube_fitter_quadratic = SplineBorisSequence(
-    df_fit_pars=tube_fitter_quadratic.df_fit_pars, multipole_order=multipole_order, steps_per_point=1,
-)
-seq_tube_fitter_cubic = SplineBorisSequence(
-    df_fit_pars=tube_fitter_cubic.df_fit_pars, multipole_order=multipole_order, steps_per_point=1,
 )
 
 
@@ -157,9 +123,7 @@ for title, on_axis_only in (("full grid", False), ("on-axis only (X=0, Y=0)", Tr
     print(f"{'field':8s} {'fitter':20s} {'RMS [T]':>12s} {'rel RMS':>10s}")
     for tag, seq in (
         ("FieldFitter", seq_field_fitter),
-        ("TubeFitter (tent)", seq_tube_fitter),
-        ("TubeFitter (quadratic)", seq_tube_fitter_quadratic),
-        ("TubeFitter (cubic)", seq_tube_fitter_cubic),
+        ("TubeFitter", seq_tube_fitter),
     ):
         for field, (rms, rel) in spline_boris_residual(seq, df_raw_for_residual, on_axis_only).items():
             print(f"{field:8s} {tag:20s} {rms:12.4e} {rel * 100:9.3f}%")

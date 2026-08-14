@@ -34,12 +34,13 @@ import io
 import math
 from pathlib import Path
 
+import numba
 import numpy as np
 import pandas as pd
 import scipy as sc
 import xtrack as xt
 from scipy.interpolate import BSpline
-from scipy.sparse import coo_matrix, lil_matrix
+from scipy.sparse import lil_matrix
 from scipy.sparse.linalg import lsmr
 
 from xtrack.beam_elements.splineboris import Spline4, SplineBoris
@@ -49,12 +50,6 @@ from xtrack.beam_elements.splineboris_src.spline_B_field_eval_python import (
 
 _REQUIRED_COLUMNS = ("Bx", "By", "Bs")
 _INDEX_NAMES = ("X", "Y", "Z")
-
-KERNEL_TO_DEGREE = {
-    "tent": 1,       # B_1, C^0 -- narrowest support, derivative discontinuous at frames
-    "quadratic": 2,  # B_2, C^1 -- narrower than cubic, derivatives continuous
-    "cubic": 3,       # B_3, C^2 -- widest support but smoothest
-}
 
 # Fallback n_frames used when neither n_frames nor residual_tol is given.
 # Not tuned to any particular fit-quality target -- just a reasonable middle
@@ -85,13 +80,128 @@ def _frame_indices(s_full: np.ndarray, frames: np.ndarray) -> np.ndarray:
     return np.array([int(np.argmin(np.abs(s_full - f))) for f in frames], dtype=int)
 
 
+@numba.njit(cache=True)
+def _accumulate_block_tridiagonal(
+    pt_ptr, basis_idx, beta_vals, x, y, bx, by,
+    p_bx, q_bx, idx_bx, p_by, q_by, idx_by,
+    D, E, r,
+):
+    """Scatter-add every raw point's contribution directly into the tube
+    fit's block-tridiagonal normal-equations accumulators -- no global
+    design matrix ever gets built. Tent's local support means a point's
+    design row is nonzero on at most 2 adjacent frames, so its contribution
+    is a small ``(<=2, n_pq)``-shaped update: diagonal blocks ``D[j]`` (and
+    ``E[j]``, the coupling between frames ``j`` and ``j + 1``, when 2 frames
+    are active) accumulate outer products of the point's local gradient
+    vectors; ``r[j]`` accumulates the corresponding RHS contribution.
+
+    Deliberately **not** ``parallel=True``: multiple points across the whole
+    dataset write into the same ``D[j]``/``E[j]``/``r[j]`` (every point near
+    frame ``j`` does), so unlike the old CSR-writing kernel this can't just
+    hand out disjoint output slices -- it has to run as a single serial pass.
+    """
+    n_pts = pt_ptr.shape[0] - 1
+    m_bx = p_bx.shape[0]
+    m_by = p_by.shape[0]
+    g_bx = np.empty(m_bx)
+    g_by = np.empty(m_by)
+    for i in range(n_pts):
+        xi = x[i]
+        yi = y[i]
+        for t in range(m_bx):
+            p = p_bx[t]
+            q = q_bx[t]
+            g_bx[t] = -p * xi ** (p - 1) * yi ** q
+        for t in range(m_by):
+            p = p_by[t]
+            q = q_by[t]
+            g_by[t] = -q * xi ** p * yi ** (q - 1)
+        bxi = bx[i]
+        byi = by[i]
+
+        start, end = pt_ptr[i], pt_ptr[i + 1]
+        n_active = end - start
+        for a in range(n_active):
+            jj = start + a
+            j = basis_idx[jj]
+            beta = beta_vals[jj]
+            for t1 in range(m_bx):
+                i1 = idx_bx[t1]
+                r[j, i1] += beta * g_bx[t1] * bxi
+                for t2 in range(m_bx):
+                    D[j, i1, idx_bx[t2]] += beta * beta * g_bx[t1] * g_bx[t2]
+            for t1 in range(m_by):
+                i1 = idx_by[t1]
+                r[j, i1] += beta * g_by[t1] * byi
+                for t2 in range(m_by):
+                    D[j, i1, idx_by[t2]] += beta * beta * g_by[t1] * g_by[t2]
+            if a + 1 < n_active:
+                jj2 = start + a + 1
+                beta2 = beta_vals[jj2]
+                for t1 in range(m_bx):
+                    i1 = idx_bx[t1]
+                    for t2 in range(m_bx):
+                        E[j, i1, idx_bx[t2]] += beta * beta2 * g_bx[t1] * g_bx[t2]
+                for t1 in range(m_by):
+                    i1 = idx_by[t1]
+                    for t2 in range(m_by):
+                        E[j, i1, idx_by[t2]] += beta * beta2 * g_by[t1] * g_by[t2]
+
+
+@numba.njit(parallel=True, cache=True)
+def _accumulate_residual_sumsq(
+    pt_ptr, basis_idx, beta_vals, x, y, bx, by,
+    p_bx, q_bx, idx_bx, p_by, q_by, idx_by,
+    x_sol,
+):
+    """Evaluate the fitted field at every raw point directly from the
+    solved ``x_sol`` (shape ``(n_frames, n_pq)``) and reduce into
+    sum-of-squares -- the direct-evaluation analogue of the old ``b_vec -
+    A @ x_sol`` matvec, without ever materializing ``A`` or a per-point
+    residual array. Safe to parallelize (unlike the accumulation kernel
+    above): every point only reduces into the 4 scalar accumulators below,
+    numba's well-supported reduction pattern, not a shared-array write."""
+    n_pts = pt_ptr.shape[0] - 1
+    m_bx = p_bx.shape[0]
+    m_by = p_by.shape[0]
+    sumsq_res_bx = 0.0
+    sumsq_res_by = 0.0
+    sumsq_bx = 0.0
+    sumsq_by = 0.0
+    for i in numba.prange(n_pts):
+        xi = x[i]
+        yi = y[i]
+        pred_bx = 0.0
+        pred_by = 0.0
+        for jj in range(pt_ptr[i], pt_ptr[i + 1]):
+            j = basis_idx[jj]
+            beta = beta_vals[jj]
+            for t in range(m_bx):
+                p = p_bx[t]
+                q = q_bx[t]
+                g = -p * xi ** (p - 1) * yi ** q
+                pred_bx += beta * g * x_sol[j, idx_bx[t]]
+            for t in range(m_by):
+                p = p_by[t]
+                q = q_by[t]
+                g = -q * xi ** p * yi ** (q - 1)
+                pred_by += beta * g * x_sol[j, idx_by[t]]
+        res_bx = bx[i] - pred_bx
+        res_by = by[i] - pred_by
+        sumsq_res_bx += res_bx * res_bx
+        sumsq_res_by += res_by * res_by
+        sumsq_bx += bx[i] * bx[i]
+        sumsq_by += by[i] * by[i]
+    return sumsq_res_bx, sumsq_res_by, sumsq_bx, sumsq_by
+
+
 def _derivative_into_region(f: BSpline, s: float, eps: float) -> float:
     """
     Evaluate f' just inside s, toward +eps.
 
-    At a region boundary shared with a neighbouring region, f' can be
-    one-sided/discontinuous (e.g. tent's C^0 kinks at each frame boundary),
-    so evaluating exactly at s is ambiguous. Nudging by eps *into* the
+    At a region boundary shared with a neighbouring region, f' is
+    one-sided/discontinuous (tent's C^0 kinks at each frame boundary), so
+    evaluating exactly at s is ambiguous. Nudging by eps *into* the
     region being reconstructed picks the correct one-sided slope for that
     region specifically, rather than blending it with the neighbouring
     region's (generally different) slope on the far side.
@@ -126,8 +236,8 @@ class TubeFitter:
         Number of Hermite regions is ``n_frames - 1``. Mutually exclusive with
         ``residual_tol`` (specifying both raises ``ValueError``). If neither
         is given, defaults to ``DEFAULT_N_FRAMES`` (clamped to the valid
-        ``[basis_order + 1, dof_ceiling]`` range) -- a reasonable middle
-        ground, not tuned to any particular fit-quality target.
+        ``[2, dof_ceiling]`` range) -- a reasonable middle ground, not tuned
+        to any particular fit-quality target.
     residual_tol :
         If given (and ``n_frames`` is not), search for the smallest
         ``n_frames`` whose worst-case relative tube-fit residual (Bskew/Bnorm,
@@ -150,9 +260,6 @@ class TubeFitter:
         Scale factor applied to X, Y, Z index levels to convert to metres.
     deg :
         Maximum transverse derivative order (multipole order minus one).
-    kernel :
-        Longitudinal B-spline basis: ``"tent"``, ``"quadratic"``, or
-        ``"cubic"`` (default ``"tent"``). See **Kernel choice** below.
     tube_radius :
         If set, only use data points with sqrt(x^2 + y^2) <= tube_radius [m].
     fit_skew :
@@ -181,23 +288,10 @@ class TubeFitter:
         ``check_trace_consistency()`` for diagnostics of how well that
         holds on a given dataset.
 
-    Kernel choice
-    -------------
-    ``"tent"`` (default):
-        Narrowest basis, 2 frames wide, C^0 (derivative discontinuous at
-        frames -- ``_derivative_into_region`` picks the correct one-sided
-        slope for each region rather than blending across the kink). Best
-        preserves sharp features, minimal implicit coupling between
-        neighbouring frames.
-    ``"quadratic"``:
-        3 frames wide, C^1 continuous. Narrower than cubic so finer features
-        survive, but derivatives are continuous so no one-sided handling is
-        needed. Middle ground between ``"tent"`` and ``"cubic"``.
-    ``"cubic"``:
-        4 frames wide, C^2 continuous. Smoothest output and highest
-        approximation order for smooth data (``O(h^4)`` vs tent's
-        ``O(h^2)``), at the cost of more implicit smoothing/coupling between
-        neighbouring frames -- can blur genuinely sharp features.
+    The longitudinal basis is a fixed tent (hat-function) B-spline: degree
+    1, 2 frames wide, C^0 (derivative discontinuous at frames --
+    ``_derivative_into_region`` picks the correct one-sided slope for each
+    region rather than blending across the kink).
     """
 
     def __init__(
@@ -206,7 +300,6 @@ class TubeFitter:
         n_frames: int | None = None,
         distance_unit: float = 1e-3,
         deg: int = 2,
-        kernel: str = "tent",
         tube_radius: float | None = None,
         fit_skew: bool = True,
         y_symmetry: bool = False,
@@ -219,12 +312,6 @@ class TubeFitter:
                 "n_frames for a fixed frame count, or residual_tol to search "
                 "for the smallest n_frames that meets it, not both."
             )
-        if kernel not in KERNEL_TO_DEGREE:
-            valid = ", ".join(sorted(KERNEL_TO_DEGREE))
-            raise ValueError(f"kernel must be one of {{{valid}}}, got {kernel!r}")
-
-        self.kernel = kernel
-        self.basis_order = KERNEL_TO_DEGREE[kernel]
 
         self.distance_unit = float(distance_unit)
         self.deg = int(deg)
@@ -252,6 +339,10 @@ class TubeFitter:
         self.df_on_axis_fit: pd.DataFrame | None = None
         self.df_fit_pars: pd.DataFrame | None = None
         self.n_frames_search_trace: dict[int, tuple[float, float]] | None = None
+        # Set by _search_n_frames (via _adopt_trial_system) when residual_tol
+        # is given -- lets the first _build_linear_system() call adopt the
+        # winning trial's already-built system instead of recomputing it.
+        self._cached_system: tuple | None = None
 
         self._set_raw_data(raw_data)
 
@@ -260,9 +351,8 @@ class TubeFitter:
         elif residual_tol is not None:
             resolved_n_frames = self._search_n_frames(float(residual_tol))
         else:
-            n_min = self.basis_order + 1
             n_max = self._dof_ceiling()
-            resolved_n_frames = int(np.clip(DEFAULT_N_FRAMES, n_min, n_max))
+            resolved_n_frames = int(np.clip(DEFAULT_N_FRAMES, 2, n_max))
             print(
                 f"[TubeFitter] Neither n_frames nor residual_tol given -- "
                 f"defaulting to n_frames={resolved_n_frames}."
@@ -270,11 +360,6 @@ class TubeFitter:
 
         if resolved_n_frames < 2:
             raise ValueError("n_frames must be at least 2")
-        if resolved_n_frames < self.basis_order + 1:
-            raise ValueError(
-                f"n_frames ({resolved_n_frames}) must be >= basis_order + 1 "
-                f"({self.basis_order + 1}) for kernel={kernel!r}"
-            )
         self.n_frames = resolved_n_frames
 
     def fit(self) -> None:
@@ -528,20 +613,70 @@ class TubeFitter:
     # n_frames selection (residual_tol search)
     # ------------------------------------------------------------------
 
+    def _filtered_z_values(self) -> np.ndarray:
+        """Sorted unique z-values actually available to the tube fit -- i.e.
+        after applying ``tube_radius`` (if set), same filter
+        ``_build_linear_system`` applies. Falls back to ``self.s_full``
+        (already sorted+unique) when there's no tube_radius to filter by."""
+        assert self.df_raw_data is not None
+        if self.tube_radius is None:
+            assert self.s_full is not None
+            return self.s_full
+        idx = self.df_raw_data.index
+        x = idx.get_level_values("X").to_numpy(dtype=float)
+        y = idx.get_level_values("Y").to_numpy(dtype=float)
+        z = idx.get_level_values("Z").to_numpy(dtype=float)
+        mask = (x * x + y * y) <= self.tube_radius ** 2
+        return np.unique(z[mask])
+
+    def _filtered_n_pts_and_n_z(self) -> tuple[int, int]:
+        """(n_pts, n_unique_z) actually available to the tube fit -- i.e.
+        after applying ``tube_radius``, if set, same as ``_build_linear_system``
+        does. ``_dof_ceiling``/``_z_resolution_ceiling`` need to bound
+        n_frames against what the fit will really see, not the full
+        (unfiltered) raw_data row count -- a tight tube_radius can drop
+        both the point count and, in principle, whole z-slices entirely."""
+        assert self.df_raw_data is not None
+        idx = self.df_raw_data.index
+        if self.tube_radius is None:
+            return len(idx), int(idx.get_level_values("Z").nunique())
+        x = idx.get_level_values("X").to_numpy(dtype=float)
+        y = idx.get_level_values("Y").to_numpy(dtype=float)
+        z = idx.get_level_values("Z").to_numpy(dtype=float)
+        mask = (x * x + y * y) <= self.tube_radius ** 2
+        return int(mask.sum()), int(np.unique(z[mask]).size)
+
     def _dof_ceiling(self) -> int:
         """
-        Max usable n_frames: the tube system has 2*n_pts equations (Bx, By at
-        every grid point) and n_frames*n_pq unknowns (n_pq = size of the
-        (p, q) basis). Beyond this the system is underdetermined regardless
-        of how much z data exists.
+        Max usable n_frames: limited by both (a) the tube system's degrees
+        of freedom -- 2*n_pts equations (Bx, By at every grid point) vs
+        n_frames*n_pq unknowns -- and (b) the data's own z resolution (see
+        ``_z_resolution_ceiling``). Beyond either, the system is
+        underdetermined -- or a normal-equations block goes singular --
+        regardless of how much data exists overall.
         """
-        assert self.df_raw_data is not None
-        n_eq = 2 * len(self.df_raw_data)
-        return n_eq // len(self.pq_pairs)
+        n_pts, _ = self._filtered_n_pts_and_n_z()
+        eq_ceiling = (2 * n_pts) // len(self.pq_pairs)
+        return min(eq_ceiling, self._z_resolution_ceiling())
 
-    def _trial_relative_residual(self, n_frames: int) -> tuple[float, float]:
+    def _z_resolution_ceiling(self) -> int:
+        """
+        Max usable n_frames set by the data's own z resolution: beyond the
+        number of distinct z-slices actually available (post-tube_radius),
+        frames sit closer together than the data itself is sampled,
+        guaranteeing some frame's normal-equations block goes entirely
+        unconstrained (tent's local support means a raw-data row only ever
+        contributes to the elementary interval its z falls in).
+        """
+        _, n_z = self._filtered_n_pts_and_n_z()
+        return n_z
+
+    def _trial_relative_residual(self, n_frames: int) -> tuple[float, float, "TubeFitter"]:
         """Fit a throwaway TubeFitter at n_frames, return its (Bskew, Bnorm)
-        relative tube-fit residuals."""
+        relative tube-fit residuals plus the fitted trial itself -- so the
+        winning trial's expensive work (``_build_linear_system``) can be
+        adopted by ``_search_n_frames`` instead of being thrown away and
+        redone by the caller's subsequent explicit ``fit()`` call."""
         assert self.df_raw_data is not None
         with contextlib.redirect_stdout(io.StringIO()):
             trial = TubeFitter(
@@ -549,7 +684,6 @@ class TubeFitter:
                 n_frames=n_frames,
                 distance_unit=1.0,
                 deg=self.deg,
-                kernel=self.kernel,
                 tube_radius=self.tube_radius,
                 fit_skew=self.fit_skew,
                 y_symmetry=self.y_symmetry,
@@ -563,7 +697,7 @@ class TubeFitter:
             rms = trial.tube_fit_residual_rms[field]
             field_rms = float(np.sqrt(np.mean(b[rows] ** 2)))
             rels[field] = rms / field_rms if field_rms > 0 else 0.0
-        return rels["Bskew"], rels["Bnorm"]
+        return rels["Bskew"], rels["Bnorm"], trial
 
     def _search_n_frames(self, residual_tol: float) -> int:
         """
@@ -572,15 +706,34 @@ class TubeFitter:
         examples/splineboris/003d_tube_fitter_nframes_scan.py, folded in here).
         Records every evaluated point in ``self.n_frames_search_trace``.
         """
-        n_min = self.basis_order + 1
+        n_min = 2
         n_max = self._dof_ceiling()
         cache: dict[int, tuple[float, float]] = {}
+        # Retains only the single smallest-n-so-far trial that still could
+        # end up being the answer -- NOT a dict keyed by every evaluated n.
+        # The search can probe ~15-20 different n_frames before converging,
+        # and each trial retains O(n_pts) arrays (the design matrix, x/y,
+        # b_vec) for the *full* dataset -- holding all of them alive at once
+        # is what caused the ~20GB+ OOM kills fixed here, since every other
+        # trial's system is genuinely never needed again once a smaller
+        # passing n_frames is found (bisection's hi only ever shrinks).
+        best_trial: tuple[int, "TubeFitter"] | None = None
 
         def meets(n: int) -> bool:
+            nonlocal best_trial
             if n not in cache:
-                cache[n] = self._trial_relative_residual(n)
-                rel_bskew, rel_bnorm = cache[n]
+                rel_bskew, rel_bnorm, trial = self._trial_relative_residual(n)
+                cache[n] = (rel_bskew, rel_bnorm)
                 print(f"[TubeFitter]   n_frames={n:5d}  Bskew={rel_bskew * 100:6.2f}%  Bnorm={rel_bnorm * 100:6.2f}%")
+                passes = max(cache[n]) <= residual_tol
+                if passes and (best_trial is None or n < best_trial[0]):
+                    best_trial = (n, trial)
+                elif n == n_max and not passes:
+                    # Special case: about to fall back to n_max anyway (see
+                    # below) despite it not meeting the tolerance -- keep it
+                    # so that fallback can still adopt it.
+                    best_trial = (n, trial)
+                return passes
             return max(cache[n]) <= residual_tol
 
         print(
@@ -596,6 +749,8 @@ class TubeFitter:
                 f"n_frames={n_max} (the best achievable)."
             )
             self.plot_n_frames_search(target=residual_tol, selected=n_max)
+            assert best_trial is not None
+            self._adopt_trial_system(best_trial[1])
             return n_max
 
         lo, hi = n_min, n_max
@@ -615,7 +770,23 @@ class TubeFitter:
         self.n_frames_search_trace = dict(cache)
         print(f"[TubeFitter] Selected n_frames={hi} (relative residual={max(cache[hi]) * 100:.3f}%)")
         self.plot_n_frames_search(target=residual_tol, selected=hi)
+        assert best_trial is not None and best_trial[0] == hi
+        self._adopt_trial_system(best_trial[1])
         return hi
+
+    def _adopt_trial_system(self, trial: "TubeFitter") -> None:
+        """Stash the winning search trial's already-built (expensive) block-
+        tridiagonal system, so the subsequent (always-required) explicit
+        ``fit()`` call can adopt it in ``_build_linear_system`` instead of
+        redoing that ~O(n_pts) accumulation pass from scratch. Everything
+        downstream of it in ``fit()`` (the solve, Hermite conversion,
+        to_fit flags, ...) is cheap and still runs normally, so it keeps
+        printing its usual diagnostics."""
+        self._cached_system = (
+            trial._D, trial._E, trial._r,
+            trial._residual_design, trial._residual_xy, trial._residual_pq,
+            trial._b_vec, trial._n_bx_by_rows,
+        )
 
     def plot_n_frames_search(self, target: float | None = None, selected: int | None = None) -> None:
         """
@@ -667,7 +838,7 @@ class TubeFitter:
         """On-axis multipole series b_m or a_m evaluated from ``Psi`` at all ``s_full``."""
         assert self.knots is not None and self.Psi is not None and self.s_full is not None
         assert self.pq_to_idx is not None
-        k = self.basis_order
+        k = 1
         if field == "By":
             if (der, 1) not in self.pq_to_idx:
                 return None
@@ -695,31 +866,65 @@ class TubeFitter:
         z_min, z_max = float(self.s_full[0]), float(self.s_full[-1])
         self.frames = np.linspace(z_min, z_max, self.n_frames)
         self.n_regions = self.n_frames - 1
-        k = self.basis_order
-        # Clamped knots for n_frames B-spline coefficients: len(t) = n_frames + k + 1,
-        # with (k+1) repeats at each end and (n_frames - k - 1) interior knots.
-        # For k=1 (tent) this reduces to each endpoint repeated once more than
-        # self.frames already provides -- interior knots coincide with frames.
-        if self.n_frames > k + 1:
-            interior = np.linspace(z_min, z_max, self.n_frames - k + 1)[1:-1]
-        else:
-            interior = np.array([], dtype=float)
-        self.knots = np.r_[
-            np.full(k + 1, z_min),
-            interior,
-            np.full(k + 1, z_max),
-        ]
-        if len(self.knots) != self.n_frames + k + 1:
+        # Clamped knots for n_frames tent (degree-1) B-spline coefficients:
+        # 2 repeats at each end, interior knots coinciding with the frames
+        # themselves -- i.e. just the endpoints repeated once more than
+        # self.frames already provides.
+        self.knots = np.r_[z_min, self.frames, z_max]
+        if len(self.knots) != self.n_frames + 2:
             raise RuntimeError(
                 f"Unexpected knot vector length {len(self.knots)}, "
-                f"expected {self.n_frames + k + 1}"
+                f"expected {self.n_frames + 2}"
             )
+        self._check_frame_z_resolution()
+
+    def _check_frame_z_resolution(self) -> None:
+        """
+        Fail fast, before the expensive assembly + block-tridiagonal solve,
+        if ``n_frames`` puts frames closer together than the data's own z
+        resolution can support. Each raw-data row only ever contributes to
+        the elementary interval ``[frames[k], frames[k+1])`` its z falls in
+        (tent's local support), so a frame whose neighbouring interval(s) are
+        completely empty of data z-slices gets an all-zero normal-equations
+        block -- exactly the singular-block failure ``_solve_block_tridiagonal``
+        raises, just caught here immediately instead of after building the
+        full system. (Necessary, not sufficient: a nonempty interval can
+        still leave a block singular if its transverse x/y spread doesn't
+        constrain every (p, q) term -- this only catches the "no data at
+        all" case.)
+        """
+        assert self.frames is not None
+        z_filtered = self._filtered_z_values()
+        bin_idx = np.searchsorted(self.frames, z_filtered, side="right") - 1
+        bin_idx = np.clip(bin_idx, 0, self.n_frames - 2)
+        counts = np.bincount(bin_idx, minlength=self.n_frames - 1)
+        empty = np.flatnonzero(counts == 0)
+        if len(empty) == 0:
+            return
+        k = int(empty[0])
+        raise RuntimeError(
+            f"n_frames={self.n_frames} puts frames closer together than the "
+            f"data's z resolution supports: interval [{self.frames[k]:.6g}, "
+            f"{self.frames[k + 1]:.6g}] (and {len(empty) - 1} others) "
+            f"contain no raw-data z-slices at all -- try n_frames <= "
+            f"{self._z_resolution_ceiling()} (the number of distinct "
+            f"z-slices in the data)."
+        )
 
     # ------------------------------------------------------------------
     # Tube fit (Bx, By)
     # ------------------------------------------------------------------
 
     def _build_linear_system(self) -> None:
+        if self._cached_system is not None:
+            (
+                self._D, self._E, self._r,
+                self._residual_design, self._residual_xy, self._residual_pq,
+                self._b_vec, self._n_bx_by_rows,
+            ) = self._cached_system
+            self._cached_system = None
+            return
+
         assert self.df_raw_data is not None
         assert self.knots is not None
         assert self.pq_pairs is not None
@@ -738,103 +943,125 @@ class TubeFitter:
 
         n_pts = len(x)
         n_pq = len(self.pq_pairs)
-        k = self.basis_order
+        k = 1
 
-        n_cols = self.n_frames * n_pq
-        n_rows = 2 * n_pts
-
-        b_vec = np.empty(n_rows, dtype=float)
+        b_vec = np.empty(2 * n_pts, dtype=float)
         b_vec[0::2] = bx
         b_vec[1::2] = by
 
-        # x_pow[m], y_pow[m] hold x**m, y**m per point, for m = 0..self.M.
-        x_pow = np.empty((self.M + 1, n_pts), dtype=float)
-        y_pow = np.empty((self.M + 1, n_pts), dtype=float)
-        x_pow[0] = 1.0
-        y_pow[0] = 1.0
-        for m in range(1, self.M + 1):
-            x_pow[m] = x_pow[m - 1] * x
-            y_pow[m] = y_pow[m - 1] * y
+        # Sparse (point, active z-basis-function) structure, one call for the
+        # whole z array. CSR gives indptr/indices/data directly -- no
+        # assumption about how many nonzeros each row has. This is the only
+        # matrix built here: O(n_pts) nonzeros (<=2 active frames per point),
+        # not O(n_pts * n_pq) -- unlike the old global design matrix, its size
+        # doesn't grow with n_frames or n_pq.
+        design = BSpline.design_matrix(z, self.knots, k).tocsr()
 
-        # One call for every point instead of one call per point: returns the
-        # sparse (point, active z-basis-function) structure directly, with no
-        # assumption about how many nonzeros each row has.
-        design = BSpline.design_matrix(z, self.knots, k).tocoo()
-        pt_idx = design.row
-        basis_idx = design.col
-        beta_vals = design.data
-
-        p_arr = np.array([p for p, _ in self.pq_pairs])
-        q_arr = np.array([q for _, q in self.pq_pairs])
-        pq_idx_arr = np.arange(n_pq)
-
-        rows_parts = []
-        cols_parts = []
-        data_parts = []
+        p_arr = np.array([p for p, _ in self.pq_pairs], dtype=np.int32)
+        q_arr = np.array([q for _, q in self.pq_pairs], dtype=np.int32)
+        pq_idx_arr = np.arange(n_pq, dtype=np.int32)
 
         # Bx row: only (p, q) pairs with p > 0 contribute.
         bx_mask = p_arr > 0
         p_bx, q_bx, idx_bx = p_arr[bx_mask], q_arr[bx_mask], pq_idx_arr[bx_mask]
-        m_bx = len(p_bx)
-        if m_bx > 0:
-            pt_rep = np.repeat(pt_idx, m_bx)
-            basis_rep = np.repeat(basis_idx, m_bx)
-            beta_rep = np.repeat(beta_vals, m_bx)
-            p_tile = np.tile(p_bx, len(pt_idx))
-            q_tile = np.tile(q_bx, len(pt_idx))
-            idx_tile = np.tile(idx_bx, len(pt_idx))
-
-            rows_parts.append(2 * pt_rep)
-            cols_parts.append(basis_rep * n_pq + idx_tile)
-            data_parts.append(
-                -p_tile * x_pow[p_tile - 1, pt_rep] * y_pow[q_tile, pt_rep] * beta_rep
-            )
-
         # By row: only (p, q) pairs with q > 0 contribute.
         by_mask = q_arr > 0
         p_by, q_by, idx_by = p_arr[by_mask], q_arr[by_mask], pq_idx_arr[by_mask]
-        m_by = len(p_by)
-        if m_by > 0:
-            pt_rep = np.repeat(pt_idx, m_by)
-            basis_rep = np.repeat(basis_idx, m_by)
-            beta_rep = np.repeat(beta_vals, m_by)
-            p_tile = np.tile(p_by, len(pt_idx))
-            q_tile = np.tile(q_by, len(pt_idx))
-            idx_tile = np.tile(idx_by, len(pt_idx))
 
-            rows_parts.append(2 * pt_rep + 1)
-            cols_parts.append(basis_rep * n_pq + idx_tile)
-            data_parts.append(
-                -q_tile * x_pow[p_tile, pt_rep] * y_pow[q_tile - 1, pt_rep] * beta_rep
-            )
+        # Block-tridiagonal normal-equations accumulators, scatter-added to
+        # directly from the raw points (see _accumulate_block_tridiagonal) --
+        # no global A matrix (of size O(n_pts * n_pq)) ever gets built.
+        D = np.zeros((self.n_frames, n_pq, n_pq), dtype=float)
+        E = np.zeros((self.n_frames - 1, n_pq, n_pq), dtype=float)
+        r = np.zeros((self.n_frames, n_pq), dtype=float)
+        _accumulate_block_tridiagonal(
+            design.indptr, design.indices, design.data, x, y, bx, by,
+            p_bx, q_bx, idx_bx, p_by, q_by, idx_by,
+            D, E, r,
+        )
 
-        rows = np.concatenate(rows_parts)
-        cols = np.concatenate(cols_parts)
-        data = np.concatenate(data_parts)
-        A = coo_matrix((data, (rows, cols)), shape=(n_rows, n_cols))
-
-        self._A_csr = A.tocsr()
+        self._D = D
+        self._E = E
+        self._r = r
         self._b_vec = b_vec
         self._n_bx_by_rows = 2 * n_pts
+        # Retained for _report_tube_fit_residual's second pass (direct
+        # per-point evaluation of the fitted field, no A matrix needed there
+        # either) -- all O(n_pts) or smaller, not O(n_pts * n_pq).
+        self._residual_design = (design.indptr, design.indices, design.data)
+        self._residual_xy = (x, y)
+        self._residual_pq = (p_bx, q_bx, idx_bx, p_by, q_by, idx_by)
 
     def _solve(self) -> None:
-        result = lsmr(
-            self._A_csr,
-            self._b_vec,
-            atol=1e-10,
-            btol=1e-10,
-            maxiter=10000,
-        )
-        x_sol = result[0]
         n_pq = len(self.pq_pairs)
-        flat = x_sol.reshape(self.n_frames, n_pq)
+
+        x_sol = self._solve_block_tridiagonal(self._D, self._E, self._r).reshape(-1)
+
         self.Psi = np.zeros((self.n_frames, self.M + 1, self.M + 1), dtype=float)
+        flat = x_sol.reshape(self.n_frames, n_pq)
         for pq_idx, (p, q) in enumerate(self.pq_pairs):
             self.Psi[:, p, q] = flat[:, pq_idx]
 
-        self._report_tube_fit_residual(x_sol)
+        self._report_tube_fit_residual(flat)
 
-    def _report_tube_fit_residual(self, x_sol: np.ndarray) -> None:
+    def _solve_block_tridiagonal(
+        self, D: np.ndarray, E: np.ndarray, r: np.ndarray
+    ) -> np.ndarray:
+        """Block Thomas algorithm for a symmetric block-tridiagonal system:
+        diagonal blocks ``D[j]``, super-diagonal blocks ``E[j]`` (coupling
+        frame ``j`` to ``j + 1``; sub-diagonal is ``E[j].T`` by symmetry of
+        ``A^T A``), right-hand-side blocks ``r[j]``. Returns the solution as
+        an ``(n_frames, n_pq)`` array.
+
+        A singular diagonal block means the data local to that frame doesn't
+        constrain all its (p, q) parameters -- raised as an error rather than
+        patched with regularization, so it surfaces as an actionable
+        "increase data density / lower n_frames here" signal.
+        """
+        n_frames = D.shape[0]
+        Dp = D.copy()
+        rp = r.copy()
+        for j in range(1, n_frames):
+            try:
+                L = np.linalg.solve(Dp[j - 1], E[j - 1]).T
+            except np.linalg.LinAlgError as exc:
+                z_lo, z_hi = self.frames[j - 1], self.frames[j]
+                raise RuntimeError(
+                    f"Tube fit normal-equations block for frame {j - 1} "
+                    f"(z in [{z_lo:.6g}, {z_hi:.6g}]) is singular -- the "
+                    f"data local to this frame doesn't constrain all "
+                    f"(p, q) parameters. Try a smaller n_frames or a wider "
+                    f"tube_radius."
+                ) from exc
+            Dp[j] = D[j] - L @ E[j - 1]
+            rp[j] = r[j] - L @ rp[j - 1]
+
+        x = np.empty_like(r)
+        try:
+            x[-1] = np.linalg.solve(Dp[-1], rp[-1])
+        except np.linalg.LinAlgError as exc:
+            z_lo, z_hi = self.frames[-2], self.frames[-1]
+            raise RuntimeError(
+                f"Tube fit normal-equations block for frame {n_frames - 1} "
+                f"(z in [{z_lo:.6g}, {z_hi:.6g}]) is singular -- the data "
+                f"local to this frame doesn't constrain all (p, q) "
+                f"parameters. Try a smaller n_frames or a wider tube_radius."
+            ) from exc
+        for j in range(n_frames - 2, -1, -1):
+            try:
+                x[j] = np.linalg.solve(Dp[j], rp[j] - E[j] @ x[j + 1])
+            except np.linalg.LinAlgError as exc:
+                z_lo, z_hi = self.frames[max(j - 1, 0)], self.frames[j]
+                raise RuntimeError(
+                    f"Tube fit normal-equations block for frame {j} "
+                    f"(z in [{z_lo:.6g}, {z_hi:.6g}]) is singular -- the "
+                    f"data local to this frame doesn't constrain all "
+                    f"(p, q) parameters. Try a smaller n_frames or a wider "
+                    f"tube_radius."
+                ) from exc
+        return x
+
+    def _report_tube_fit_residual(self, x_sol_flat: np.ndarray) -> None:
         """
         Report the residual of the tube linear system against the raw Bx/By
         values it was regressed against (der=0). Higher-order multipoles
@@ -843,16 +1070,31 @@ class TubeFitter:
         FieldFitter's per-field der=0 transverse-fit residual. (Bs is fit
         completely separately -- see ``_fit_bs`` -- so it has no residual
         here.)
+
+        ``x_sol_flat`` is ``(n_frames, n_pq)`` -- evaluated directly at every
+        raw point via ``_accumulate_residual_sumsq`` (same direct-evaluation
+        approach ``_build_linear_system`` uses to avoid ever building a
+        global ``A`` matrix), rather than a stored-matrix matvec.
         """
-        residual = self._b_vec - self._A_csr @ x_sol
-        n_bxby = self._n_bx_by_rows
+        pt_ptr, basis_idx, beta_vals = self._residual_design
+        x, y = self._residual_xy
+        p_bx, q_bx, idx_bx, p_by, q_by, idx_by = self._residual_pq
+        bx = self._b_vec[0::2]
+        by = self._b_vec[1::2]
+
+        sumsq_res_bx, sumsq_res_by, sumsq_bx, sumsq_by = _accumulate_residual_sumsq(
+            pt_ptr, basis_idx, beta_vals, x, y, bx, by,
+            p_bx, q_bx, idx_bx, p_by, q_by, idx_by,
+            x_sol_flat,
+        )
+
+        n_pts = len(bx)
         self.tube_fit_residual_rms = {}
-        # Bx/By rows alternate Bx (even), By (odd); see _build_linear_system.
-        for field, rows in (("Bskew", slice(0, n_bxby, 2)), ("Bnorm", slice(1, n_bxby, 2))):
-            res = residual[rows]
-            sig = self._b_vec[rows]
-            rms = float(np.sqrt(np.mean(res ** 2)))
-            field_rms = float(np.sqrt(np.mean(sig ** 2)))
+        for field, sumsq_res, sumsq_sig in (
+            ("Bskew", sumsq_res_bx, sumsq_bx), ("Bnorm", sumsq_res_by, sumsq_by),
+        ):
+            rms = float(np.sqrt(sumsq_res / n_pts))
+            field_rms = float(np.sqrt(sumsq_sig / n_pts))
             rel = rms / field_rms if field_rms > 0 else 0.0
             self.tube_fit_residual_rms[field] = rms
             print(f"[TubeFitter] {field} tube fit residual (der=0): "
@@ -864,7 +1106,7 @@ class TubeFitter:
         assert self.df_on_axis_raw is not None
 
         bs_on_axis = self.df_on_axis_raw[("Bs", 0)].to_numpy(dtype=float)
-        k = self.basis_order
+        k = 1
         n_pts = len(self.s_full)
         n_cols = self.n_frames
 
@@ -911,7 +1153,7 @@ class TubeFitter:
         if self.Psi_bs is None:
             self._fit_bs()
 
-        k = self.basis_order
+        k = 1
         psi_02 = BSpline(self.knots, self.Psi[:, 0, 2], k)(self.frames)
         psi_20 = BSpline(self.knots, self.Psi[:, 2, 0], k)(self.frames)
         bs_prime = BSpline(self.knots, self.Psi_bs, k).derivative(1)(self.frames)
@@ -940,7 +1182,7 @@ class TubeFitter:
         assert self.frames is not None
         assert self.knots is not None
 
-        k = self.basis_order
+        k = 1
         assert self.Psi_bs is not None
         f_bs = BSpline(self.knots, self.Psi_bs, k)
 
@@ -1096,7 +1338,7 @@ class TubeFitter:
         assert self.s_full is not None
         assert self.df_on_axis_fit is not None
 
-        k = self.basis_order
+        k = 1
         n_z = len(self.s_full)
         for der in range(self.deg + 1):
             if self.component_to_fit.get(("Bnorm", der), False):
@@ -1235,7 +1477,7 @@ class TubeFitter:
         plt.show()
 
 
-def _constant_dipole_sign_check(kernel: str) -> None:
+def _constant_dipole_sign_check() -> None:
     """Verify Bnorm der=0 endpoints match a uniform By = B0 field."""
     B0 = 0.5
     xs = np.linspace(-0.002, 0.002, 3)
@@ -1253,7 +1495,7 @@ def _constant_dipole_sign_check(kernel: str) -> None:
         }
     ).set_index(["X", "Y", "Z"])
 
-    fitter = TubeFitter(df, n_frames=8, distance_unit=1.0, deg=2, kernel=kernel)
+    fitter = TubeFitter(df, n_frames=8, distance_unit=1.0, deg=2)
     fitter.fit()
 
     sub = fitter.df_fit_pars.loc[("Bnorm", 0)].reset_index()
@@ -1261,18 +1503,17 @@ def _constant_dipole_sign_check(kernel: str) -> None:
     c3 = sub.loc[sub["param_index"] == 2, "param_value"].iloc[0]
     if not (np.isclose(c1, B0, rtol=1e-2) and np.isclose(c3, B0, rtol=1e-2)):
         raise AssertionError(
-            f"Constant dipole sign check failed (kernel={kernel!r}): "
+            f"Constant dipole sign check failed: "
             f"expected val_start/val_end ~ {B0}, got c1={c1}, c3={c3}"
         )
     print(
-        f"Constant dipole sign check passed (kernel={kernel}): "
+        f"Constant dipole sign check passed: "
         f"Bnorm_0 val_start={c1:.6f}, val_end={c3:.6f} (B0={B0})"
     )
 
 
 if __name__ == "__main__":
-    for kernel in KERNEL_TO_DEGREE:
-        _constant_dipole_sign_check(kernel)
+    _constant_dipole_sign_check()
 
     dz = 0.001
     file_path = Path(__file__).resolve().parents[2] / "test_data" / "sls" / "simona_field_map.txt"
@@ -1285,20 +1526,18 @@ if __name__ == "__main__":
     ).set_index(["X", "Y", "Z"])
 
     deg = 2
-    for kernel in ("tent", "quadratic", "cubic"):
-        fitter = TubeFitter(
-            raw_data=df_raw,
-            n_frames=550,
-            distance_unit=dz,
-            deg=deg,
-            kernel=kernel,
-            tube_radius=0.001,
-        )
-        print(f"\n=== Fitting with kernel={kernel} ===")
-        fitter.fit()
-        print(
-            f"Fit complete: {fitter.n_regions} regions, "
-            f"{len(fitter.pq_pairs)} (p,q) pairs per frame"
-        )
-        for der in range(deg + 1):
-            fitter.plot_fields(der=der)
+    fitter = TubeFitter(
+        raw_data=df_raw,
+        n_frames=550,
+        distance_unit=dz,
+        deg=deg,
+        tube_radius=0.001,
+    )
+    print("\n=== Fitting ===")
+    fitter.fit()
+    print(
+        f"Fit complete: {fitter.n_regions} regions, "
+        f"{len(fitter.pq_pairs)} (p,q) pairs per frame"
+    )
+    for der in range(deg + 1):
+        fitter.plot_fields(der=der)

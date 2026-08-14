@@ -149,7 +149,7 @@ line_splineboris = seq.to_line()
 line_splineboris.config.XTRACK_MULTIPOLE_NO_SYNRAD = False  # enable spin tracking
 line_splineboris.build_tracker()
 
-# --- TubeFitter (tent kernel, to start -- see 006b for a kernel comparison) ---
+# --- TubeFitter ---
 # n_frames=2000 matches the validated tests/test_splineboris.py fixture for
 # this exact field map (interval=30, dx=dy=1mm, multipole_order=2).
 tube_fitter = TubeFitter(
@@ -157,7 +157,6 @@ tube_fitter = TubeFitter(
     n_frames=2000,
     distance_unit=1,
     deg=multipole_order - 1,
-    kernel="tent",
     field_tol=1e-4,
 )
 tube_fitter.fit()
@@ -235,7 +234,7 @@ for i in range(n_part):
     print(f"--- particle {i} (delta={delta[i]}) ---")
     for label, mon in (
         ("SplineBoris (FieldFitter)", mon_splineboris),
-        (f"TubeFitter ({tube_fitter.kernel})", mon_tubefitter),
+        ("TubeFitter", mon_tubefitter),
         ("VariableSolenoid", mon_varsol),
     ):
         x_i = np.interp(s_ref, mon.s[i, :], mon.x[i, :])

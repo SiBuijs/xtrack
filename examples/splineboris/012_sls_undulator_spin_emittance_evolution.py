@@ -166,7 +166,6 @@ def _fit_undulator():
         distance_unit=1e-3,
         deg=MULTIPOLE_ORDER - 1,
         field_tol=1e-3,
-        kernel="tent",
     )
     fitter.fit()
     return fitter

@@ -527,7 +527,7 @@ def test_tubefitter_to_multipole_line_matches_mean_field():
         "Bx": bx.ravel(), "By": by.ravel(), "Bs": np.zeros(xg.size),
     }).set_index(["X", "Y", "Z"])
 
-    fitter = TubeFitter(df_raw_data, n_frames=6, distance_unit=1.0, deg=1, kernel="tent")
+    fitter = TubeFitter(df_raw_data, n_frames=6, distance_unit=1.0, deg=1)
     fitter.fit()
 
     p0c = 2.7e9
@@ -563,7 +563,7 @@ def test_tubefitter_to_multipole_line_drops_bs_with_warning(capsys):
         "Bx": np.zeros(xg.size), "By": np.full(xg.size, 0.5), "Bs": np.full(xg.size, 0.3),
     }).set_index(["X", "Y", "Z"])
 
-    fitter = TubeFitter(df_raw_data, n_frames=6, distance_unit=1.0, deg=1, kernel="tent")
+    fitter = TubeFitter(df_raw_data, n_frames=6, distance_unit=1.0, deg=1)
     fitter.fit()
     assert fitter.component_to_fit.get(("Bs", 0)) is True
 

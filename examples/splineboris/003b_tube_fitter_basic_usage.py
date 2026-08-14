@@ -33,31 +33,35 @@ df_raw_data = pd.read_csv(
     dtype=float,
 ).set_index(["X", "Y", "Z"])
 
-deg = 2
+deg = 4
 
-n_frames = 100
+n_frames = 1000
 
 # Below, you can either choose n_frames or residual_tol
 # If you choose n_frames, the fitter will simply use that number of frames.
 # If you choose residual_tol, the fitter will search for the smallest number of frames
 # that meets the specified residual tolerance.
-# Typically, residual_tol is only computationally tractable for relatively small data sets.
+# Some reference times (depdendent on the machine):
+# 1000 frames takes ~30 seconds, lands at ~0.57% residual
+# residual_tol=1e-3 takes ~ seconds and lands at n_frames=2324
+
+
+import time
+start_time = time.time()
 
 fitter = TubeFitter(
     raw_data=df_raw_data,
-    n_frames=n_frames,
-    #residual_tol=1e-3,
+    #n_frames=n_frames,
+    residual_tol=1e-3,
     distance_unit=dz,
     deg=deg,
     field_tol=1e-3,
     #tube_radius=0.0005,
 )
-
-import time
-start_time = time.time()
 fitter.fit()
+
 end_time = time.time()
-print(f"Time taken: {end_time - start_time} seconds for {n_frames} frames")
+print(f"Time taken: {end_time - start_time} seconds for {fitter.n_frames} frames")
 
 for der in range(0, deg + 1):
     fitter.plot_fields(der=der)

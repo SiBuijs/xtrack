@@ -35,7 +35,6 @@ fitter = TubeFitter(
     distance_unit=0.001,  # dataset uses mm
     n_frames=1701,
     deg=MULTIPOLE_ORDER - 1,
-    kernel='tent',
 )
 fitter.fit()
 
