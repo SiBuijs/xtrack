@@ -26,23 +26,38 @@ dz = 0.001  # Step size in the z (longitudinal) direction for numerical differen
 
 # Convert the field map to a DataFrame. TubeFitter expects columns Bx, By, Bs
 # (FieldFitter uses the equivalent Bskew, Bnorm, Bs naming for the same data).
-file_path = Path(__file__).resolve().parent.parent.parent / "test_data" / "sls" / "undulator_field_map.txt"
+file_path = Path(__file__).resolve().parent.parent.parent / "test_data" / "sls" / "simona_field_map.txt"
 df_raw_data = pd.read_csv(
-    file_path, sep=r"\s+", header=None,
+    file_path, sep="\t", header=None,
     names=["X", "Y", "Z", "Bx", "By", "Bs"],
+    dtype=float,
 ).set_index(["X", "Y", "Z"])
 
 deg = 2
 
+n_frames = 100
+
+# Below, you can either choose n_frames or residual_tol
+# If you choose n_frames, the fitter will simply use that number of frames.
+# If you choose residual_tol, the fitter will search for the smallest number of frames
+# that meets the specified residual tolerance.
+# Typically, residual_tol is only computationally tractable for relatively small data sets.
+
 fitter = TubeFitter(
     raw_data=df_raw_data,
-    residual_tol=1e-3,
+    n_frames=n_frames,
+    #residual_tol=1e-3,
     distance_unit=dz,
     deg=deg,
     field_tol=1e-3,
+    #tube_radius=0.0005,
 )
 
+import time
+start_time = time.time()
 fitter.fit()
+end_time = time.time()
+print(f"Time taken: {end_time - start_time} seconds for {n_frames} frames")
 
 for der in range(0, deg + 1):
     fitter.plot_fields(der=der)

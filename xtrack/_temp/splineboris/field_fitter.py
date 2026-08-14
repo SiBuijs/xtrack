@@ -8,7 +8,6 @@ import math
 from scipy.signal import find_peaks
 
 import xtrack as xt
-from xtrack._temp.splineboris.div_b_check import report_raw_div_b
 
 
 class FieldFitter:
@@ -233,8 +232,6 @@ class FieldFitter:
         )
 
         self.s_full = np.sort(self.df_raw_data.index.get_level_values("Z").unique()).astype(float)
-
-        report_raw_div_b(self.df_raw_data, "FieldFitter")
 
         # Check if Bs is much smaller than Bx and By
         # Sets an additional index der = 0.

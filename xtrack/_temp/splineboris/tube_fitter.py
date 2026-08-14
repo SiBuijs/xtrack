@@ -22,9 +22,8 @@ Conventions (h = 0, straight frame, B = -grad Phi):
       Maxwell-consistent by construction, so the tube fit does not need to
       reproduce it or enforce div(B) = 0 itself -- see
       examples/splineboris/claude_notes/tube_schueren_integration.md. Use
-      ``check_trace_consistency()`` / the raw-data ``div(B)`` print (both
-      diagnostics, not corrections) to see how well that assumption holds
-      on a given dataset.
+      ``check_trace_consistency()`` (a diagnostic, not a correction) to see
+      how well that assumption holds on a given dataset.
     - Default symmetry: only (p, q) with odd q; all (p, 0) skew terms if fit_skew=True
 """
 
@@ -40,10 +39,9 @@ import pandas as pd
 import scipy as sc
 import xtrack as xt
 from scipy.interpolate import BSpline
-from scipy.sparse import lil_matrix
+from scipy.sparse import coo_matrix, lil_matrix
 from scipy.sparse.linalg import lsmr
 
-from xtrack._temp.splineboris.div_b_check import report_raw_div_b
 from xtrack.beam_elements.splineboris import Spline4, SplineBoris
 from xtrack.beam_elements.splineboris_src.spline_B_field_eval_python import (
     hermite_to_polynomial,
@@ -180,9 +178,8 @@ class TubeFitter:
         the y^2 term tying transverse curvature to ``Bs'(z)``) from
         (a_n, b_n, b_s) alone, Maxwell-consistent by construction, so
         ``TubeFitter`` itself never needs to enforce div(B) = 0 -- see
-        ``check_trace_consistency()`` and the raw-data div(B) print
-        (``div_b_check.py``) for diagnostics of how well that holds on a
-        given dataset.
+        ``check_trace_consistency()`` for diagnostics of how well that
+        holds on a given dataset.
 
     Kernel choice
     -------------
@@ -516,18 +513,16 @@ class TubeFitter:
         if missing:
             raise ValueError(f"raw_data must have columns {_REQUIRED_COLUMNS}, missing {sorted(missing)}")
 
-        self.df_raw_data = raw_data.copy()
-        idx = self.df_raw_data.index
+        idx = raw_data.index
         if list(idx.names) != list(_INDEX_NAMES):
             raise ValueError(f"raw_data index must be {_INDEX_NAMES}, got {idx.names}")
 
-        self.df_raw_data.index = pd.MultiIndex.from_arrays(
+        scaled_index = pd.MultiIndex.from_arrays(
             [idx.get_level_values(lvl).astype(float) * self.distance_unit for lvl in idx.names],
             names=idx.names,
         )
+        self.df_raw_data = raw_data.set_axis(scaled_index, axis=0)
         self.s_full = np.sort(self.df_raw_data.index.get_level_values("Z").unique()).astype(float)
-
-        report_raw_div_b(self.df_raw_data, "TubeFitter")
 
     # ------------------------------------------------------------------
     # n_frames selection (residual_tol search)
@@ -748,36 +743,75 @@ class TubeFitter:
         n_cols = self.n_frames * n_pq
         n_rows = 2 * n_pts
 
-        A = lil_matrix((n_rows, n_cols), dtype=float)
-        b_vec = np.zeros(n_rows, dtype=float)
+        b_vec = np.empty(n_rows, dtype=float)
+        b_vec[0::2] = bx
+        b_vec[1::2] = by
 
-        x_pow = [np.ones(n_pts, dtype=float)]
-        y_pow = [np.ones(n_pts, dtype=float)]
-        for _ in range(1, self.M + 1):
-            x_pow.append(x_pow[-1] * x)
-            y_pow.append(y_pow[-1] * y)
+        # x_pow[m], y_pow[m] hold x**m, y**m per point, for m = 0..self.M.
+        x_pow = np.empty((self.M + 1, n_pts), dtype=float)
+        y_pow = np.empty((self.M + 1, n_pts), dtype=float)
+        x_pow[0] = 1.0
+        y_pow[0] = 1.0
+        for m in range(1, self.M + 1):
+            x_pow[m] = x_pow[m - 1] * x
+            y_pow[m] = y_pow[m - 1] * y
 
-        def col(j: int, pq_idx: int) -> int:
-            return j * n_pq + pq_idx
+        # One call for every point instead of one call per point: returns the
+        # sparse (point, active z-basis-function) structure directly, with no
+        # assumption about how many nonzeros each row has.
+        design = BSpline.design_matrix(z, self.knots, k).tocoo()
+        pt_idx = design.row
+        basis_idx = design.col
+        beta_vals = design.data
 
-        for i_pt in range(n_pts):
-            row_bx = 2 * i_pt
-            row_by = row_bx + 1
-            b_vec[row_bx] = bx[i_pt]
-            b_vec[row_by] = by[i_pt]
+        p_arr = np.array([p for p, _ in self.pq_pairs])
+        q_arr = np.array([q for _, q in self.pq_pairs])
+        pq_idx_arr = np.arange(n_pq)
 
-            z_i = z[i_pt]
-            design = BSpline.design_matrix(np.array([z_i]), self.knots, k).toarray()[0]
-            nz = np.nonzero(design)[0]
+        rows_parts = []
+        cols_parts = []
+        data_parts = []
 
-            for j in nz:
-                beta_j = design[j]
-                for (p, q) in self.pq_pairs:
-                    c = col(j, self.pq_to_idx[(p, q)])
-                    if p > 0:
-                        A[row_bx, c] = -p * x_pow[p - 1][i_pt] * y_pow[q][i_pt] * beta_j
-                    if q > 0:
-                        A[row_by, c] = -q * x_pow[p][i_pt] * y_pow[q - 1][i_pt] * beta_j
+        # Bx row: only (p, q) pairs with p > 0 contribute.
+        bx_mask = p_arr > 0
+        p_bx, q_bx, idx_bx = p_arr[bx_mask], q_arr[bx_mask], pq_idx_arr[bx_mask]
+        m_bx = len(p_bx)
+        if m_bx > 0:
+            pt_rep = np.repeat(pt_idx, m_bx)
+            basis_rep = np.repeat(basis_idx, m_bx)
+            beta_rep = np.repeat(beta_vals, m_bx)
+            p_tile = np.tile(p_bx, len(pt_idx))
+            q_tile = np.tile(q_bx, len(pt_idx))
+            idx_tile = np.tile(idx_bx, len(pt_idx))
+
+            rows_parts.append(2 * pt_rep)
+            cols_parts.append(basis_rep * n_pq + idx_tile)
+            data_parts.append(
+                -p_tile * x_pow[p_tile - 1, pt_rep] * y_pow[q_tile, pt_rep] * beta_rep
+            )
+
+        # By row: only (p, q) pairs with q > 0 contribute.
+        by_mask = q_arr > 0
+        p_by, q_by, idx_by = p_arr[by_mask], q_arr[by_mask], pq_idx_arr[by_mask]
+        m_by = len(p_by)
+        if m_by > 0:
+            pt_rep = np.repeat(pt_idx, m_by)
+            basis_rep = np.repeat(basis_idx, m_by)
+            beta_rep = np.repeat(beta_vals, m_by)
+            p_tile = np.tile(p_by, len(pt_idx))
+            q_tile = np.tile(q_by, len(pt_idx))
+            idx_tile = np.tile(idx_by, len(pt_idx))
+
+            rows_parts.append(2 * pt_rep + 1)
+            cols_parts.append(basis_rep * n_pq + idx_tile)
+            data_parts.append(
+                -q_tile * x_pow[p_tile, pt_rep] * y_pow[q_tile - 1, pt_rep] * beta_rep
+            )
+
+        rows = np.concatenate(rows_parts)
+        cols = np.concatenate(cols_parts)
+        data = np.concatenate(data_parts)
+        A = coo_matrix((data, (rows, cols)), shape=(n_rows, n_cols))
 
         self._A_csr = A.tocsr()
         self._b_vec = b_vec
@@ -1244,9 +1278,10 @@ if __name__ == "__main__":
     file_path = Path(__file__).resolve().parents[2] / "test_data" / "sls" / "simona_field_map.txt"
     df_raw = pd.read_csv(
         file_path,
-        sep=r"\s+",
+        sep="\t",
         header=None,
         names=["X", "Y", "Z", "Bx", "By", "Bs"],
+        dtype=float,
     ).set_index(["X", "Y", "Z"])
 
     deg = 2
