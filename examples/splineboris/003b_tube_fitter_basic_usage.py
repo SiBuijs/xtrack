@@ -44,6 +44,7 @@ n_frames = 4441
 # Some reference times (depdendent on the machine and field map (simona_field_map.txt, deg=4 here)):
 # n_frames=1000     : takes ~30 seconds     lands at ~5.7e-3 residual
 # residual_tol=1e-3 : takes ~10 minutes     lands at n_frames=2324
+# If we simply choose n_frames=4441 (the maximum), it takes ~35 seconds and lands at ~6e-6 residual
 
 import time
 
