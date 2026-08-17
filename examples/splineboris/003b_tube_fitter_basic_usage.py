@@ -35,24 +35,30 @@ df_raw_data = pd.read_csv(
 
 deg = 4
 
-n_frames = 1000
+n_frames = 4441
 
 # Below, you can either choose n_frames or residual_tol
 # If you choose n_frames, the fitter will simply use that number of frames.
 # If you choose residual_tol, the fitter will search for the smallest number of frames
 # that meets the specified residual tolerance.
-# Some reference times (depdendent on the machine and field map (simona_field_map.txt here)):
-# 1000 frames takes ~30 seconds, lands at ~0.57% residual
-# residual_tol=1e-3 takes ~5 minutes and lands at n_frames=2324
-
+# Some reference times (depdendent on the machine and field map (simona_field_map.txt, deg=4 here)):
+# n_frames=1000     : takes ~30 seconds     lands at ~5.7e-3 residual
+# residual_tol=1e-3 : takes ~10 minutes     lands at n_frames=2324
 
 import time
+
+# Temporarily silence the automatic n_frames-search convergence plot so it
+# doesn't pop up a blocking window mid-timing -- remove this line to see it
+# again. (Only affects plot_n_frames_search; plot_fields/plot_integrated_fields
+# below are untouched.)
+TubeFitter.plot_n_frames_search = lambda self, *a, **kw: None
+
 start_time = time.time()
 
 fitter = TubeFitter(
     raw_data=df_raw_data,
-    #n_frames=n_frames,
-    residual_tol=1e-3,
+    n_frames=n_frames,
+    #residual_tol=1e-3,
     distance_unit=dz,
     deg=deg,
     field_tol=1e-3,
