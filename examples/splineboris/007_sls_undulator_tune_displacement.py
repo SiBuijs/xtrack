@@ -3,6 +3,7 @@ import numpy as np
 from pathlib import Path
 import pandas as pd
 import matplotlib.pyplot as plt
+import scipy.constants as sc_const
 from xtrack._temp.splineboris.tube_fitter import TubeFitter
 from xtrack._temp.splineboris.splineboris_sequence import SplineBorisSequence
 
@@ -70,6 +71,7 @@ MODEL_LABELS = ('SB', 'MK')
 def run_case(place_label, wiggler_places, model_label):
     print("=" * 80)
     print(f"Case: place={place_label}  model={model_label}")
+    case_label = f'{place_label} ({model_label})'
     print("=" * 80)
 
     # Load SLS MADX file
@@ -216,6 +218,7 @@ def run_case(place_label, wiggler_places, model_label):
     ax_y.set_title('Vertical closed orbit around the SLS ring')
     ax_y.grid(True, alpha=0.3)
     ax_y.legend()
+    fig_orbit.suptitle(case_label)
     fig_orbit.tight_layout()
 
     deltaqx_list = []
@@ -258,7 +261,7 @@ def run_case(place_label, wiggler_places, model_label):
             include_collective=True,
             vary=xt.VaryList(corrector_vars, step=1e-6),
             targets=[
-                xt.TargetSet(x=0, y=0, at=xt.START),
+                xt.TargetSet(x=0, px=0, y=0, py=0., at=xt.START),
                 xt.TargetSet(x=0, px=0, y=0, py=0., at=xt.END),
                 ],
         )
@@ -308,6 +311,30 @@ def run_case(place_label, wiggler_places, model_label):
                          for nn in multipole_line.element_names])
     mult_s_mid = mult_table['s'][:-1] + mult_length / 2
 
+    # Longitudinal-field (solenoid) focusing cross-check: unlike a normal
+    # quadrupole, a solenoid focuses BOTH planes, with an effective
+    # K_sol(s) = (Bs(s) / (2*Brho0))^2. On-axis Bs is ~0 here (fit flagged
+    # it "to_fit=False"), but Bs is NOT zero off-axis: Maxwell's equations
+    # tie the z-varying transverse (quadrupole/sextupole) field to a
+    # longitudinal component that grows away from the physical axis even
+    # when the on-axis Bs is exactly zero (confirmed empirically: this
+    # fit's Bz(x=0.5mm) ~ 0.012 T vs Bz(x=0) = 0 exactly). So Bs must be
+    # read at the actual local orbit position x_local(s) -- same x_local as
+    # the K1/K2 feed-down term below -- not on-axis, and hence recomputed
+    # per dx rather than once up front. Read via the SplineBoris field
+    # evaluator, get_field(x, y, s_local); a dedicated, always-SplineBoris-
+    # based `bs_line` is built fresh for this regardless of which model
+    # (SB/MK) is primary here, since to_multipole_line() drops Bs entirely
+    # (no Multipole equivalent) and the MK `undulator` therefore has no Bs
+    # to read. Same region grid as multipole_line (both come from the same
+    # df_fit_pars/frames), so element i in each lines up with region i in
+    # the other.
+    bs_line = tube_fitter.to_line(multipole_order=multipole_order)
+    assert len(bs_line.element_names) == len(multipole_line.element_names)
+    bs_line_names = bs_line.element_names
+    bs_s_local = mult_length / 2
+    brho0 = E0 / (sc_const.c * 1.0)
+
     deltaqx_formula_list = []
     deltaqy_formula_list = []
     # Same integral, but using the actual perturbed beta (betx_scan/
@@ -318,34 +345,54 @@ def run_case(place_label, wiggler_places, model_label):
     # the unperturbed beta) rather than from delta K(s) itself.
     deltaqx_formula_pert_list = []
     deltaqy_formula_pert_list = []
-    for dx, x_orbit, betx_pert, bety_pert in zip(
-            hor_off_list, orbit_scan_x, betx_scan, bety_scan):
+    for dx, x_orbit, y_orbit, betx_pert, bety_pert in zip(
+            hor_off_list, orbit_scan_x, orbit_scan_y, betx_scan, bety_scan):
         integral_x = 0.0
         integral_y = 0.0
         integral_x_pert = 0.0
         integral_y_pert = 0.0
+        integral_x_sol = 0.0
+        integral_y_sol = 0.0
+        integral_x_sol_pert = 0.0
+        integral_y_sol_pert = 0.0
         for s_start_und, _ in undulator_s_ranges:
             s_global = s_start_und + mult_s_mid
             x_local = np.interp(s_global, orbit_scan_s, x_orbit) - dx
+            # No "- dx"-like offset for y: shift_y is never varied in the
+            # scan (only shift_x is), so the magnet's y-position stays at 0
+            # and y_local is just the actual orbit position.
+            y_local = np.interp(s_global, orbit_scan_s, y_orbit)
             deltaK1 = mult_K1 + mult_K2 * x_local
+            mult_Bs_local = np.array([
+                bs_line[nn].get_field(x_val, y_val, s_local)[2]
+                for nn, s_local, x_val, y_val in zip(
+                    bs_line_names, bs_s_local, x_local, y_local)
+                ])
+            mult_K_sol = (mult_Bs_local / (2 * brho0)) ** 2
             betx_at_s = np.interp(s_global, tw_no_undulator.s, tw_no_undulator.betx)
             bety_at_s = np.interp(s_global, tw_no_undulator.s, tw_no_undulator.bety)
             integral_x += np.sum(deltaK1 * betx_at_s * mult_length)
             integral_y += np.sum(deltaK1 * bety_at_s * mult_length)
+            integral_x_sol += np.sum(mult_K_sol * betx_at_s * mult_length)
+            integral_y_sol += np.sum(mult_K_sol * bety_at_s * mult_length)
 
             betx_pert_at_s = np.interp(s_global, orbit_scan_s, betx_pert)
             bety_pert_at_s = np.interp(s_global, orbit_scan_s, bety_pert)
             integral_x_pert += np.sum(deltaK1 * betx_pert_at_s * mult_length)
             integral_y_pert += np.sum(deltaK1 * bety_pert_at_s * mult_length)
+            integral_x_sol_pert += np.sum(mult_K_sol * betx_pert_at_s * mult_length)
+            integral_y_sol_pert += np.sum(mult_K_sol * bety_pert_at_s * mult_length)
         # Sign convention (deltaQx = +1/4pi * oint K1 betax ds, deltaQy =
         # -1/4pi * oint K1 betay ds) empirically verified: inserted a small
         # known-K1L thin Multipole into line_sls and compared the resulting
         # Twiss qx/qy shift against both sign choices -- this is the one
-        # that matched.
-        deltaqx_formula_list.append(integral_x / (4 * np.pi))
-        deltaqy_formula_list.append(-integral_y / (4 * np.pi))
-        deltaqx_formula_pert_list.append(integral_x_pert / (4 * np.pi))
-        deltaqy_formula_pert_list.append(-integral_y_pert / (4 * np.pi))
+        # that matched. The solenoid term is added with the SAME sign in
+        # both planes (it focuses x AND y), unlike the quadrupole-feed-down
+        # term above -- hence "+integral_y_sol" despite the "-integral_y".
+        deltaqx_formula_list.append((integral_x + integral_x_sol) / (4 * np.pi))
+        deltaqy_formula_list.append((-integral_y + integral_y_sol) / (4 * np.pi))
+        deltaqx_formula_pert_list.append((integral_x_pert + integral_x_sol_pert) / (4 * np.pi))
+        deltaqy_formula_pert_list.append((-integral_y_pert + integral_y_sol_pert) / (4 * np.pi))
 
     # Closed orbit at each offset of the tune scan above -- same panel
     # layout as the no-undulator/on-axis/off-axis comparison plot, but
@@ -372,6 +419,7 @@ def run_case(place_label, wiggler_places, model_label):
     sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
     sm.set_array([])
     fig_orbit_scan.colorbar(sm, ax=[ax_x_scan, ax_y_scan], label='Horizontal offset [m]')
+    fig_orbit_scan.suptitle(case_label)
 
     # Beta functions at each offset of the tune scan -- same colour-coded-
     # by-offset layout as the orbit scan above. tw_no_undulator carries a
@@ -404,6 +452,7 @@ def run_case(place_label, wiggler_places, model_label):
     sm_beta_abs = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
     sm_beta_abs.set_array([])
     fig_beta_scan.colorbar(sm_beta_abs, ax=[ax_betx_scan, ax_bety_scan], label='Horizontal offset [m]')
+    fig_beta_scan.suptitle(case_label)
 
     # Beta beat at each offset of the tune scan, relative to the
     # no-undulator baseline -- same colour-coded-by-offset layout as the
@@ -425,6 +474,7 @@ def run_case(place_label, wiggler_places, model_label):
     sm_beta = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
     sm_beta.set_array([])
     fig_beta_diff.colorbar(sm_beta, ax=[ax_dbetx, ax_dbety], label='Horizontal offset [m]')
+    fig_beta_diff.suptitle(case_label)
 
     coef_qx = np.polyfit(hor_off_list, deltaqx_list, 2)
     coef_qy = np.polyfit(hor_off_list, deltaqy_list, 2)
@@ -467,9 +517,9 @@ def run_case(place_label, wiggler_places, model_label):
     ax1.plot(hor_off_list, deltaqx_list, marker='o', color='tab:blue', label='Twiss')
     ax1.plot(hor_off_list, poly_qx(hor_off_list), linestyle='--', color='k', label='Quadratic fit')
     ax1.plot(hor_off_list, deltaqx_formula_list, marker='^', linestyle='none',
-              color='tab:green', label=r'$\frac{1}{4\pi}\oint\delta K_1\beta_{x,0}\,ds$')
+              color='tab:green', label=r'$\frac{1}{4\pi}\oint(\delta K_1+K_{sol})\beta_{x,0}\,ds$')
     ax1.plot(hor_off_list, deltaqx_formula_pert_list, marker='v', linestyle='none',
-              color='tab:red', label=r'$\frac{1}{4\pi}\oint\delta K_1\beta_x\,ds$')
+              color='tab:red', label=r'$\frac{1}{4\pi}\oint(\delta K_1+K_{sol})\beta_x\,ds$')
     ax1.set_ylabel('Delta Qx')
     ax1.set_title('Tune shift vs undulator horizontal offset')
     ax1.grid(True, alpha=0.3)
@@ -483,9 +533,9 @@ def run_case(place_label, wiggler_places, model_label):
     ax2.plot(hor_off_list, deltaqy_list, marker='s', color='tab:orange', label='Twiss')
     ax2.plot(hor_off_list, poly_qy(hor_off_list), linestyle='--', color='k', label='Quadratic fit')
     ax2.plot(hor_off_list, deltaqy_formula_list, marker='^', linestyle='none',
-              color='tab:green', label=r'$\frac{1}{4\pi}\oint\delta K_1\beta_{y,0}\,ds$')
+              color='tab:green', label=r'$\frac{1}{4\pi}\oint(K_{sol}-\delta K_1)\beta_{y,0}\,ds$')
     ax2.plot(hor_off_list, deltaqy_formula_pert_list, marker='v', linestyle='none',
-              color='tab:red', label=r'$\frac{1}{4\pi}\oint\delta K_1\beta_y\,ds$')
+              color='tab:red', label=r'$\frac{1}{4\pi}\oint(K_{sol}-\delta K_1)\beta_y\,ds$')
     ax2.set_xlabel('Horizontal offset [m]')
     ax2.set_ylabel('Delta Qy')
     ax2.grid(True, alpha=0.3)
@@ -496,6 +546,7 @@ def run_case(place_label, wiggler_places, model_label):
               f'$\\Delta Q_y(0)$ = {coef_qy[2]:.4e}',
               transform=ax2.transAxes, **text_box_kwargs)
 
+    fig_tune_shift.suptitle(case_label)
     fig_tune_shift.tight_layout()
 
     # Save the 5 figures for this case, named
@@ -511,9 +562,13 @@ def run_case(place_label, wiggler_places, model_label):
         out_path = OUT_DIR / f'{place_label}_{model_label}_{suffix}.pdf'
         fig.savefig(out_path)
         print(f"Saved {out_path}")
-    plt.close('all')
 
 
 for place_label, wiggler_places in WIGGLER_CASES:
     for model_label in MODEL_LABELS:
         run_case(place_label, wiggler_places, model_label)
+
+# All 5*3*2 = 30 figures across every case are kept open (not closed inside
+# run_case()) so they can all be reviewed interactively here, in addition
+# to having been saved as PDFs above.
+plt.show()
