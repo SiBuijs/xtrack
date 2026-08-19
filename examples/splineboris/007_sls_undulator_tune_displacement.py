@@ -549,7 +549,41 @@ def run_case(place_label, wiggler_places, model_label):
     fig_tune_shift.suptitle(case_label)
     fig_tune_shift.tight_layout()
 
-    # Save the 5 figures for this case, named
+    # Tracked-vs-calculated tune shift residual: how far the analytic
+    # perturbation-theory formula (both beta variants) is from the actual
+    # Twiss/tracked result plotted above, as a function of offset -- makes
+    # the (generally much smaller) formula/Twiss gap visible on its own
+    # scale rather than as an overlap of near-identical curves.
+    deltaqx_diff_beta0 = np.array(deltaqx_list) - np.array(deltaqx_formula_list)
+    deltaqx_diff_beta = np.array(deltaqx_list) - np.array(deltaqx_formula_pert_list)
+    deltaqy_diff_beta0 = np.array(deltaqy_list) - np.array(deltaqy_formula_list)
+    deltaqy_diff_beta = np.array(deltaqy_list) - np.array(deltaqy_formula_pert_list)
+
+    fig_tune_shift_diff, (ax1_diff, ax2_diff) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
+    ax1_diff.plot(hor_off_list, deltaqx_diff_beta0, marker='^', color='tab:green',
+                  label=r'Twiss $-\ \frac{1}{4\pi}\oint(\delta K_1+K_{sol})\beta_{x,0}\,ds$')
+    ax1_diff.plot(hor_off_list, deltaqx_diff_beta, marker='v', color='tab:red',
+                  label=r'Twiss $-\ \frac{1}{4\pi}\oint(\delta K_1+K_{sol})\beta_x\,ds$')
+    ax1_diff.axhline(0, color='0.4', linewidth=1)
+    ax1_diff.set_ylabel(r'$\Delta Q_x$ residual')
+    ax1_diff.set_title('Tracked minus calculated tune shift vs undulator horizontal offset')
+    ax1_diff.grid(True, alpha=0.3)
+    ax1_diff.legend()
+
+    ax2_diff.plot(hor_off_list, deltaqy_diff_beta0, marker='^', color='tab:green',
+                  label=r'Twiss $-\ \frac{1}{4\pi}\oint(K_{sol}-\delta K_1)\beta_{y,0}\,ds$')
+    ax2_diff.plot(hor_off_list, deltaqy_diff_beta, marker='v', color='tab:red',
+                  label=r'Twiss $-\ \frac{1}{4\pi}\oint(K_{sol}-\delta K_1)\beta_y\,ds$')
+    ax2_diff.axhline(0, color='0.4', linewidth=1)
+    ax2_diff.set_xlabel('Horizontal offset [m]')
+    ax2_diff.set_ylabel(r'$\Delta Q_y$ residual')
+    ax2_diff.grid(True, alpha=0.3)
+    ax2_diff.legend()
+
+    fig_tune_shift_diff.suptitle(case_label)
+    fig_tune_shift_diff.tight_layout()
+
+    # Save the 6 figures for this case, named
     # "<place_label>_<model_label>_<what the figure shows>.pdf".
     figures = [
         (fig_orbit, 'orbit_comparison'),
@@ -557,6 +591,7 @@ def run_case(place_label, wiggler_places, model_label):
         (fig_beta_scan, 'beta_functions'),
         (fig_beta_diff, 'beta_beat'),
         (fig_tune_shift, 'tune_shift'),
+        (fig_tune_shift_diff, 'tune_shift_difference'),
         ]
     for fig, suffix in figures:
         out_path = OUT_DIR / f'{place_label}_{model_label}_{suffix}.pdf'
@@ -568,7 +603,7 @@ for place_label, wiggler_places in WIGGLER_CASES:
     for model_label in MODEL_LABELS:
         run_case(place_label, wiggler_places, model_label)
 
-# All 5*3*2 = 30 figures across every case are kept open (not closed inside
+# All 6*3*2 = 36 figures across every case are kept open (not closed inside
 # run_case()) so they can all be reviewed interactively here, in addition
 # to having been saved as PDFs above.
 plt.show()
