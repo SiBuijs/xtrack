@@ -596,9 +596,9 @@ def plot_case(data, place_label, model_label):
     fig_field_traj, field_axes = plt.subplots(
         n_field_rows, 1, figsize=(10, 3.2 * n_field_rows), sharex=True)
     ax_bx, ax_by = field_axes[0], field_axes[1]
-    ax_bx.plot(data['field_s_on'], data['field_bx_on'], '.', ms=4,
+    ax_bx.plot(data['field_s_on'], data['field_bx_on'],
                color='tab:blue', label='On-axis')
-    ax_bx.plot(data['field_s_off'], data['field_bx_off'], '.', ms=4,
+    ax_bx.plot(data['field_s_off'], data['field_bx_off'],
                color='tab:orange', label='Off-axis (shift_x=0.5 mm)')
     mark_undulator_bounds(ax_bx)
     ax_bx.set_ylabel(r'$B_x$ [T]')
@@ -606,9 +606,9 @@ def plot_case(data, place_label, model_label):
     ax_bx.grid(True, alpha=0.3)
     ax_bx.legend()
 
-    ax_by.plot(data['field_s_on'], data['field_by_on'], '.', ms=4,
+    ax_by.plot(data['field_s_on'], data['field_by_on'],
                color='tab:blue', label='On-axis')
-    ax_by.plot(data['field_s_off'], data['field_by_off'], '.', ms=4,
+    ax_by.plot(data['field_s_off'], data['field_by_off'],
                color='tab:orange', label='Off-axis (shift_x=0.5 mm)')
     mark_undulator_bounds(ax_by)
     ax_by.set_ylabel(r'$B_y$ [T]')
@@ -617,9 +617,9 @@ def plot_case(data, place_label, model_label):
 
     if model_label == 'SB':
         ax_bs = field_axes[2]
-        ax_bs.plot(data['field_s_on'], data['field_bs_on'], '.', ms=4,
+        ax_bs.plot(data['field_s_on'], data['field_bs_on'],
                    color='tab:blue', label='On-axis')
-        ax_bs.plot(data['field_s_off'], data['field_bs_off'], '.', ms=4,
+        ax_bs.plot(data['field_s_off'], data['field_bs_off'],
                    color='tab:orange', label='Off-axis (shift_x=0.5 mm)')
         mark_undulator_bounds(ax_bs)
         ax_bs.set_ylabel(r'$B_s$ [T]')
