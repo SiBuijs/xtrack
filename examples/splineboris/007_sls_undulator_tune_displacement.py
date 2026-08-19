@@ -228,6 +228,7 @@ def run_case(place_label, wiggler_places, model_label):
     orbit_scan_s = None
     betx_scan = []
     bety_scan = []
+    c_minus_scan = []
 
     n_tunes = 30
 
@@ -280,6 +281,7 @@ def run_case(place_label, wiggler_places, model_label):
         orbit_scan_y.append(tw.y)
         betx_scan.append(tw.betx)
         bety_scan.append(tw.bety)
+        c_minus_scan.append(tw.c_minus)
         if orbit_scan_s is None:
             orbit_scan_s = tw.s
 
@@ -393,6 +395,68 @@ def run_case(place_label, wiggler_places, model_label):
         deltaqy_formula_list.append((-integral_y + integral_y_sol) / (4 * np.pi))
         deltaqx_formula_pert_list.append((integral_x_pert + integral_x_sol_pert) / (4 * np.pi))
         deltaqy_formula_pert_list.append((-integral_y_pert + integral_y_sol_pert) / (4 * np.pi))
+
+    # Closest-tune-approach (betatron coupling) correction of the analytic
+    # formula, using |C-| read directly off the coupled Twiss (tw.c_minus,
+    # computed automatically by twiss4d whenever mux/muy are available -- no
+    # extra tracking needed). The formula above gives *uncoupled* tunes; the
+    # actual observable eigentunes are pulled apart from their uncoupled
+    # values by the coupling resonance,
+    #   Qx_obs = Qbar + sign(Delta)/2 * sqrt(Delta^2 + |C-|^2)
+    #   Qy_obs = Qbar - sign(Delta)/2 * sqrt(Delta^2 + |C-|^2)
+    # with Qbar=(Qx+Qy)/2, Delta=Qx-Qy. This has to be applied to the
+    # *absolute* tunes and then differenced -- not added directly to
+    # deltaQ -- and the reference (tw_no_undulator) needs the same
+    # treatment with its own c_minus before subtracting, since it is not in
+    # general perfectly decoupled either.
+    def _coupling_corrected_tunes(qx, qy, c_minus):
+        qbar = 0.5 * (qx + qy)
+        delta = qx - qy
+        sign = np.where(delta == 0, 1.0, np.sign(delta))
+        sqrt_term = np.sqrt(delta ** 2 + c_minus ** 2)
+        return qbar + 0.5 * sign * sqrt_term, qbar - 0.5 * sign * sqrt_term
+
+    c_minus_scan_arr = np.array(c_minus_scan)
+    c_minus_0 = tw_no_undulator.c_minus
+
+    qx_obs_ref, qy_obs_ref = _coupling_corrected_tunes(qx_0, qy_0, c_minus_0)
+
+    qx_obs_beta0, qy_obs_beta0 = _coupling_corrected_tunes(
+        qx_0 + np.array(deltaqx_formula_list),
+        qy_0 + np.array(deltaqy_formula_list),
+        c_minus_scan_arr)
+    qx_obs_pert, qy_obs_pert = _coupling_corrected_tunes(
+        qx_0 + np.array(deltaqx_formula_pert_list),
+        qy_0 + np.array(deltaqy_formula_pert_list),
+        c_minus_scan_arr)
+
+    deltaqx_formula_corr_list = qx_obs_beta0 - qx_obs_ref
+    deltaqy_formula_corr_list = qy_obs_beta0 - qy_obs_ref
+    deltaqx_formula_pert_corr_list = qx_obs_pert - qx_obs_ref
+    deltaqy_formula_pert_corr_list = qy_obs_pert - qy_obs_ref
+
+    deltaqx_resid_corr_beta0 = np.array(deltaqx_list) - deltaqx_formula_corr_list
+    deltaqy_resid_corr_beta0 = np.array(deltaqy_list) - deltaqy_formula_corr_list
+    deltaqx_resid_corr_pert = np.array(deltaqx_list) - deltaqx_formula_pert_corr_list
+    deltaqy_resid_corr_pert = np.array(deltaqy_list) - deltaqy_formula_pert_corr_list
+
+    # Report the arithmetic at the largest-offset scan point, as requested:
+    # c_minus, Delta (uncoupled formula tunes), and the residual before/after
+    # the coupling correction.
+    i_report = -1
+    delta_report = ((qx_0 + deltaqx_formula_list[i_report])
+                     - (qy_0 + deltaqy_formula_list[i_report]))
+    print(f"[coupling check] dx = {hor_off_list[i_report] * 1e3:.4f} mm")
+    print(f"[coupling check] c_minus (Twiss)            = {c_minus_scan_arr[i_report]:.6e}")
+    print(f"[coupling check] Delta = Qx-Qy (uncoupled)  = {delta_report:.6e}")
+    print(f"[coupling check] deltaQx residual, uncorrected (beta0) = "
+          f"{deltaqx_list[i_report] - deltaqx_formula_list[i_report]:.6e}")
+    print(f"[coupling check] deltaQx residual, corrected   (beta0) = "
+          f"{deltaqx_resid_corr_beta0[i_report]:.6e}")
+    print(f"[coupling check] deltaQy residual, uncorrected (beta0) = "
+          f"{deltaqy_list[i_report] - deltaqy_formula_list[i_report]:.6e}")
+    print(f"[coupling check] deltaQy residual, corrected   (beta0) = "
+          f"{deltaqy_resid_corr_beta0[i_report]:.6e}")
 
     # Closed orbit at each offset of the tune scan above -- same panel
     # layout as the no-undulator/on-axis/off-axis comparison plot, but
@@ -583,7 +647,44 @@ def run_case(place_label, wiggler_places, model_label):
     fig_tune_shift_diff.suptitle(case_label)
     fig_tune_shift_diff.tight_layout()
 
-    # Save the 6 figures for this case, named
+    # Same residual, before vs. after applying the closest-tune-approach
+    # (betatron coupling) correction computed above -- if the coupling
+    # picture accounts for the residual seen in fig_tune_shift_diff, the
+    # solid (corrected) curves should sit much closer to zero than the
+    # dashed (uncorrected) ones.
+    fig_tune_shift_corr, (ax1_corr, ax2_corr) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
+    ax1_corr.plot(hor_off_list, deltaqx_diff_beta0, marker='^', linestyle='--',
+                  color='tab:green', alpha=0.4, label=r'Uncorrected ($\beta_{x,0}$)')
+    ax1_corr.plot(hor_off_list, deltaqx_resid_corr_beta0, marker='^',
+                  color='tab:green', label=r'$C^-$-corrected ($\beta_{x,0}$)')
+    ax1_corr.plot(hor_off_list, deltaqx_diff_beta, marker='v', linestyle='--',
+                  color='tab:red', alpha=0.4, label=r'Uncorrected ($\beta_x$)')
+    ax1_corr.plot(hor_off_list, deltaqx_resid_corr_pert, marker='v',
+                  color='tab:red', label=r'$C^-$-corrected ($\beta_x$)')
+    ax1_corr.axhline(0, color='0.4', linewidth=1)
+    ax1_corr.set_ylabel(r'$\Delta Q_x$ residual')
+    ax1_corr.set_title('Tune-shift residual before/after closest-tune-approach correction')
+    ax1_corr.grid(True, alpha=0.3)
+    ax1_corr.legend(fontsize=7)
+
+    ax2_corr.plot(hor_off_list, deltaqy_diff_beta0, marker='^', linestyle='--',
+                  color='tab:green', alpha=0.4, label=r'Uncorrected ($\beta_{y,0}$)')
+    ax2_corr.plot(hor_off_list, deltaqy_resid_corr_beta0, marker='^',
+                  color='tab:green', label=r'$C^-$-corrected ($\beta_{y,0}$)')
+    ax2_corr.plot(hor_off_list, deltaqy_diff_beta, marker='v', linestyle='--',
+                  color='tab:red', alpha=0.4, label=r'Uncorrected ($\beta_y$)')
+    ax2_corr.plot(hor_off_list, deltaqy_resid_corr_pert, marker='v',
+                  color='tab:red', label=r'$C^-$-corrected ($\beta_y$)')
+    ax2_corr.axhline(0, color='0.4', linewidth=1)
+    ax2_corr.set_xlabel('Horizontal offset [m]')
+    ax2_corr.set_ylabel(r'$\Delta Q_y$ residual')
+    ax2_corr.grid(True, alpha=0.3)
+    ax2_corr.legend(fontsize=7)
+
+    fig_tune_shift_corr.suptitle(case_label)
+    fig_tune_shift_corr.tight_layout()
+
+    # Save the 7 figures for this case, named
     # "<place_label>_<model_label>_<what the figure shows>.pdf".
     figures = [
         (fig_orbit, 'orbit_comparison'),
@@ -592,6 +693,7 @@ def run_case(place_label, wiggler_places, model_label):
         (fig_beta_diff, 'beta_beat'),
         (fig_tune_shift, 'tune_shift'),
         (fig_tune_shift_diff, 'tune_shift_difference'),
+        (fig_tune_shift_corr, 'tune_shift_coupling_corrected'),
         ]
     for fig, suffix in figures:
         out_path = OUT_DIR / f'{place_label}_{model_label}_{suffix}.pdf'
@@ -603,7 +705,7 @@ for place_label, wiggler_places in WIGGLER_CASES:
     for model_label in MODEL_LABELS:
         run_case(place_label, wiggler_places, model_label)
 
-# All 6*3*2 = 36 figures across every case are kept open (not closed inside
+# All 7*3*2 = 42 figures across every case are kept open (not closed inside
 # run_case()) so they can all be reviewed interactively here, in addition
 # to having been saved as PDFs above.
 plt.show()
