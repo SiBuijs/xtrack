@@ -1,3 +1,4 @@
+import sys
 import xtrack as xt
 import numpy as np
 from pathlib import Path
@@ -20,46 +21,65 @@ madx_file = Path(__file__).resolve().parent.parent.parent / 'test_data' / 'sls' 
 
 BASE_DIR = Path(__file__).resolve().parent
 
-# Load the raw field map data from shared test_data
+# Raw field map data (shared test_data) -- ~1.8 GB, so loading and fitting it
+# is by far the slowest part of this script. Deferred to get_tube_fitter(),
+# called lazily from compute_case() only for cases that are actually being
+# (re)computed -- a `--replot` run where every case already has cached data
+# in DATA_DIR never touches this file at all.
 file_path = Path(__file__).resolve().parent.parent.parent / "test_data" / "sls" / "simona_field_map.txt"
-df_raw_data = pd.read_csv(
-    file_path, sep="\t", header=None,
-    names=["X", "Y", "Z", "Bx", "By", "Bs"],
-    dtype=float,
-).set_index(["X", "Y", "Z"])
 
 # Distance unit in meters (the dataset uses mm, so 1 mm = 0.001 m)
 distance_unit = 0.001
 
 n_frames = 4441
 
-# Fitting the field map is independent of undulator placement/model, so it
-# is done once here and the resulting tube_fitter is reused across all
-# cases run below.
-tube_fitter = TubeFitter(
-    raw_data=df_raw_data,
-    n_frames=n_frames,
-    #residual_tol=1e-3,
-    distance_unit=distance_unit,
-    deg=multipole_order-1,
-    field_tol=1e-4,
-    #tube_radius=0.0005,
-)
+_tube_fitter = None
 
-tube_fitter.fit()
+
+def get_tube_fitter():
+    global _tube_fitter
+    if _tube_fitter is None:
+        print("[TubeFitter] loading raw field map and fitting "
+              "(this is the slow part, and independent of undulator "
+              "placement/model, so it only happens once per run)...")
+        df_raw_data = pd.read_csv(
+            file_path, sep="\t", header=None,
+            names=["X", "Y", "Z", "Bx", "By", "Bs"],
+            dtype=float,
+        ).set_index(["X", "Y", "Z"])
+        tf = TubeFitter(
+            raw_data=df_raw_data,
+            n_frames=n_frames,
+            #residual_tol=1e-3,
+            distance_unit=distance_unit,
+            deg=multipole_order - 1,
+            field_tol=1e-4,
+            #tube_radius=0.0005,
+        )
+        tf.fit()
+        _tube_fitter = tf
+    return _tube_fitter
 
 # for der in range(0, multipole_order):
-#     tube_fitter.plot_fields(der=der)
+#     get_tube_fitter().plot_fields(der=der)
 
 # plt.show()
 
 OUT_DIR = Path('/home/simonfan/cernbox/Pictures/SLS_Undulator_Studies')
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
+# Cached per-case scan/formula results, so that re-running just to tweak a
+# plot doesn't require redoing the fit/match/scan pipeline (which needs the
+# ~1.8 GB field map above). Pass --replot on the command line to load from
+# here instead of recomputing, for any case whose data is already cached.
+DATA_DIR = Path(__file__).resolve().parent / 'data'
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+REPLOT = '--replot' in sys.argv
+
 # Three placement cases (only ars11_uind_0210_1, only ars11_uind_0610_1,
 # both) x two undulator models (SB = SplineBoris, from to_line(); MK =
-# Multipole Kick, from to_multipole_line()) -- run_case() below builds and
-# analyses one such case end to end and saves its 5 figures.
+# Multipole Kick, from to_multipole_line()) -- compute_case()/plot_case()
+# below build and analyse one such case end to end and save its 8 figures.
 WIGGLER_CASES = [
     ('ars11_uind_0210_1', ['ars11_uind_0210_1']),
     ('ars11_uind_0610_1', ['ars11_uind_0610_1']),
@@ -68,11 +88,37 @@ WIGGLER_CASES = [
 MODEL_LABELS = ('SB', 'MK')
 
 
-def run_case(place_label, wiggler_places, model_label):
+def _multipole_field_bx_by(knl, ksl, length, brho0, x, y):
+    """(Bx, By) [T] at (x, y) from a thick Multipole's knl/ksl, matching the
+    field convention xtrack's own kick uses internally
+    (track_magnet_kick.h::evaluate_field_from_strengths /
+    kick_simple_single_coordinates): knl[n]/ksl[n] are length-integrated
+    (i.e. K_n*length, J_n*length), so
+    By + i*Bx = brho0/length * sum_n (knl[n]+i*ksl[n])/n! * (x+iy)**n.
+    """
+    z = complex(x, y)
+    s = 0j
+    zpow = 1 + 0j
+    fact = 1.0
+    for n in range(len(knl)):
+        if n > 0:
+            fact *= n
+            zpow *= z
+        s += (knl[n] + 1j * ksl[n]) / fact * zpow
+    field = s * brho0 / length
+    return field.imag, field.real
+
+
+def compute_case(place_label, wiggler_places, model_label):
+    """Build, match and scan one (placement, model) case, returning a dict
+    of everything plot_case() needs -- nothing here touches matplotlib.
+    """
     print("=" * 80)
     print(f"Case: place={place_label}  model={model_label}")
     case_label = f'{place_label} ({model_label})'
     print("=" * 80)
+
+    tube_fitter = get_tube_fitter()
 
     # Load SLS MADX file
     env = xt.load(str(madx_file))
@@ -186,10 +232,7 @@ def run_case(place_label, wiggler_places, model_label):
         for wig_place in wiggler_places
         ]
 
-    def mark_undulator_bounds(ax):
-        for s_start, s_end in undulator_s_ranges:
-            ax.axvline(s_start, color='0.4', linestyle='--', linewidth=1)
-            ax.axvline(s_end, color='0.4', linestyle='--', linewidth=1)
+    brho0 = E0 / (sc_const.c * 1.0)
 
     # Closed orbit comparison: no undulator vs. on-axis (shift_x=0) vs.
     # off-axis (shift_x=0.5 mm) undulator.
@@ -201,25 +244,47 @@ def run_case(place_label, wiggler_places, model_label):
         line_sls[nn].shift_x = 0.5e-3
     tw_offaxis = line_sls.twiss4d(include_collective=True)
 
-    fig_orbit, (ax_x, ax_y) = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
-    for tw, label in [(tw_no_undulator, 'No undulator'),
-                       (tw_onaxis, 'On-axis undulator'),
-                       (tw_offaxis, 'Off-axis undulator (shift_x=0.5 mm)')]:
-        ax_x.plot(tw.s, tw.x, label=label)
-        ax_y.plot(tw.s, tw.y, label=label)
-    mark_undulator_bounds(ax_x)
-    mark_undulator_bounds(ax_y)
-    ax_x.set_ylabel('x [m]')
-    ax_x.set_title('Horizontal closed orbit around the SLS ring')
-    ax_x.grid(True, alpha=0.3)
-    ax_x.legend()
-    ax_y.set_xlabel('s [m]')
-    ax_y.set_ylabel('y [m]')
-    ax_y.set_title('Vertical closed orbit around the SLS ring')
-    ax_y.grid(True, alpha=0.3)
-    ax_y.legend()
-    fig_orbit.suptitle(case_label)
-    fig_orbit.tight_layout()
+    # Field actually seen along the closed-orbit trajectory (tw_onaxis.x/y/s,
+    # tw_offaxis.x/y/s -- the Twiss closed orbit is sufficient here, no need
+    # to track a probe particle separately), evaluated with whichever model
+    # is primary for this case: SB reads the real fitted field via
+    # SplineBoris.get_field() (Bx, By, Bs all included); MK has no field
+    # evaluator (it's a thick Multipole, no spatial field structure within
+    # the element), so its field is reconstructed from its own knl/ksl and
+    # the reference rigidity via _multipole_field_bx_by() -- exactly the
+    # field xtrack's own multipole kick is implicitly using (Bs is not
+    # defined for MK, no solenoid equivalent -- see
+    # to_multipole_line()).
+    field_tt = line_sls.get_table()
+    n_sub = 6  # field-sample points per field element (for smoother curves)
+
+    def _sample_field(traj_s, traj_x, traj_y, dx):
+        s_out, bx_out, by_out, bs_out = [], [], [], []
+        for nn in field_element_names:
+            s0 = field_tt['s', nn]
+            length = line_sls[nn].length
+            for s_local in np.linspace(0.0, length, n_sub, endpoint=False):
+                s_glob = s0 + s_local
+                x_local = np.interp(s_glob, traj_s, traj_x) - dx
+                y_local = np.interp(s_glob, traj_s, traj_y)
+                if model_label == 'SB':
+                    bx, by, bs = line_sls[nn].get_field(x_local, y_local, s_local)
+                else:
+                    bx, by = _multipole_field_bx_by(
+                        line_sls[nn].knl, line_sls[nn].ksl, length, brho0,
+                        x_local, y_local)
+                    bs = 0.0
+                s_out.append(s_glob)
+                bx_out.append(bx)
+                by_out.append(by)
+                bs_out.append(bs)
+        return (np.array(s_out), np.array(bx_out), np.array(by_out),
+                np.array(bs_out))
+
+    field_s_on, field_bx_on, field_by_on, field_bs_on = _sample_field(
+        tw_onaxis.s, tw_onaxis.x, tw_onaxis.y, 0.0)
+    field_s_off, field_bx_off, field_by_off, field_bs_off = _sample_field(
+        tw_offaxis.s, tw_offaxis.x, tw_offaxis.y, 0.5e-3)
 
     deltaqx_list = []
     deltaqy_list = []
@@ -335,7 +400,6 @@ def run_case(place_label, wiggler_places, model_label):
     assert len(bs_line.element_names) == len(multipole_line.element_names)
     bs_line_names = bs_line.element_names
     bs_s_local = mult_length / 2
-    brho0 = E0 / (sc_const.c * 1.0)
 
     deltaqx_formula_list = []
     deltaqy_formula_list = []
@@ -458,6 +522,150 @@ def run_case(place_label, wiggler_places, model_label):
     print(f"[coupling check] deltaQy residual, corrected   (beta0) = "
           f"{deltaqy_resid_corr_beta0[i_report]:.6e}")
 
+    # tw_no_undulator carries a different element grid (no undulator
+    # slices), so interpolate it onto the scan's (shared, undulator-
+    # including) s grid to overlay it as a reference in the beta plots.
+    betx_no_und_i = np.interp(orbit_scan_s, tw_no_undulator.s, tw_no_undulator.betx)
+    bety_no_und_i = np.interp(orbit_scan_s, tw_no_undulator.s, tw_no_undulator.bety)
+
+    return dict(
+        case_label=case_label,
+        hor_off_list=hor_off_list,
+        deltaqx_list=np.array(deltaqx_list),
+        deltaqy_list=np.array(deltaqy_list),
+        orbit_scan_s=orbit_scan_s,
+        orbit_scan_x=np.array(orbit_scan_x),
+        orbit_scan_y=np.array(orbit_scan_y),
+        betx_scan=np.array(betx_scan),
+        bety_scan=np.array(bety_scan),
+        betx_no_und_i=betx_no_und_i,
+        bety_no_und_i=bety_no_und_i,
+        deltaqx_formula_list=np.array(deltaqx_formula_list),
+        deltaqy_formula_list=np.array(deltaqy_formula_list),
+        deltaqx_formula_pert_list=np.array(deltaqx_formula_pert_list),
+        deltaqy_formula_pert_list=np.array(deltaqy_formula_pert_list),
+        deltaqx_resid_corr_beta0=deltaqx_resid_corr_beta0,
+        deltaqy_resid_corr_beta0=deltaqy_resid_corr_beta0,
+        deltaqx_resid_corr_pert=deltaqx_resid_corr_pert,
+        deltaqy_resid_corr_pert=deltaqy_resid_corr_pert,
+        undulator_s_ranges=np.array(undulator_s_ranges),
+        tw_no_undulator_s=tw_no_undulator.s,
+        tw_no_undulator_x=tw_no_undulator.x,
+        tw_no_undulator_y=tw_no_undulator.y,
+        tw_onaxis_s=tw_onaxis.s,
+        tw_onaxis_x=tw_onaxis.x,
+        tw_onaxis_y=tw_onaxis.y,
+        tw_offaxis_s=tw_offaxis.s,
+        tw_offaxis_x=tw_offaxis.x,
+        tw_offaxis_y=tw_offaxis.y,
+        field_s_on=field_s_on, field_bx_on=field_bx_on,
+        field_by_on=field_by_on, field_bs_on=field_bs_on,
+        field_s_off=field_s_off, field_bx_off=field_bx_off,
+        field_by_off=field_by_off, field_bs_off=field_bs_off,
+    )
+
+
+def get_case_data(place_label, wiggler_places, model_label):
+    data_path = DATA_DIR / f'{place_label}_{model_label}.npz'
+    if REPLOT and data_path.exists():
+        print(f"[replot] loading cached data from {data_path}")
+        with np.load(data_path, allow_pickle=True) as npz:
+            data = {k: npz[k] for k in npz.files}
+        data['case_label'] = str(data['case_label'])
+        return data
+    data = compute_case(place_label, wiggler_places, model_label)
+    np.savez(data_path, **data)
+    print(f"Saved case data to {data_path}")
+    return data
+
+
+def plot_case(data, place_label, model_label):
+    """Build and save the 8 figures for one case, purely from the dict
+    returned by compute_case()/get_case_data() -- no line building, matching
+    or twissing happens here, so this is cheap and safe to re-run on its own
+    (e.g. via --replot) to iterate on plot styling.
+    """
+    case_label = data['case_label']
+
+    def mark_undulator_bounds(ax):
+        for s_start, s_end in data['undulator_s_ranges']:
+            ax.axvline(s_start, color='0.4', linestyle='--', linewidth=1)
+            ax.axvline(s_end, color='0.4', linestyle='--', linewidth=1)
+
+    n_field_rows = 3 if model_label == 'SB' else 2
+    fig_field_traj, field_axes = plt.subplots(
+        n_field_rows, 1, figsize=(10, 3.2 * n_field_rows), sharex=True)
+    ax_bx, ax_by = field_axes[0], field_axes[1]
+    ax_bx.plot(data['field_s_on'], data['field_bx_on'], '.', ms=4,
+               color='tab:blue', label='On-axis')
+    ax_bx.plot(data['field_s_off'], data['field_bx_off'], '.', ms=4,
+               color='tab:orange', label='Off-axis (shift_x=0.5 mm)')
+    mark_undulator_bounds(ax_bx)
+    ax_bx.set_ylabel(r'$B_x$ [T]')
+    ax_bx.set_title(f'Field along the tracked trajectory ({model_label} model)')
+    ax_bx.grid(True, alpha=0.3)
+    ax_bx.legend()
+
+    ax_by.plot(data['field_s_on'], data['field_by_on'], '.', ms=4,
+               color='tab:blue', label='On-axis')
+    ax_by.plot(data['field_s_off'], data['field_by_off'], '.', ms=4,
+               color='tab:orange', label='Off-axis (shift_x=0.5 mm)')
+    mark_undulator_bounds(ax_by)
+    ax_by.set_ylabel(r'$B_y$ [T]')
+    ax_by.grid(True, alpha=0.3)
+    ax_by.legend()
+
+    if model_label == 'SB':
+        ax_bs = field_axes[2]
+        ax_bs.plot(data['field_s_on'], data['field_bs_on'], '.', ms=4,
+                   color='tab:blue', label='On-axis')
+        ax_bs.plot(data['field_s_off'], data['field_bs_off'], '.', ms=4,
+                   color='tab:orange', label='Off-axis (shift_x=0.5 mm)')
+        mark_undulator_bounds(ax_bs)
+        ax_bs.set_ylabel(r'$B_s$ [T]')
+        ax_bs.grid(True, alpha=0.3)
+        ax_bs.legend()
+
+    field_axes[-1].set_xlabel('s [m]')
+    fig_field_traj.suptitle(case_label)
+    fig_field_traj.tight_layout()
+
+    fig_orbit, (ax_x, ax_y) = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
+    for s_arr, x_arr, y_arr, label in [
+            (data['tw_no_undulator_s'], data['tw_no_undulator_x'], data['tw_no_undulator_y'], 'No undulator'),
+            (data['tw_onaxis_s'], data['tw_onaxis_x'], data['tw_onaxis_y'], 'On-axis undulator'),
+            (data['tw_offaxis_s'], data['tw_offaxis_x'], data['tw_offaxis_y'], 'Off-axis undulator (shift_x=0.5 mm)')]:
+        ax_x.plot(s_arr, x_arr, label=label)
+        ax_y.plot(s_arr, y_arr, label=label)
+    mark_undulator_bounds(ax_x)
+    mark_undulator_bounds(ax_y)
+    ax_x.set_ylabel('x [m]')
+    ax_x.set_title('Horizontal closed orbit around the SLS ring')
+    ax_x.grid(True, alpha=0.3)
+    ax_x.legend()
+    ax_y.set_xlabel('s [m]')
+    ax_y.set_ylabel('y [m]')
+    ax_y.set_title('Vertical closed orbit around the SLS ring')
+    ax_y.grid(True, alpha=0.3)
+    ax_y.legend()
+    fig_orbit.suptitle(case_label)
+    fig_orbit.tight_layout()
+
+    hor_off_list = data['hor_off_list']
+    deltaqx_list = data['deltaqx_list']
+    deltaqy_list = data['deltaqy_list']
+    orbit_scan_s = data['orbit_scan_s']
+    orbit_scan_x = data['orbit_scan_x']
+    orbit_scan_y = data['orbit_scan_y']
+    betx_scan = data['betx_scan']
+    bety_scan = data['bety_scan']
+    betx_no_und_i = data['betx_no_und_i']
+    bety_no_und_i = data['bety_no_und_i']
+    deltaqx_formula_list = data['deltaqx_formula_list']
+    deltaqy_formula_list = data['deltaqy_formula_list']
+    deltaqx_formula_pert_list = data['deltaqx_formula_pert_list']
+    deltaqy_formula_pert_list = data['deltaqy_formula_pert_list']
+
     # Closed orbit at each offset of the tune scan above -- same panel
     # layout as the no-undulator/on-axis/off-axis comparison plot, but
     # colored by offset (a per-curve legend would be unreadable with
@@ -486,13 +694,7 @@ def run_case(place_label, wiggler_places, model_label):
     fig_orbit_scan.suptitle(case_label)
 
     # Beta functions at each offset of the tune scan -- same colour-coded-
-    # by-offset layout as the orbit scan above. tw_no_undulator carries a
-    # different element grid (no undulator slices), so interpolate it onto
-    # the scan's (shared, undulator-including) s grid to overlay it as a
-    # reference.
-    betx_no_und_i = np.interp(orbit_scan_s, tw_no_undulator.s, tw_no_undulator.betx)
-    bety_no_und_i = np.interp(orbit_scan_s, tw_no_undulator.s, tw_no_undulator.bety)
-
+    # by-offset layout as the orbit scan above.
     fig_beta_scan, (ax_betx_scan, ax_bety_scan) = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
     for dx, betx, bety in zip(hor_off_list, betx_scan, bety_scan):
         color = cmap(norm(dx))
@@ -618,10 +820,10 @@ def run_case(place_label, wiggler_places, model_label):
     # Twiss/tracked result plotted above, as a function of offset -- makes
     # the (generally much smaller) formula/Twiss gap visible on its own
     # scale rather than as an overlap of near-identical curves.
-    deltaqx_diff_beta0 = np.array(deltaqx_list) - np.array(deltaqx_formula_list)
-    deltaqx_diff_beta = np.array(deltaqx_list) - np.array(deltaqx_formula_pert_list)
-    deltaqy_diff_beta0 = np.array(deltaqy_list) - np.array(deltaqy_formula_list)
-    deltaqy_diff_beta = np.array(deltaqy_list) - np.array(deltaqy_formula_pert_list)
+    deltaqx_diff_beta0 = deltaqx_list - deltaqx_formula_list
+    deltaqx_diff_beta = deltaqx_list - deltaqx_formula_pert_list
+    deltaqy_diff_beta0 = deltaqy_list - deltaqy_formula_list
+    deltaqy_diff_beta = deltaqy_list - deltaqy_formula_pert_list
 
     fig_tune_shift_diff, (ax1_diff, ax2_diff) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
     ax1_diff.plot(hor_off_list, deltaqx_diff_beta0, marker='^', color='tab:green',
@@ -655,11 +857,11 @@ def run_case(place_label, wiggler_places, model_label):
     fig_tune_shift_corr, (ax1_corr, ax2_corr) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
     ax1_corr.plot(hor_off_list, deltaqx_diff_beta0, marker='^', linestyle='--',
                   color='tab:green', alpha=0.4, label=r'Uncorrected ($\beta_{x,0}$)')
-    ax1_corr.plot(hor_off_list, deltaqx_resid_corr_beta0, marker='^',
+    ax1_corr.plot(hor_off_list, data['deltaqx_resid_corr_beta0'], marker='^',
                   color='tab:green', label=r'$C^-$-corrected ($\beta_{x,0}$)')
     ax1_corr.plot(hor_off_list, deltaqx_diff_beta, marker='v', linestyle='--',
                   color='tab:red', alpha=0.4, label=r'Uncorrected ($\beta_x$)')
-    ax1_corr.plot(hor_off_list, deltaqx_resid_corr_pert, marker='v',
+    ax1_corr.plot(hor_off_list, data['deltaqx_resid_corr_pert'], marker='v',
                   color='tab:red', label=r'$C^-$-corrected ($\beta_x$)')
     ax1_corr.axhline(0, color='0.4', linewidth=1)
     ax1_corr.set_ylabel(r'$\Delta Q_x$ residual')
@@ -669,11 +871,11 @@ def run_case(place_label, wiggler_places, model_label):
 
     ax2_corr.plot(hor_off_list, deltaqy_diff_beta0, marker='^', linestyle='--',
                   color='tab:green', alpha=0.4, label=r'Uncorrected ($\beta_{y,0}$)')
-    ax2_corr.plot(hor_off_list, deltaqy_resid_corr_beta0, marker='^',
+    ax2_corr.plot(hor_off_list, data['deltaqy_resid_corr_beta0'], marker='^',
                   color='tab:green', label=r'$C^-$-corrected ($\beta_{y,0}$)')
     ax2_corr.plot(hor_off_list, deltaqy_diff_beta, marker='v', linestyle='--',
                   color='tab:red', alpha=0.4, label=r'Uncorrected ($\beta_y$)')
-    ax2_corr.plot(hor_off_list, deltaqy_resid_corr_pert, marker='v',
+    ax2_corr.plot(hor_off_list, data['deltaqy_resid_corr_pert'], marker='v',
                   color='tab:red', label=r'$C^-$-corrected ($\beta_y$)')
     ax2_corr.axhline(0, color='0.4', linewidth=1)
     ax2_corr.set_xlabel('Horizontal offset [m]')
@@ -684,9 +886,10 @@ def run_case(place_label, wiggler_places, model_label):
     fig_tune_shift_corr.suptitle(case_label)
     fig_tune_shift_corr.tight_layout()
 
-    # Save the 7 figures for this case, named
+    # Save the 8 figures for this case, named
     # "<place_label>_<model_label>_<what the figure shows>.pdf".
     figures = [
+        (fig_field_traj, 'field_along_trajectory'),
         (fig_orbit, 'orbit_comparison'),
         (fig_orbit_scan, 'orbit_scan'),
         (fig_beta_scan, 'beta_functions'),
@@ -703,9 +906,10 @@ def run_case(place_label, wiggler_places, model_label):
 
 for place_label, wiggler_places in WIGGLER_CASES:
     for model_label in MODEL_LABELS:
-        run_case(place_label, wiggler_places, model_label)
+        case_data = get_case_data(place_label, wiggler_places, model_label)
+        plot_case(case_data, place_label, model_label)
 
-# All 7*3*2 = 42 figures across every case are kept open (not closed inside
-# run_case()) so they can all be reviewed interactively here, in addition
+# All 8*3*2 = 48 figures across every case are kept open (not closed inside
+# plot_case()) so they can all be reviewed interactively here, in addition
 # to having been saved as PDFs above.
 plt.show()
