@@ -7,7 +7,7 @@ import pandas as pd
 #################################################
 
 # Load the raw field map data from shared test_data
-field_map_path = "../../test_data/sls/undulator_field_map.txt"
+field_map_path = "../../test_data/sls/simona_field_map.txt"
 df_raw_data = pd.read_csv(
     field_map_path,
     sep=r"\s+",
@@ -21,11 +21,11 @@ df_raw_data = pd.read_csv(
 # other datasets.
 from xtrack._temp.splineboris.tube_fitter import TubeFitter
 from xtrack._temp.splineboris.splineboris_sequence import SplineBorisSequence
-MULTIPOLE_ORDER = 3  # deg=2 -> Bx/By fit up to and including order 2
+MULTIPOLE_ORDER = 4  # deg=2 -> Bx/By fit up to and including order 2
 
 # Rigid transverse misalignment applied to the undulator field elements
 # (both models) -- change these to scan different misalignments.
-SHIFT_X = 0.0005  # [m]
+SHIFT_X = 0.000#5  # [m]
 SHIFT_Y = 0.000  # [m]
 
 # e+/e- anomalous magnetic moment (g-2)/2, needed for spin (Thomas-BMT)
@@ -39,7 +39,7 @@ SPIN_Z0 = 0.0
 fitter = TubeFitter(
     raw_data=df_raw_data,
     distance_unit=0.001, # dataset uses mm
-    n_frames=1701,
+    n_frames=4401,#1701,
     deg=MULTIPOLE_ORDER - 1,
 )
 fitter.fit()

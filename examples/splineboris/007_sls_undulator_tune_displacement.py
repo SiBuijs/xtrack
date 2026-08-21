@@ -311,6 +311,28 @@ def compute_case(place_label, wiggler_places, model_label):
     corrector_vars = ['k0l_corr1', 'k0sl_corr1', 'k0l_corr2', 'k0sl_corr2',
                        'k0l_corr3', 'k0sl_corr3', 'k0l_corr4', 'k0sl_corr4']
 
+    # Local x-deflection baseline: even at shift_x=0, the beam deflects
+    # horizontally *inside* the undulator (correctors only force x=px=0 at
+    # the undulator's own start/end, not throughout its length). Read via a
+    # literal single-particle track through the (still unshifted) standalone
+    # `undulator` line at element-by-element resolution, since the coarser
+    # per-region Twiss orbit (tw_onaxis, used above for the field-sampling
+    # comparison) may not resolve the same intra-region curvature -- print
+    # both so the gap motivating this addition is visible, not just assumed.
+    # Folded into x_local in the deltaK1 loop below, as a first attempt at
+    # explaining part of the theory-vs-simulation gap; may need revisiting.
+    p_deflection = p0.copy()
+    undulator.track(p_deflection, turn_by_turn_monitor='ONE_TURN_EBE')
+    mon_deflection = undulator.record_last_track
+    x_deflection_baseline = float(np.mean(mon_deflection.x[0, :]))
+    x_deflection_twiss_check = float(np.mean(np.interp(
+        mon_deflection.s[0, :] + undulator_s_ranges[0][0],
+        tw_onaxis.s, tw_onaxis.x)))
+    print(f"[x-deflection baseline] literal single-particle track: "
+          f"mean x = {x_deflection_baseline * 1e6:.3f} um "
+          f"(Twiss-orbit-interpolated equivalent: "
+          f"{x_deflection_twiss_check * 1e6:.3f} um)")
+
     for dx in hor_off_list:   # dx in meters
         # apply horizontal offset to all undulator slices (standalone line
         # and the copy inserted in the ring)
@@ -353,20 +375,31 @@ def compute_case(place_label, wiggler_places, model_label):
     # Independent analytic cross-check of the tune shift, via
     #   deltaQ = 1/(4 pi) * oint deltaK1(s) * beta(s) ds
     # (standard first-order perturbation theory), instead of reading it off
-    # the full nonlinear Twiss above. deltaK1(s) has two sources within the
+    # the full nonlinear Twiss above. deltaK1(s) has three sources within the
     # undulator: the fitted on-axis quadrupole itself (K1(s), ~0 here per
-    # the fit -- see "Bnorm der=1" in the fit report above) and sextupole
+    # the fit -- see "Bnorm der=1" in the fit report above); normal-sextupole
     # feed-down, K2(s) * x(s), from evaluating the fitted sextupole (Bnorm
-    # der=2) away from the magnet's own physical axis. to_multipole_line()
-    # gives K1(s), K2(s) directly per region (thick Multipole knl[1]/
-    # knl[2], built unshifted -- the canonical field expansion about the
-    # magnet's own physical center); x(s) is read off the already-corrected
-    # orbit from the scan above, minus the offset dx itself (shift_x moves
-    # the MAGNET, not the beam, so the field is evaluated at the particle's
-    # position relative to the shifted magnet). This cross-check is built
-    # the same way regardless of which model (SB/MK) is the primary
-    # undulator here -- for the MK case it's effectively the same field
-    # model as the Twiss itself, so the two are expected to agree closely.
+    # der=2) away from the magnet's own physical axis; and skew-sextupole
+    # feed-down, -K2_skew(s) * y(s) (Bskew der=2 -- a vertical shift of a
+    # skew sextupole also produces a normal-quadrupole component). The sign
+    # on the skew term follows from the same complex-field convention used
+    # in _multipole_field_bx_by() above (By + iBx = brho0/length * sum_n
+    # (knl[n]+i*ksl[n])/n! * (x+iy)^n): writing z=x+iy for the n=2 term,
+    # Re(z^2)=x^2-y^2 and Im(z^2)=2xy, so d(By)/dx at fixed y works out to
+    # K2*x - K2_skew*y. In this scan y is always ~0 (only shift_x is varied),
+    # so this term is expected to evaluate to ~0 -- included for
+    # completeness/correctness rather than because it moves the curve here.
+    # to_multipole_line() gives K1(s), K2(s), K2_skew(s) directly per region
+    # (thick Multipole knl[1]/knl[2]/ksl[2], built unshifted -- the canonical
+    # field expansion about the magnet's own physical center); x(s)/y(s) are
+    # read off the already-corrected orbit from the scan above, minus the
+    # offset dx itself (shift_x moves the MAGNET, not the beam, so the field
+    # is evaluated at the particle's position relative to the shifted
+    # magnet), plus x_deflection_baseline (see above -- the local x-wiggle
+    # present even at shift_x=0). This cross-check is built the same way
+    # regardless of which model (SB/MK) is the primary undulator here -- for
+    # the MK case it's effectively the same field model as the Twiss itself,
+    # so the two are expected to agree closely.
     multipole_line = tube_fitter.to_multipole_line(
         multipole_order=multipole_order, p0c=E0, field_at='mean')
     mult_table = multipole_line.get_table()
@@ -376,6 +409,8 @@ def compute_case(place_label, wiggler_places, model_label):
                          for nn in multipole_line.element_names])
     mult_K2 = np.array([multipole_line[nn].knl[2] / multipole_line[nn].length
                          for nn in multipole_line.element_names])
+    mult_K2_skew = np.array([multipole_line[nn].ksl[2] / multipole_line[nn].length
+                              for nn in multipole_line.element_names])
     mult_s_mid = mult_table['s'][:-1] + mult_length / 2
 
     # Longitudinal-field (solenoid) focusing cross-check: unlike a normal
@@ -423,12 +458,13 @@ def compute_case(place_label, wiggler_places, model_label):
         integral_y_sol_pert = 0.0
         for s_start_und, _ in undulator_s_ranges:
             s_global = s_start_und + mult_s_mid
-            x_local = np.interp(s_global, orbit_scan_s, x_orbit) - dx
+            x_local = (np.interp(s_global, orbit_scan_s, x_orbit) - dx
+                       + x_deflection_baseline)
             # No "- dx"-like offset for y: shift_y is never varied in the
             # scan (only shift_x is), so the magnet's y-position stays at 0
             # and y_local is just the actual orbit position.
             y_local = np.interp(s_global, orbit_scan_s, y_orbit)
-            deltaK1 = mult_K1 + mult_K2 * x_local
+            deltaK1 = mult_K1 + mult_K2 * x_local - mult_K2_skew * y_local
             mult_Bs_local = np.array([
                 bs_line[nn].get_field(x_val, y_val, s_local)[2]
                 for nn, s_local, x_val, y_val in zip(
