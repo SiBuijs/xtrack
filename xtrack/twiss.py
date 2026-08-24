@@ -660,9 +660,9 @@ def twiss_line(line, particle_ref=None, method=None,
         return _add_action_in_res(res, input_kwargs)
 
     if radiation_method is None and line._radiation_model is not None:
-        if line._radiation_model == 'quantum':
+        if line._radiation_model in ('quantum', 'quantum-kick'):
             raise ValueError(
-                'twiss cannot be called when the radiation model is ``quantum``')
+                'twiss cannot be called when the radiation model is stochastic')
         if method == '4d':
             raise RuntimeError('4d twiss cannot be called when radiation is present')
         radiation_method = 'kick_as_co'
@@ -2215,7 +2215,9 @@ def _get_eneloss_and_damping_rates(particle_on_co, R_matrix,
 def _extract_sr_distribution_properties(twiss_res):
 
     radiation_flag = twiss_res['radiation_flag']
-    if np.any(radiation_flag == 2):
+    if np.any(
+            (radiation_flag == 2)
+            | (radiation_flag == 3)):
         raise ValueError('Incompatible radiation flag')
 
     hx, hy, kappa0_x, kappa0_y = _get_trajectory_curvatures(twiss_res)
@@ -3702,6 +3704,11 @@ class TwissInit:
         return WW[2, 2]**2 + WW[2, 3]**2
 
     @property
+    def betzeta(self):
+        WW = self.W_matrix
+        return WW[4, 4]**2 + WW[4, 5]**2
+
+    @property
     def alfx(self):
         WW = self.W_matrix
         return -WW[0, 0] * WW[1, 0] - WW[0, 1] * WW[1, 1]
@@ -3710,6 +3717,11 @@ class TwissInit:
     def alfy(self):
         WW = self.W_matrix
         return -WW[2, 2] * WW[3, 2] - WW[2, 3] * WW[3, 3]
+
+    @property
+    def alfzeta(self):
+        WW = self.W_matrix
+        return -WW[4, 4] * WW[5, 4] - WW[4, 5] * WW[5, 5]
 
     @property
     def dx(self):
@@ -3737,6 +3749,14 @@ class TwissInit:
 
 
 class TwissTable(Table):
+    """
+    Table returned by :meth:`xtrack.Line.twiss`.
+
+    ``TwissTable`` stores element-by-element optics and closed-orbit data
+    produced by Twiss calculations. Typical columns include longitudinal
+    position, beta functions, alpha functions, dispersion, phase advances,
+    coordinates, momenta, and element strengths when requested.
+    """
 
     # Messages to be shown when accessing deprecated fields
     _DEPRECATED_FIELDS = {
@@ -3761,19 +3781,18 @@ class TwissTable(Table):
                       + DEPRECATION_INFO_PREP_1_0),
     }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, data, *args, **kwargs):
         """
-        Table returned by :meth:`xtrack.Line.twiss`.
+        Create a Twiss table.
 
         ``TwissTable`` stores element-by-element optics, closed orbit,
         transfer information, and global quantities produced by Twiss
-        calculations. It extends :class:`xtrack.Table` with Twiss-specific
-        helpers for initial conditions, beam covariance, response matrices,
-        normalized coordinates, plotting, reversing, concatenating, and
-        IBS/synchrotron-radiation post-processing.
+        calculations.
 
         Parameters
         ----------
+        data : mapping
+            Mapping containing Twiss-table columns and scalar attributes.
         *args
             Positional arguments passed to :class:`xtrack.Table`.
         periodic : bool, optional
@@ -3782,12 +3801,60 @@ class TwissTable(Table):
             otherwise it defaults to ``False``.
         **kwargs
             Keyword arguments passed to :class:`xtrack.Table`.
+
+        Examples
+        --------
+        Build a compact Twiss-like table:
+
+        >>> import numpy as np
+        >>> import xtrack as xt
+        >>> tab = xt.TwissTable({
+        ...     "name": np.array(["mqf.1", "d1.1", "mb1.1", "_end_point"],
+        ...                      dtype=object),
+        ...     "element_type": np.array(["Quadrupole", "Drift", "Bend", ""],
+        ...                              dtype=object),
+        ...     "s": np.array([0.0, 0.3, 1.3, 4.3]),
+        ...     "betx": np.array([1.28, 1.28, 2.27, 1.28]),
+        ...     "bety": np.array([4.79, 4.79, 5.21, 4.79]),
+        ...     "dx": np.array([2.28, 2.28, 2.24, 2.28]),
+        ... })
+        >>> tab
+        TwissTable: 4 rows, 6 cols
+        name       element_type             s          betx          bety            dx
+        mqf.1      Quadrupole               0          1.28          4.79          2.28
+        d1.1       Drift                  0.3          1.28          4.79          2.28
+        mb1.1      Bend                   1.3          2.27          5.21          2.24
+        _end_point                        4.3          1.28          4.79          2.28
+
+        Select optics columns, including expressions:
+
+        >>> tab.cols["betx bety dx/sqrt(betx)"]
+        TwissTable: 4 rows, 4 cols
+        name                betx          bety dx/sqrt(betx)
+        mqf.1               1.28          4.79       2.01525
+        d1.1                1.28          4.79       2.01525
+        mb1.1               2.27          5.21       1.48674
+        _end_point          1.28          4.79       2.01525
+
+        Select elements by type:
+
+        >>> tab.rows.match(element_type="Quadrupole|Bend")
+        TwissTable: 2 rows, 6 cols
+        name  element_type             s          betx          bety            dx
+        mqf.1 Quadrupole               0          1.28          4.79          2.28
+        mb1.1 Bend                   1.3          2.27          5.21          2.24
         """
         kwargs['sep_count'] = kwargs.get('sep_count', '::::')
-        super().__init__(*args, **kwargs)
-        self['periodic'] = kwargs.get('periodic', kwargs.get('data', {}).get('periodic', False))
+        periodic = kwargs.pop('periodic', data.get('periodic', False))
+        super().__init__(data, *args, **kwargs)
+        self['periodic'] = periodic
 
     _error_on_row_not_found = True
+
+    def _select_rows(self, rows):
+        out = super()._select_rows(rows)
+        out._data.pop('periodic', None)
+        return out
 
     def to_pandas(self, index=None, columns=None):
         """
@@ -6024,5 +6091,3 @@ def _6d_w_matrix(betx, bety, alfx, alfy, bets, dx, dpx, dy, dpy):
     out[2, 5] = dy
     out[3, 5] = dpy
     return out
-
-
