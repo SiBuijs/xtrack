@@ -99,7 +99,7 @@ def solenoid_field():
     return SolenoidField(**SOLENOID_MODEL_PARAMS)
 
 @pytest.fixture(scope="module")
-def solenoid_vs_varsol_fit_pars_df(solenoid_field):
+def solenoid_field_fitter(solenoid_field):
     sf = solenoid_field
 
     x_axis = np.linspace(
@@ -165,7 +165,12 @@ def solenoid_vs_varsol_fit_pars_df(solenoid_field):
     assert idx_end_max == SOLENOID_N_STEPS, f"Unexpected idx_end max: {idx_end_max}"
     assert point_count == SOLENOID_Z_POINT_COUNT, f"Unexpected point_count: {point_count}"
 
-    return df_fit_pars
+    return fitter
+
+
+@pytest.fixture(scope="module")
+def solenoid_vs_varsol_fit_pars_df(solenoid_field_fitter):
+    return solenoid_field_fitter.df_fit_pars
 
 @pytest.fixture(scope="module")
 def undulator_fit_pars_df(test_data_dir):
@@ -177,6 +182,58 @@ def undulator_rotated_fit_pars_df(test_data_dir):
         test_data_dir / "sls" / "undulator_fit_pars_rotated.csv",
         index_col=FIT_PARS_INDEX_COLS,
     )
+
+
+def test_field_fitter_get_spline_data_matches_sequence(solenoid_field_fitter):
+    spline_data = solenoid_field_fitter.get_spline_data()
+    sequence = SplineBorisSequence(
+        df_fit_pars=solenoid_field_fitter.df_fit_pars,
+        multipole_order=SOLENOID_MULTIPOLE_ORDER,
+    )
+
+    assert len(spline_data) == len(sequence.elements)
+    for piece, element, s_start, s_end in zip(
+        spline_data,
+        sequence.elements,
+        sequence.s_starts,
+        sequence.s_ends,
+    ):
+        assert set(piece) == {
+            "s_start", "s_end", "idx_start", "idx_end", "bs", "bx", "by"
+        }
+        assert isinstance(piece["bs"], xt.Spline4)
+        assert all(isinstance(spline, xt.Spline4) for spline in piece["bx"])
+        assert all(isinstance(spline, xt.Spline4) for spline in piece["by"])
+        assert len(piece["bx"]) == SOLENOID_MULTIPOLE_ORDER
+        assert len(piece["by"]) == SOLENOID_MULTIPOLE_ORDER
+        assert piece["s_start"] == s_start
+        assert piece["s_end"] == s_end
+        xo.assert_allclose(piece["bs"].as_list(), element.bs, rtol=0, atol=1e-14)
+        xo.assert_allclose(
+            [spline.as_list() for spline in piece["bx"]],
+            element.bx,
+            rtol=0,
+            atol=1e-14,
+        )
+        xo.assert_allclose(
+            [spline.as_list() for spline in piece["by"]],
+            element.by,
+            rtol=0,
+            atol=1e-14,
+        )
+
+    elements = [
+        xt.SplineBoris(
+            length=piece["s_end"] - piece["s_start"],
+            n_steps=max(1, piece["idx_end"] - piece["idx_start"]),
+            bs=piece["bs"],
+            bx=piece["bx"],
+            by=piece["by"],
+        )
+        for piece in spline_data
+    ]
+    line = xt.Line(elements=elements)
+    xo.assert_allclose(line.get_length(), sequence.length, rtol=0, atol=1e-14)
 
 
 
@@ -501,7 +558,7 @@ def test_splineboris_backtrack_twiss_checks_s():
         q0=1.0,
         energy0=1e9,
     )
-    line.build_tracker(use_prebuilt_kernels=False)
+    line.build_tracker()
 
     tw_forward = line.twiss(
         method='4d',
@@ -1102,6 +1159,7 @@ def test_splineboris_bend_radiation(make_uniform_splineboris):
     gamma = (particles_mean.energy / particles_mean.mass0)[0]
     gamma0 = particles_mean.gamma0[0]
     particles_qntm_0 = particles_mean.copy()
+    particles_qntm_kick_0 = particles_mean.copy()
 
     # Calculate bend angle from field
     P0_J = particles_mean.p0c[0] / clight * qe
@@ -1118,22 +1176,28 @@ def test_splineboris_bend_radiation(make_uniform_splineboris):
     # Create SplineBoris elements with radiation
     splineboris_mean = make_uniform_splineboris(Bx=0, By=B_T, Bs=0, s_start=s_start, s_end=s_end, n_steps=n_steps, radiation_flag=1)
     splineboris_qntm = make_uniform_splineboris(Bx=0, By=B_T, Bs=0, s_start=s_start, s_end=s_end, n_steps=n_steps, radiation_flag=2)
+    splineboris_qntm_kick = make_uniform_splineboris(Bx=0, By=B_T, Bs=0, s_start=s_start, s_end=s_end, n_steps=n_steps, radiation_flag=3)
 
     # Initialize random number generators
     particles_mean_0._init_random_number_generator()
     particles_qntm_0._init_random_number_generator()
+    particles_qntm_kick_0._init_random_number_generator()
 
     dct_mean_before = particles_mean_0.to_dict()
 
     # Track particles
     splineboris_mean.track(particles_mean_0)
     splineboris_qntm.track(particles_qntm_0)
+    splineboris_qntm_kick.track(particles_qntm_kick_0)
 
     dct_mean = particles_mean_0.to_dict()
     dct_qntm = particles_qntm_0.to_dict()
+    dct_qntm_kick = particles_qntm_kick_0.to_dict()
 
     # Test 1: Average and stochastic models should give same mean energy loss
     xo.assert_allclose(dct_mean['delta'], np.mean(dct_qntm['delta']),
+                       atol=0, rtol=5e-3)
+    xo.assert_allclose(dct_mean['delta'], np.mean(dct_qntm_kick['delta']),
                        atol=0, rtol=5e-3)
 
     # Test 2: Compare energy loss against Larmor formula
@@ -1204,6 +1268,18 @@ def test_splineboris_bend_radiation(make_uniform_splineboris):
 
     xo.assert_allclose(mean_photon_energy, E_ave_eV, rtol=1e-2, atol=0)
     xo.assert_allclose(std_photon_energy, np.sqrt(E_sq_ave_eV - E_ave_eV**2), rtol=2e-3, atol=0)
+
+    line.configure_radiation(model='quantum-kick')
+    record = line.start_internal_logging_for_elements_of_type(
+        xt.SplineBoris, capacity=record_capacity
+    )
+    particles_test = particles_mean_0.copy()
+    particles_test_before = particles_test.copy()
+    line.track(particles_test)
+
+    Delta_E_test = (particles_test.ptau - particles_test_before.ptau) * particles_test.p0c
+    assert -np.sum(Delta_E_test) > 0
+    assert record._index.num_recorded == 0
 
 
 
@@ -1480,10 +1556,10 @@ COMMON_TEST_CASES = [
 ]
 @pytest.mark.parametrize(
     'case,atol',
-    zip(
+    list(zip(
         [case['case'].copy() for case in COMMON_TEST_CASES],
         [3e-8, 3e-8, 3e-8, 3e-8, 3e-8, 3e-8, 2e-5, 1e-5, 2e-8, 1e-5, 2e-5],
-    ),
+    )),
     ids=[case['id'] for case in COMMON_TEST_CASES],
 )
 def test_splineboris_spin_uniform_solenoid(case, atol, make_uniform_splineboris):
@@ -1579,10 +1655,10 @@ def test_splineboris_spin_multipole_dipole_component():
 
 @pytest.mark.parametrize(
     'case,atol',
-    zip(
+    list(zip(
         [case['case'].copy() for case in COMMON_TEST_CASES],
         [6e-8, 6e-8, 6e-8, 6e-8, 6e-8, 6e-8, 6e-5, 3e-5, 2e-7, 3e-5, 6e-5],
-    ),
+    )),
     ids=[case['id'] for case in COMMON_TEST_CASES],
 )
 def test_splineboris_spin_quadrupole(case, atol):
