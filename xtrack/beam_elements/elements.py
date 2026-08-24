@@ -3161,6 +3161,14 @@ class BorisSolenoid(BeamElement):
     radiation_flag : int, optional
         Radiation model flag. ``0`` disables radiation, non-zero values select
         synchrotron radiation models as for other thick elements.
+    canonical : bool, optional
+        If ``False`` (default), the stored ``px``, ``py`` are treated directly
+        as kinetic momentum throughout the element (matches the original
+        behaviour). If ``True``, ``px``, ``py`` are treated as canonical: the
+        vector potential of the solenoid is used to convert to kinetic
+        momentum at entry and back to canonical at exit, while the stepper
+        itself is unchanged. This removes the fringe-like symplectic error of
+        the kinetic-only mode without adding a per-step cost.
     '''
 
     isthick = True
@@ -3177,6 +3185,7 @@ class BorisSolenoid(BeamElement):
         'shift_x': xo.Field(xo.Float64, 0),
         'shift_y': xo.Field(xo.Float64, 0),
         'radiation_flag': xo.Int64,
+        'canonical_flag': xo.Int64,
     }
 
     _depends_on = [RandomUniformAccurate, RandomExponential]
@@ -3223,6 +3232,7 @@ class BorisSolenoid(BeamElement):
                 f"taper_min_fraction must be >= 0, got {taper_min_fraction}")
 
         radiation_flag = kwargs.pop('radiation_flag', 0)
+        canonical_flag = int(bool(kwargs.pop('canonical', False)))
 
         super().__init__(
             L_coil=float(L_coil),
@@ -3234,6 +3244,7 @@ class BorisSolenoid(BeamElement):
             shift_x=float(shift_x),
             shift_y=float(shift_y),
             radiation_flag=radiation_flag,
+            canonical_flag=canonical_flag,
             **kwargs,
         )
         self.taper = taper
@@ -3318,6 +3329,7 @@ class BorisSolenoid(BeamElement):
             shift_x=self.shift_x,
             shift_y=self.shift_y,
             radiation_flag=self.radiation_flag,
+            canonical=bool(self.canonical_flag),
         )
         if _buffer is not None:
             common['_buffer'] = _buffer
@@ -3509,6 +3521,7 @@ class BorisSolenoid(BeamElement):
             shift_x=self.shift_x,
             shift_y=self.shift_y,
             radiation_flag=self.radiation_flag,
+            canonical=bool(self.canonical_flag),
             taper=False,
             _buffer=_buffer,
         )

@@ -23,6 +23,7 @@ void BorisSolenoid_track_local_particle(
     const double shift_x = BorisSolenoidData_get_shift_x(el);
     const double shift_y = BorisSolenoidData_get_shift_y(el);
     const int64_t radiation_flag = BorisSolenoidData_get_radiation_flag(el);
+    const int64_t canonical_flag = BorisSolenoidData_get_canonical_flag(el);
     SynchrotronRadiationRecordData radiation_record =
         (SynchrotronRadiationRecordData) BorisSolenoidData_getp_internal_record(el, part0);
 
@@ -42,6 +43,7 @@ void BorisSolenoid_track_local_particle(
             shift_x,
             shift_y,
             radiation_flag,
+            canonical_flag,
             radiation_record
         );
     END_PER_PARTICLE_BLOCK;

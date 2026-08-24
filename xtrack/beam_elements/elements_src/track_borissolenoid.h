@@ -8,6 +8,7 @@
 
 #include "xtrack/headers/track.h"
 #include "xtrack/beam_elements/borissolenoid_src/solenoid_B_field_eval.h"
+#include "xtrack/beam_elements/borissolenoid_src/solenoid_A_field_eval.h"
 #include "xtrack/beam_elements/borissolenoid_src/helical_map.h"
 #ifndef XTRACK_MULTIPOLE_NO_SYNRAD
 // Forward declarations for random functions needed by synrad_spectrum.h
@@ -29,6 +30,7 @@ void BorisSolenoid_single_particle(
     const double shift_x,
     const double shift_y,
     const int64_t radiation_flag,
+    const int64_t canonical_flag,
     SynchrotronRadiationRecordData radiation_record
 ) {
     if (LocalParticle_get_state(part) <= 0) {
@@ -69,6 +71,21 @@ void BorisSolenoid_single_particle(
 
     const double s_entry = LocalParticle_get_s(part);
     double s_local = 0.0;
+
+    if (canonical_flag) {
+        // The stored (px, py) are canonical; the stepper below propagates
+        // kinetic momentum. Convert canonical -> kinetic at entry using the
+        // vector potential, and back at exit (see end of function), instead
+        // of correcting at every substep.
+        double Ax_entry, Ay_entry, Az_entry;
+        evaluate_solenoid_A(
+            x - shift_x, y - shift_y, s_entry,
+            L_coil, a, B0, z0,
+            &Ax_entry, &Ay_entry, &Az_entry
+        );
+        px -= q_coulomb * Ax_entry;
+        py -= q_coulomb * Ay_entry;
+    }
 
     #ifndef XTRACK_MULTIPOLE_NO_SYNRAD
     double old_kin_px = 0.0;
@@ -263,6 +280,17 @@ void BorisSolenoid_single_particle(
             );
         }
         #endif
+    }
+
+    if (canonical_flag) {
+        double Ax_exit, Ay_exit, Az_exit;
+        evaluate_solenoid_A(
+            x - shift_x, y - shift_y, s_entry + L,
+            L_coil, a, B0, z0,
+            &Ax_exit, &Ay_exit, &Az_exit
+        );
+        px += q_coulomb * Ax_exit;
+        py += q_coulomb * Ay_exit;
     }
 
     LocalParticle_set_x(part, x);
