@@ -35,7 +35,8 @@ void SplineBoris_single_particle(
     GPUGLMEM const double* knl,
     GPUGLMEM const double* ksl,
     const int64_t  radiation_flag,
-    SynchrotronRadiationRecordData radiation_record
+    SynchrotronRadiationRecordData radiation_record,
+    const int64_t  zero_bs
 ){
 
     // Skip dead particles (state <= 0)
@@ -219,6 +220,14 @@ void SplineBoris_single_particle(
             Bx += Bx_mp;
             By += By_mp;
             Bs += Bs_mp;
+        }
+
+        // Diagnostic-only knockout: forces the longitudinal field seen by
+        // the rotation step (and by spin tracking below) to zero, without
+        // touching Bx/By or the fitted bs/by/bx data -- used to isolate the
+        // dynamical effect of Bs (on- and off-axis) from everything else.
+        if (zero_bs) {
+            Bs = 0.0;
         }
 
         // --------------------------------------------------------------

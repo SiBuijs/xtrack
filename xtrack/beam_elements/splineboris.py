@@ -356,6 +356,12 @@ class SplineBoris(BeamElement):
         'shift_y'           : xo.Field(xo.Float64, 0),  # Transverse shift in y [m] - used for field map offset
         'scale_b'           : xo.Field(xo.Float64, default=1),
         'radiation_flag'    : xo.Int64,
+        # Diagnostic-only knob: forces Bs to 0 inside the Boris stepper
+        # (equivalent to skipping the rotation step) without touching the
+        # fitted bs/by/bx data, to isolate the dynamical effect of the
+        # longitudinal field from everything else. Default 0 (off) leaves
+        # tracking bit-identical to before this field was added.
+        'zero_bs'           : xo.Field(xo.Int64, default=0),
     }
 
     _extra_c_sources = [
@@ -392,6 +398,7 @@ class SplineBoris(BeamElement):
         length = float(length)
 
         radiation_flag = kwargs.pop('radiation_flag', 0)
+        zero_bs = kwargs.pop('zero_bs', 0)
         knl = kwargs.pop('knl', None)
         ksl = kwargs.pop('ksl', None)
         knl, ksl = _prepare_knl_ksl(knl=knl, ksl=ksl)
@@ -409,6 +416,7 @@ class SplineBoris(BeamElement):
             shift_y=shift_y,
             scale_b=scale_b,
             radiation_flag=radiation_flag,
+            zero_bs=zero_bs,
             **kwargs,
         )
 

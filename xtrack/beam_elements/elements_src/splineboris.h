@@ -25,7 +25,8 @@ void SplineBoris_track_local_particle(SplineBorisData el, LocalParticle* part0){
     GPUGLMEM const double *knl = SplineBorisData_getp1_knl(el, 0);
     GPUGLMEM const double *ksl = SplineBorisData_getp1_ksl(el, 0);
     const int64_t radiation_flag = SplineBorisData_get_radiation_flag(el);
-    SynchrotronRadiationRecordData radiation_record = 
+    const int64_t zero_bs = SplineBorisData_get_zero_bs(el);
+    SynchrotronRadiationRecordData radiation_record =
         (SynchrotronRadiationRecordData) SplineBorisData_getp_internal_record(el, part0);
 
     if (n_steps <= 0 || multipole_order <= 0) {
@@ -88,7 +89,8 @@ void SplineBoris_track_local_particle(SplineBorisData el, LocalParticle* part0){
             knl,
             ksl,
             radiation_flag,
-            radiation_record
+            radiation_record,
+            zero_bs
         );
     END_PER_PARTICLE_BLOCK;
 
