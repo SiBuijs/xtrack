@@ -75,6 +75,18 @@ DATA_DIR = Path(__file__).resolve().parent / 'data'
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 REPLOT = '--replot' in sys.argv
 
+# Bs knockout test (examples/splineboris/013_sls_undulator_bs_knockout.py):
+# forces Bs to 0 inside the SB model's Boris stepper (SplineBoris.zero_bs,
+# see xtrack/beam_elements/elements_src/track_splineboris.h) to check
+# whether the SB-vs-MK tune-shift gap is explained by the longitudinal
+# field. Only meaningful for the SB cases -- MK has no Bs channel at all,
+# so its cache/output is left untouched (_variant_tag() below only tags SB).
+ZERO_BS = '--zero-bs' in sys.argv
+
+
+def _variant_tag(model_label):
+    return '_zerobs' if (ZERO_BS and model_label == 'SB') else ''
+
 # Three placement cases (only ars11_uind_0210_1, only ars11_uind_0610_1,
 # both) x two undulator models (SB = SplineBoris, from to_line(); MK =
 # Multipole Kick, from to_multipole_line()) -- compute_case()/plot_case()
@@ -115,6 +127,8 @@ def compute_case(place_label, wiggler_places, model_label):
     print("=" * 80)
     print(f"Case: place={place_label}  model={model_label}")
     case_label = f'{place_label} ({model_label})'
+    if ZERO_BS and model_label == 'SB':
+        case_label += ' [Bs=0]'
     print("=" * 80)
 
     tube_fitter = get_tube_fitter()
@@ -172,6 +186,14 @@ def compute_case(place_label, wiggler_places, model_label):
         und_env.place('corr3', at=l_wig - 0.1),
         und_env.place('corr4', at=l_wig - 0.02),
     ], s_tol=5e-3)
+
+    # Bs knockout test (see ZERO_BS above) -- set before the zero-offset
+    # match below so the correctors are matched self-consistently against
+    # whichever physics (real or zeroed Bs) is actually active.
+    if ZERO_BS and model_label == 'SB':
+        for nn in undulator.element_names:
+            if nn.startswith('tubefitter'):
+                undulator[nn].zero_bs = 1
 
     opt = undulator.match(
         solve=False,
@@ -596,7 +618,7 @@ def compute_case(place_label, wiggler_places, model_label):
 
 
 def get_case_data(place_label, wiggler_places, model_label):
-    data_path = DATA_DIR / f'{place_label}_{model_label}.npz'
+    data_path = DATA_DIR / f'{place_label}_{model_label}{_variant_tag(model_label)}.npz'
     if REPLOT and data_path.exists():
         print(f"[replot] loading cached data from {data_path}")
         with np.load(data_path, allow_pickle=True) as npz:
@@ -999,7 +1021,7 @@ def plot_case(data, place_label, model_label):
     for fig, suffix in figures:
         if fig is None:
             continue
-        out_path = OUT_DIR / f'{place_label}_{model_label}_{suffix}.pdf'
+        out_path = OUT_DIR / f'{place_label}_{model_label}{_variant_tag(model_label)}_{suffix}.pdf'
         fig.savefig(out_path)
         print(f"Saved {out_path}")
 
