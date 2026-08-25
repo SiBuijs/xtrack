@@ -446,6 +446,12 @@ def compute_case(place_label, wiggler_places, model_label):
     # the unperturbed beta) rather than from delta K(s) itself.
     deltaqx_formula_pert_list = []
     deltaqy_formula_pert_list = []
+    # Quadrupole-effect-only variant (deltaK1 term -- intrinsic K1 plus
+    # sextupole feed-down -- without the solenoid/Bs focusing term), at the
+    # unperturbed beta0, to isolate how much of the beta0 formula curve above
+    # comes from the longitudinal field component.
+    deltaqx_formula_quadonly_list = []
+    deltaqy_formula_quadonly_list = []
     for dx, x_orbit, y_orbit, betx_pert, bety_pert in zip(
             hor_off_list, orbit_scan_x, orbit_scan_y, betx_scan, bety_scan):
         integral_x = 0.0
@@ -495,6 +501,8 @@ def compute_case(place_label, wiggler_places, model_label):
         deltaqy_formula_list.append((-integral_y + integral_y_sol) / (4 * np.pi))
         deltaqx_formula_pert_list.append((integral_x_pert + integral_x_sol_pert) / (4 * np.pi))
         deltaqy_formula_pert_list.append((-integral_y_pert + integral_y_sol_pert) / (4 * np.pi))
+        deltaqx_formula_quadonly_list.append(integral_x / (4 * np.pi))
+        deltaqy_formula_quadonly_list.append(-integral_y / (4 * np.pi))
 
     # Closest-tune-approach (betatron coupling) correction of the analytic
     # formula, using |C-| read directly off the coupled Twiss (tw.c_minus,
@@ -529,16 +537,24 @@ def compute_case(place_label, wiggler_places, model_label):
         qx_0 + np.array(deltaqx_formula_pert_list),
         qy_0 + np.array(deltaqy_formula_pert_list),
         c_minus_scan_arr)
+    qx_obs_quadonly, qy_obs_quadonly = _coupling_corrected_tunes(
+        qx_0 + np.array(deltaqx_formula_quadonly_list),
+        qy_0 + np.array(deltaqy_formula_quadonly_list),
+        c_minus_scan_arr)
 
     deltaqx_formula_corr_list = qx_obs_beta0 - qx_obs_ref
     deltaqy_formula_corr_list = qy_obs_beta0 - qy_obs_ref
     deltaqx_formula_pert_corr_list = qx_obs_pert - qx_obs_ref
     deltaqy_formula_pert_corr_list = qy_obs_pert - qy_obs_ref
+    deltaqx_formula_quadonly_corr_list = qx_obs_quadonly - qx_obs_ref
+    deltaqy_formula_quadonly_corr_list = qy_obs_quadonly - qy_obs_ref
 
     deltaqx_resid_corr_beta0 = np.array(deltaqx_list) - deltaqx_formula_corr_list
     deltaqy_resid_corr_beta0 = np.array(deltaqy_list) - deltaqy_formula_corr_list
     deltaqx_resid_corr_pert = np.array(deltaqx_list) - deltaqx_formula_pert_corr_list
     deltaqy_resid_corr_pert = np.array(deltaqy_list) - deltaqy_formula_pert_corr_list
+    deltaqx_resid_corr_quadonly = np.array(deltaqx_list) - deltaqx_formula_quadonly_corr_list
+    deltaqy_resid_corr_quadonly = np.array(deltaqy_list) - deltaqy_formula_quadonly_corr_list
 
     # Report the arithmetic at the largest-offset scan point, as requested:
     # c_minus, Delta (uncoupled formula tunes), and the residual before/after
@@ -580,10 +596,14 @@ def compute_case(place_label, wiggler_places, model_label):
         deltaqy_formula_list=np.array(deltaqy_formula_list),
         deltaqx_formula_pert_list=np.array(deltaqx_formula_pert_list),
         deltaqy_formula_pert_list=np.array(deltaqy_formula_pert_list),
+        deltaqx_formula_quadonly_list=np.array(deltaqx_formula_quadonly_list),
+        deltaqy_formula_quadonly_list=np.array(deltaqy_formula_quadonly_list),
         deltaqx_resid_corr_beta0=deltaqx_resid_corr_beta0,
         deltaqy_resid_corr_beta0=deltaqy_resid_corr_beta0,
         deltaqx_resid_corr_pert=deltaqx_resid_corr_pert,
         deltaqy_resid_corr_pert=deltaqy_resid_corr_pert,
+        deltaqx_resid_corr_quadonly=deltaqx_resid_corr_quadonly,
+        deltaqy_resid_corr_quadonly=deltaqy_resid_corr_quadonly,
         undulator_s_ranges=np.array(undulator_s_ranges),
         tw_no_undulator_s=tw_no_undulator.s,
         tw_no_undulator_x=tw_no_undulator.x,
@@ -701,6 +721,8 @@ def plot_case(data, place_label, model_label):
     deltaqy_formula_list = data['deltaqy_formula_list']
     deltaqx_formula_pert_list = data['deltaqx_formula_pert_list']
     deltaqy_formula_pert_list = data['deltaqy_formula_pert_list']
+    deltaqx_formula_quadonly_list = data['deltaqx_formula_quadonly_list']
+    deltaqy_formula_quadonly_list = data['deltaqy_formula_quadonly_list']
 
     # Closed orbit at each offset of the tune scan above -- same panel
     # layout as the no-undulator/on-axis/off-axis comparison plot, but
@@ -812,6 +834,15 @@ def plot_case(data, place_label, model_label):
     print(f"[formula, perturbed beta] d(ΔQy)/dx         = {coef_qy_formula_pert[1]}")
     print(f"[formula, perturbed beta] ΔQy(0)            = {coef_qy_formula_pert[2]}")
 
+    coef_qx_formula_quadonly = np.polyfit(hor_off_list, deltaqx_formula_quadonly_list, 2)
+    coef_qy_formula_quadonly = np.polyfit(hor_off_list, deltaqy_formula_quadonly_list, 2)
+    print(f"[formula, quadrupole only, no Bs] (1/2) d²(ΔQx)/dx² = {coef_qx_formula_quadonly[0]}")
+    print(f"[formula, quadrupole only, no Bs] d(ΔQx)/dx         = {coef_qx_formula_quadonly[1]}")
+    print(f"[formula, quadrupole only, no Bs] ΔQx(0)            = {coef_qx_formula_quadonly[2]}")
+    print(f"[formula, quadrupole only, no Bs] (1/2) d²(ΔQy)/dx² = {coef_qy_formula_quadonly[0]}")
+    print(f"[formula, quadrupole only, no Bs] d(ΔQy)/dx         = {coef_qy_formula_quadonly[1]}")
+    print(f"[formula, quadrupole only, no Bs] ΔQy(0)            = {coef_qy_formula_quadonly[2]}")
+
     text_box_kwargs = dict(va='top', ha='left', fontsize=8, linespacing=1.4,
                             bbox=dict(boxstyle='round', fc='white', alpha=0.85, edgecolor='0.7'))
 
@@ -822,6 +853,8 @@ def plot_case(data, place_label, model_label):
               color='tab:green', label=r'$\frac{1}{4\pi}\oint(\delta K_1+K_{sol})\beta_{x,0}\,ds$')
     ax1.plot(hor_off_list, deltaqx_formula_pert_list, marker='v', linestyle='none',
               color='tab:red', label=r'$\frac{1}{4\pi}\oint(\delta K_1+K_{sol})\beta_x\,ds$')
+    ax1.plot(hor_off_list, deltaqx_formula_quadonly_list, marker='D', linestyle='none',
+              color='tab:purple', label=r'$\frac{1}{4\pi}\oint\delta K_1\,\beta_{x,0}\,ds$ (no $B_s$)')
     ax1.set_ylabel('Delta Qx')
     ax1.set_title('Tune shift vs undulator horizontal offset')
     ax1.grid(True, alpha=0.3)
@@ -838,6 +871,8 @@ def plot_case(data, place_label, model_label):
               color='tab:green', label=r'$\frac{1}{4\pi}\oint(K_{sol}-\delta K_1)\beta_{y,0}\,ds$')
     ax2.plot(hor_off_list, deltaqy_formula_pert_list, marker='v', linestyle='none',
               color='tab:red', label=r'$\frac{1}{4\pi}\oint(K_{sol}-\delta K_1)\beta_y\,ds$')
+    ax2.plot(hor_off_list, deltaqy_formula_quadonly_list, marker='D', linestyle='none',
+              color='tab:purple', label=r'$\frac{1}{4\pi}\oint(-\delta K_1)\beta_{y,0}\,ds$ (no $B_s$)')
     ax2.set_xlabel('Horizontal offset [m]')
     ax2.set_ylabel('Delta Qy')
     ax2.grid(True, alpha=0.3)
@@ -860,12 +895,16 @@ def plot_case(data, place_label, model_label):
     deltaqx_diff_beta = deltaqx_list - deltaqx_formula_pert_list
     deltaqy_diff_beta0 = deltaqy_list - deltaqy_formula_list
     deltaqy_diff_beta = deltaqy_list - deltaqy_formula_pert_list
+    deltaqx_diff_quadonly = deltaqx_list - deltaqx_formula_quadonly_list
+    deltaqy_diff_quadonly = deltaqy_list - deltaqy_formula_quadonly_list
 
     fig_tune_shift_diff, (ax1_diff, ax2_diff) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
     ax1_diff.plot(hor_off_list, deltaqx_diff_beta0, marker='^', color='tab:green',
                   label=r'Twiss $-\ \frac{1}{4\pi}\oint(\delta K_1+K_{sol})\beta_{x,0}\,ds$')
     ax1_diff.plot(hor_off_list, deltaqx_diff_beta, marker='v', color='tab:red',
                   label=r'Twiss $-\ \frac{1}{4\pi}\oint(\delta K_1+K_{sol})\beta_x\,ds$')
+    ax1_diff.plot(hor_off_list, deltaqx_diff_quadonly, marker='D', color='tab:purple',
+                  label=r'Twiss $-\ \frac{1}{4\pi}\oint\delta K_1\,\beta_{x,0}\,ds$ (no $B_s$)')
     ax1_diff.axhline(0, color='0.4', linewidth=1)
     ax1_diff.set_ylabel(r'$\Delta Q_x$ residual')
     ax1_diff.set_title('Tracked minus calculated tune shift vs undulator horizontal offset')
@@ -876,6 +915,8 @@ def plot_case(data, place_label, model_label):
                   label=r'Twiss $-\ \frac{1}{4\pi}\oint(K_{sol}-\delta K_1)\beta_{y,0}\,ds$')
     ax2_diff.plot(hor_off_list, deltaqy_diff_beta, marker='v', color='tab:red',
                   label=r'Twiss $-\ \frac{1}{4\pi}\oint(K_{sol}-\delta K_1)\beta_y\,ds$')
+    ax2_diff.plot(hor_off_list, deltaqy_diff_quadonly, marker='D', color='tab:purple',
+                  label=r'Twiss $-\ \frac{1}{4\pi}\oint(-\delta K_1)\beta_{y,0}\,ds$ (no $B_s$)')
     ax2_diff.axhline(0, color='0.4', linewidth=1)
     ax2_diff.set_xlabel('Horizontal offset [m]')
     ax2_diff.set_ylabel(r'$\Delta Q_y$ residual')
@@ -899,6 +940,10 @@ def plot_case(data, place_label, model_label):
                   color='tab:red', alpha=0.4, label=r'Uncorrected ($\beta_x$)')
     ax1_corr.plot(hor_off_list, data['deltaqx_resid_corr_pert'], marker='v',
                   color='tab:red', label=r'$C^-$-corrected ($\beta_x$)')
+    ax1_corr.plot(hor_off_list, deltaqx_diff_quadonly, marker='D', linestyle='--',
+                  color='tab:purple', alpha=0.4, label=r'Uncorrected (no $B_s$)')
+    ax1_corr.plot(hor_off_list, data['deltaqx_resid_corr_quadonly'], marker='D',
+                  color='tab:purple', label=r'$C^-$-corrected (no $B_s$)')
     ax1_corr.axhline(0, color='0.4', linewidth=1)
     ax1_corr.set_ylabel(r'$\Delta Q_x$ residual')
     ax1_corr.set_title('Tune-shift residual before/after closest-tune-approach correction')
@@ -913,6 +958,10 @@ def plot_case(data, place_label, model_label):
                   color='tab:red', alpha=0.4, label=r'Uncorrected ($\beta_y$)')
     ax2_corr.plot(hor_off_list, data['deltaqy_resid_corr_pert'], marker='v',
                   color='tab:red', label=r'$C^-$-corrected ($\beta_y$)')
+    ax2_corr.plot(hor_off_list, deltaqy_diff_quadonly, marker='D', linestyle='--',
+                  color='tab:purple', alpha=0.4, label=r'Uncorrected (no $B_s$)')
+    ax2_corr.plot(hor_off_list, data['deltaqy_resid_corr_quadonly'], marker='D',
+                  color='tab:purple', label=r'$C^-$-corrected (no $B_s$)')
     ax2_corr.axhline(0, color='0.4', linewidth=1)
     ax2_corr.set_xlabel('Horizontal offset [m]')
     ax2_corr.set_ylabel(r'$\Delta Q_y$ residual')
