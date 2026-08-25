@@ -222,6 +222,20 @@ def compute_case(place_label, wiggler_places, model_label):
     undulator_field_element_names = [
         nn for nn in undulator.element_names if nn.startswith('tubefitter')
         ]
+    # For the MK model, to_multipole_line() now also inserts a pair of thin
+    # xt.MultipoleEdge kicks around each region (see tube_fitter.py) -- they
+    # match the 'tubefitter' name filter above (so they still get shifted
+    # together with their parent region, which is physically correct) but
+    # have no .length/.knl/.ksl/.get_field(), so per-element field sampling
+    # below needs the thick-body-only subset instead.
+    field_element_names_thick = [
+        nn for nn in field_element_names
+        if not isinstance(line_sls[nn], xt.MultipoleEdge)
+        ]
+    undulator_field_element_names_thick = [
+        nn for nn in undulator_field_element_names
+        if not isinstance(undulator[nn], xt.MultipoleEdge)
+        ]
 
     # s ranges (start, end) of the active undulators, for marking their
     # location on the plots below. `tt` still reflects the pre-insertion
@@ -259,7 +273,7 @@ def compute_case(place_label, wiggler_places, model_label):
 
     def _sample_field(traj_s, traj_x, traj_y, dx):
         s_out, bx_out, by_out, bs_out = [], [], [], []
-        for nn in field_element_names:
+        for nn in field_element_names_thick:
             s0 = field_tt['s', nn]
             length = line_sls[nn].length
             for s_local in np.linspace(0.0, length, n_sub, endpoint=False):
@@ -406,15 +420,21 @@ def compute_case(place_label, wiggler_places, model_label):
     multipole_line = tube_fitter.to_multipole_line(
         multipole_order=multipole_order, p0c=E0, field_at='mean')
     mult_table = multipole_line.get_table()
-    mult_length = np.array([multipole_line[nn].length
-                             for nn in multipole_line.element_names])
+    # to_multipole_line() also brackets each region with thin xt.MultipoleEdge
+    # kicks (see tube_fitter.py) -- excluded here since K1(s)/K2(s)/K2_skew(s)
+    # is a per-region (thick-body) quantity; the edge kicks are picked up by
+    # the Twiss itself (via tw.qx/tw.qy or, in 007b, the phase advance) but
+    # aren't part of this analytic deltaK1(s)*beta(s) integral.
+    mult_names = [nn for nn in multipole_line.element_names
+                  if not isinstance(multipole_line[nn], xt.MultipoleEdge)]
+    mult_length = np.array([multipole_line[nn].length for nn in mult_names])
     mult_K1 = np.array([multipole_line[nn].knl[1] / multipole_line[nn].length
-                         for nn in multipole_line.element_names])
+                         for nn in mult_names])
     mult_K2 = np.array([multipole_line[nn].knl[2] / multipole_line[nn].length
-                         for nn in multipole_line.element_names])
+                         for nn in mult_names])
     mult_K2_skew = np.array([multipole_line[nn].ksl[2] / multipole_line[nn].length
-                              for nn in multipole_line.element_names])
-    mult_s_mid = mult_table['s'][:-1] + mult_length / 2
+                              for nn in mult_names])
+    mult_s_mid = np.array([mult_table['s', nn] for nn in mult_names]) + mult_length / 2
 
     deltaqx_formula_list = []
     deltaqy_formula_list = []
