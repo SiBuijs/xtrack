@@ -124,11 +124,11 @@ def compute_case(place_label, wiggler_places, model_label):
     """Build, match and scan one (placement, model) case, returning a dict
     of everything plot_case() needs -- nothing here touches matplotlib.
     """
-    print("=" * 80)
-    print(f"Case: place={place_label}  model={model_label}")
     case_label = f'{place_label} ({model_label})'
     if ZERO_BS and model_label == 'SB':
         case_label += ' [Bs=0]'
+    print("=" * 80)
+    print(f"Case: {case_label}")
     print("=" * 80)
 
     tube_fitter = get_tube_fitter()
@@ -654,7 +654,8 @@ def plot_case(data, place_label, model_label):
                color='tab:orange', label='Off-axis (shift_x=0.5 mm)')
     mark_undulator_bounds(ax_bx)
     ax_bx.set_ylabel(r'$B_x$ [T]')
-    ax_bx.set_title(f'Field along the tracked trajectory ({model_label} model)')
+    bs_tag = ' [Bs=0]' if (ZERO_BS and model_label == 'SB') else ''
+    ax_bx.set_title(f'Field along the tracked trajectory ({model_label} model){bs_tag}')
     ax_bx.grid(True, alpha=0.3)
     ax_bx.legend()
 

@@ -133,11 +133,11 @@ def compute_case(place_label, wiggler_places, model_label):
     no periodic/closed-ring quantity (like c_minus) available here, so
     unlike 007a there is no closest-tune-approach coupling correction.
     """
-    print("=" * 80)
-    print(f"Case: place={place_label}  model={model_label}")
     case_label = f'{place_label} ({model_label}, local optics)'
     if ZERO_BS and model_label == 'SB':
         case_label += ' [Bs=0]'
+    print("=" * 80)
+    print(f"Case: {case_label}")
     print("=" * 80)
 
     tube_fitter = get_tube_fitter()
@@ -569,7 +569,8 @@ def plot_case(data, place_label, model_label):
     mark_undulator_bounds(ax_bx)
     mark_undulator_bounds(ax_by)
     ax_bx.set_ylabel(r'$B_x$ [T]')
-    ax_bx.set_title(f'Field along the tracked trajectory ({model_label} model, local optics)')
+    bs_tag = ' [Bs=0]' if (ZERO_BS and model_label == 'SB') else ''
+    ax_bx.set_title(f'Field along the tracked trajectory ({model_label} model, local optics){bs_tag}')
     ax_bx.grid(True, alpha=0.3)
     ax_bx.legend()
     ax_by.grid(True, alpha=0.3)
