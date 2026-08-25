@@ -292,6 +292,8 @@ def compute_case(place_label, wiggler_places, model_label):
     orbit_scan_s = None
     betx_scan = []
     bety_scan = []
+    betx2_scan = []
+    bety1_scan = []
     c_minus_scan = []
 
     n_tunes = 30
@@ -367,6 +369,8 @@ def compute_case(place_label, wiggler_places, model_label):
         orbit_scan_y.append(tw.y)
         betx_scan.append(tw.betx)
         bety_scan.append(tw.bety)
+        betx2_scan.append(tw.betx2)
+        bety1_scan.append(tw.bety1)
         c_minus_scan.append(tw.c_minus)
         if orbit_scan_s is None:
             orbit_scan_s = tw.s
@@ -523,6 +527,8 @@ def compute_case(place_label, wiggler_places, model_label):
     # including) s grid to overlay it as a reference in the beta plots.
     betx_no_und_i = np.interp(orbit_scan_s, tw_no_undulator.s, tw_no_undulator.betx)
     bety_no_und_i = np.interp(orbit_scan_s, tw_no_undulator.s, tw_no_undulator.bety)
+    betx2_no_und_i = np.interp(orbit_scan_s, tw_no_undulator.s, tw_no_undulator.betx2)
+    bety1_no_und_i = np.interp(orbit_scan_s, tw_no_undulator.s, tw_no_undulator.bety1)
 
     return dict(
         case_label=case_label,
@@ -534,8 +540,12 @@ def compute_case(place_label, wiggler_places, model_label):
         orbit_scan_y=np.array(orbit_scan_y),
         betx_scan=np.array(betx_scan),
         bety_scan=np.array(bety_scan),
+        betx2_scan=np.array(betx2_scan),
+        bety1_scan=np.array(bety1_scan),
         betx_no_und_i=betx_no_und_i,
         bety_no_und_i=bety_no_und_i,
+        betx2_no_und_i=betx2_no_und_i,
+        bety1_no_und_i=bety1_no_und_i,
         deltaqx_formula_list=np.array(deltaqx_formula_list),
         deltaqy_formula_list=np.array(deltaqy_formula_list),
         deltaqx_formula_pert_list=np.array(deltaqx_formula_pert_list),
@@ -663,8 +673,12 @@ def plot_case(data, place_label, model_label):
     orbit_scan_y = data['orbit_scan_y']
     betx_scan = data['betx_scan']
     bety_scan = data['bety_scan']
+    betx2_scan = data['betx2_scan']
+    bety1_scan = data['bety1_scan']
     betx_no_und_i = data['betx_no_und_i']
     bety_no_und_i = data['bety_no_und_i']
+    betx2_no_und_i = data['betx2_no_und_i']
+    bety1_no_und_i = data['bety1_no_und_i']
     deltaqx_formula_list = data['deltaqx_formula_list']
     deltaqy_formula_list = data['deltaqy_formula_list']
     deltaqx_formula_pert_list = data['deltaqx_formula_pert_list']
@@ -756,6 +770,32 @@ def plot_case(data, place_label, model_label):
     sm_beta.set_array([])
     fig_beta_diff.colorbar(sm_beta, ax=[ax_dbetx, ax_dbety], label='Horizontal offset [m]')
     fig_beta_diff.suptitle(case_label)
+
+    # Same colour-coded-by-offset layout, but for the coupled beta functions
+    # betx2/bety1 (Edwards-Teng), which are zero without coupling and hence
+    # a direct probe of the coupling introduced by the undulator. Normalized
+    # by the *primary* beta (betx/bety, no undulator) rather than by
+    # betx2/bety1 itself, since the latter is near zero along most of the
+    # ring (only the ring's residual imperfection coupling) and would blow
+    # up the ratio wherever it happens to dip towards zero.
+    fig_beta_diff_coupled, (ax_dbetx2, ax_dbety1) = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
+    for dx, betx2, bety1 in zip(hor_off_list, betx2_scan, bety1_scan):
+        color = cmap(norm(dx))
+        ax_dbetx2.plot(orbit_scan_s, (betx2 - betx2_no_und_i) / betx_no_und_i, color=color)
+        ax_dbety1.plot(orbit_scan_s, (bety1 - bety1_no_und_i) / bety_no_und_i, color=color)
+    mark_undulator_bounds(ax_dbetx2)
+    mark_undulator_bounds(ax_dbety1)
+    ax_dbetx2.set_ylabel(r'$\Delta\beta_{x2}/\beta_{x,0}$')
+    ax_dbetx2.set_title('Coupled beta beat across the tune scan (relative to no undulator)')
+    ax_dbetx2.grid(True, alpha=0.3)
+    ax_dbety1.set_xlabel('s [m]')
+    ax_dbety1.set_ylabel(r'$\Delta\beta_{y1}/\beta_{y,0}$')
+    ax_dbety1.grid(True, alpha=0.3)
+
+    sm_beta_coupled = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
+    sm_beta_coupled.set_array([])
+    fig_beta_diff_coupled.colorbar(sm_beta_coupled, ax=[ax_dbetx2, ax_dbety1], label='Horizontal offset [m]')
+    fig_beta_diff_coupled.suptitle(case_label)
 
     coef_qx = np.polyfit(hor_off_list, deltaqx_list, 2)
     coef_qy = np.polyfit(hor_off_list, deltaqy_list, 2)
@@ -931,6 +971,7 @@ def plot_case(data, place_label, model_label):
         (fig_orbit_scan, 'orbit_scan'),
         (fig_beta_scan, 'beta_functions'),
         (fig_beta_diff, 'beta_beat'),
+        (fig_beta_diff_coupled, 'beta_beat_coupled'),
         (fig_tune_shift, 'tune_shift'),
         (fig_tune_shift_diff, 'tune_shift_difference'),
         (fig_tune_shift_corr, 'tune_shift_coupling_corrected'),
