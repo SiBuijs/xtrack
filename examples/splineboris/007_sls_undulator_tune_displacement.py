@@ -6,7 +6,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import scipy.constants as sc_const
 from xtrack._temp.splineboris.tube_fitter import TubeFitter
-from xtrack._temp.splineboris.splineboris_sequence import SplineBorisSequence
 
 
 multipole_order = 3
@@ -631,26 +630,30 @@ def plot_case(data, place_label, model_label):
     fig_field_traj.suptitle(case_label)
     fig_field_traj.tight_layout()
 
-    fig_orbit, (ax_x, ax_y) = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
-    for s_arr, x_arr, y_arr, label in [
-            (data['tw_no_undulator_s'], data['tw_no_undulator_x'], data['tw_no_undulator_y'], 'No undulator'),
-            (data['tw_onaxis_s'], data['tw_onaxis_x'], data['tw_onaxis_y'], 'On-axis undulator'),
-            (data['tw_offaxis_s'], data['tw_offaxis_x'], data['tw_offaxis_y'], 'Off-axis undulator (shift_x=0.5 mm)')]:
-        ax_x.plot(s_arr, x_arr, label=label)
-        ax_y.plot(s_arr, y_arr, label=label)
-    mark_undulator_bounds(ax_x)
-    mark_undulator_bounds(ax_y)
-    ax_x.set_ylabel('x [m]')
-    ax_x.set_title('Horizontal closed orbit around the SLS ring')
-    ax_x.grid(True, alpha=0.3)
-    ax_x.legend()
-    ax_y.set_xlabel('s [m]')
-    ax_y.set_ylabel('y [m]')
-    ax_y.set_title('Vertical closed orbit around the SLS ring')
-    ax_y.grid(True, alpha=0.3)
-    ax_y.legend()
-    fig_orbit.suptitle(case_label)
-    fig_orbit.tight_layout()
+    # orbit_comparison -- MK-model version dropped (redundant with the SB
+    # one for reviewing this case).
+    fig_orbit = None
+    if model_label != 'MK':
+        fig_orbit, (ax_x, ax_y) = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
+        for s_arr, x_arr, y_arr, label in [
+                (data['tw_no_undulator_s'], data['tw_no_undulator_x'], data['tw_no_undulator_y'], 'No undulator'),
+                (data['tw_onaxis_s'], data['tw_onaxis_x'], data['tw_onaxis_y'], 'On-axis undulator'),
+                (data['tw_offaxis_s'], data['tw_offaxis_x'], data['tw_offaxis_y'], 'Off-axis undulator (shift_x=0.5 mm)')]:
+            ax_x.plot(s_arr, x_arr, label=label)
+            ax_y.plot(s_arr, y_arr, label=label)
+        mark_undulator_bounds(ax_x)
+        mark_undulator_bounds(ax_y)
+        ax_x.set_ylabel('x [m]')
+        ax_x.set_title('Horizontal closed orbit around the SLS ring')
+        ax_x.grid(True, alpha=0.3)
+        ax_x.legend()
+        ax_y.set_xlabel('s [m]')
+        ax_y.set_ylabel('y [m]')
+        ax_y.set_title('Vertical closed orbit around the SLS ring')
+        ax_y.grid(True, alpha=0.3)
+        ax_y.legend()
+        fig_orbit.suptitle(case_label)
+        fig_orbit.tight_layout()
 
     hor_off_list = data['hor_off_list']
     deltaqx_list = data['deltaqx_list']
@@ -678,52 +681,58 @@ def plot_case(data, place_label, model_label):
     norm = plt.Normalize(vmin=hor_off_list.min(), vmax=hor_off_list.max())
     cmap = plt.cm.viridis
 
-    fig_orbit_scan, (ax_x_scan, ax_y_scan) = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
-    for dx, x_orbit, y_orbit in zip(hor_off_list, orbit_scan_x, orbit_scan_y):
-        color = cmap(norm(dx))
-        ax_x_scan.plot(orbit_scan_s, x_orbit, color=color)
-        ax_y_scan.plot(orbit_scan_s, y_orbit, color=color)
-    mark_undulator_bounds(ax_x_scan)
-    mark_undulator_bounds(ax_y_scan)
-    ax_x_scan.set_ylabel('x [m]')
-    ax_x_scan.set_title('Horizontal closed orbit across the tune scan')
-    ax_x_scan.grid(True, alpha=0.3)
-    ax_y_scan.set_xlabel('s [m]')
-    ax_y_scan.set_ylabel('y [m]')
-    ax_y_scan.set_title('Vertical closed orbit across the tune scan')
-    ax_y_scan.grid(True, alpha=0.3)
+    # orbit_scan -- MK-model version dropped (redundant with the SB one).
+    fig_orbit_scan = None
+    if model_label != 'MK':
+        fig_orbit_scan, (ax_x_scan, ax_y_scan) = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
+        for dx, x_orbit, y_orbit in zip(hor_off_list, orbit_scan_x, orbit_scan_y):
+            color = cmap(norm(dx))
+            ax_x_scan.plot(orbit_scan_s, x_orbit, color=color)
+            ax_y_scan.plot(orbit_scan_s, y_orbit, color=color)
+        mark_undulator_bounds(ax_x_scan)
+        mark_undulator_bounds(ax_y_scan)
+        ax_x_scan.set_ylabel('x [m]')
+        ax_x_scan.set_title('Horizontal closed orbit across the tune scan')
+        ax_x_scan.grid(True, alpha=0.3)
+        ax_y_scan.set_xlabel('s [m]')
+        ax_y_scan.set_ylabel('y [m]')
+        ax_y_scan.set_title('Vertical closed orbit across the tune scan')
+        ax_y_scan.grid(True, alpha=0.3)
 
-    sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
-    sm.set_array([])
-    fig_orbit_scan.colorbar(sm, ax=[ax_x_scan, ax_y_scan], label='Horizontal offset [m]')
-    fig_orbit_scan.suptitle(case_label)
+        sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
+        sm.set_array([])
+        fig_orbit_scan.colorbar(sm, ax=[ax_x_scan, ax_y_scan], label='Horizontal offset [m]')
+        fig_orbit_scan.suptitle(case_label)
 
     # Beta functions at each offset of the tune scan -- same colour-coded-
-    # by-offset layout as the orbit scan above.
-    fig_beta_scan, (ax_betx_scan, ax_bety_scan) = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
-    for dx, betx, bety in zip(hor_off_list, betx_scan, bety_scan):
-        color = cmap(norm(dx))
-        ax_betx_scan.plot(orbit_scan_s, betx, color=color)
-        ax_bety_scan.plot(orbit_scan_s, bety, color=color)
-    ax_betx_scan.plot(orbit_scan_s, betx_no_und_i, color='k', linestyle='--',
-                       linewidth=1, label='No undulator')
-    ax_bety_scan.plot(orbit_scan_s, bety_no_und_i, color='k', linestyle='--',
-                       linewidth=1, label='No undulator')
-    mark_undulator_bounds(ax_betx_scan)
-    mark_undulator_bounds(ax_bety_scan)
-    ax_betx_scan.set_ylabel(r'$\beta_x$ [m]')
-    ax_betx_scan.set_title('Beta functions across the tune scan')
-    ax_betx_scan.grid(True, alpha=0.3)
-    ax_betx_scan.legend()
-    ax_bety_scan.set_xlabel('s [m]')
-    ax_bety_scan.set_ylabel(r'$\beta_y$ [m]')
-    ax_bety_scan.grid(True, alpha=0.3)
-    ax_bety_scan.legend()
+    # by-offset layout as the orbit scan above. SB-model version dropped
+    # (redundant with the relative beta_beat plot kept below).
+    fig_beta_scan = None
+    if model_label != 'SB':
+        fig_beta_scan, (ax_betx_scan, ax_bety_scan) = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
+        for dx, betx, bety in zip(hor_off_list, betx_scan, bety_scan):
+            color = cmap(norm(dx))
+            ax_betx_scan.plot(orbit_scan_s, betx, color=color)
+            ax_bety_scan.plot(orbit_scan_s, bety, color=color)
+        ax_betx_scan.plot(orbit_scan_s, betx_no_und_i, color='k', linestyle='--',
+                           linewidth=1, label='No undulator')
+        ax_bety_scan.plot(orbit_scan_s, bety_no_und_i, color='k', linestyle='--',
+                           linewidth=1, label='No undulator')
+        mark_undulator_bounds(ax_betx_scan)
+        mark_undulator_bounds(ax_bety_scan)
+        ax_betx_scan.set_ylabel(r'$\beta_x$ [m]')
+        ax_betx_scan.set_title('Beta functions across the tune scan')
+        ax_betx_scan.grid(True, alpha=0.3)
+        ax_betx_scan.legend()
+        ax_bety_scan.set_xlabel('s [m]')
+        ax_bety_scan.set_ylabel(r'$\beta_y$ [m]')
+        ax_bety_scan.grid(True, alpha=0.3)
+        ax_bety_scan.legend()
 
-    sm_beta_abs = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
-    sm_beta_abs.set_array([])
-    fig_beta_scan.colorbar(sm_beta_abs, ax=[ax_betx_scan, ax_bety_scan], label='Horizontal offset [m]')
-    fig_beta_scan.suptitle(case_label)
+        sm_beta_abs = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
+        sm_beta_abs.set_array([])
+        fig_beta_scan.colorbar(sm_beta_abs, ax=[ax_betx_scan, ax_bety_scan], label='Horizontal offset [m]')
+        fig_beta_scan.suptitle(case_label)
 
     # Beta beat at each offset of the tune scan, relative to the
     # no-undulator baseline and normalized by that baseline to show the
@@ -833,79 +842,89 @@ def plot_case(data, place_label, model_label):
     fig_tune_shift.suptitle(case_label)
     fig_tune_shift.tight_layout()
 
-    # Tracked-vs-calculated tune shift residual: how far the analytic
-    # perturbation-theory formula (both beta variants) is from the actual
-    # Twiss/tracked result plotted above, as a function of offset -- makes
-    # the (generally much smaller) formula/Twiss gap visible on its own
-    # scale rather than as an overlap of near-identical curves.
-    deltaqx_diff_beta0 = deltaqx_list - deltaqx_formula_list
-    deltaqx_diff_beta = deltaqx_list - deltaqx_formula_pert_list
-    deltaqy_diff_beta0 = deltaqy_list - deltaqy_formula_list
-    deltaqy_diff_beta = deltaqy_list - deltaqy_formula_pert_list
+    # Tracked-vs-calculated tune shift residual (tune_shift_difference) and
+    # its closest-tune-approach-corrected counterpart
+    # (tune_shift_coupling_corrected) -- MK-model versions dropped (the
+    # formula is built from MK's own field model, so these residuals are
+    # near-trivially small there and not informative for this case).
+    fig_tune_shift_diff = None
+    fig_tune_shift_corr = None
+    if model_label != 'MK':
+        # How far the analytic perturbation-theory formula (both beta
+        # variants) is from the actual Twiss/tracked result plotted above,
+        # as a function of offset -- makes the (generally much smaller)
+        # formula/Twiss gap visible on its own scale rather than as an
+        # overlap of near-identical curves.
+        deltaqx_diff_beta0 = deltaqx_list - deltaqx_formula_list
+        deltaqx_diff_beta = deltaqx_list - deltaqx_formula_pert_list
+        deltaqy_diff_beta0 = deltaqy_list - deltaqy_formula_list
+        deltaqy_diff_beta = deltaqy_list - deltaqy_formula_pert_list
 
-    fig_tune_shift_diff, (ax1_diff, ax2_diff) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
-    ax1_diff.plot(hor_off_list, deltaqx_diff_beta0, marker='^', color='tab:green',
-                  label=r'Twiss $-\ \frac{1}{4\pi}\oint\delta K_1\,\beta_{x,0}\,ds$')
-    ax1_diff.plot(hor_off_list, deltaqx_diff_beta, marker='v', color='tab:red',
-                  label=r'Twiss $-\ \frac{1}{4\pi}\oint\delta K_1\,\beta_x\,ds$')
-    ax1_diff.axhline(0, color='0.4', linewidth=1)
-    ax1_diff.set_ylabel(r'$\Delta Q_x$ residual')
-    ax1_diff.set_title('Tracked minus calculated tune shift vs undulator horizontal offset')
-    ax1_diff.grid(True, alpha=0.3)
-    ax1_diff.legend()
+        fig_tune_shift_diff, (ax1_diff, ax2_diff) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
+        ax1_diff.plot(hor_off_list, deltaqx_diff_beta0, marker='^', color='tab:green',
+                      label=r'Twiss $-\ \frac{1}{4\pi}\oint\delta K_1\,\beta_{x,0}\,ds$')
+        ax1_diff.plot(hor_off_list, deltaqx_diff_beta, marker='v', color='tab:red',
+                      label=r'Twiss $-\ \frac{1}{4\pi}\oint\delta K_1\,\beta_x\,ds$')
+        ax1_diff.axhline(0, color='0.4', linewidth=1)
+        ax1_diff.set_ylabel(r'$\Delta Q_x$ residual')
+        ax1_diff.set_title('Tracked minus calculated tune shift vs undulator horizontal offset')
+        ax1_diff.grid(True, alpha=0.3)
+        ax1_diff.legend()
 
-    ax2_diff.plot(hor_off_list, deltaqy_diff_beta0, marker='^', color='tab:green',
-                  label=r'Twiss $-\ \frac{1}{4\pi}\oint(-\delta K_1)\beta_{y,0}\,ds$')
-    ax2_diff.plot(hor_off_list, deltaqy_diff_beta, marker='v', color='tab:red',
-                  label=r'Twiss $-\ \frac{1}{4\pi}\oint(-\delta K_1)\beta_y\,ds$')
-    ax2_diff.axhline(0, color='0.4', linewidth=1)
-    ax2_diff.set_xlabel('Horizontal offset [m]')
-    ax2_diff.set_ylabel(r'$\Delta Q_y$ residual')
-    ax2_diff.grid(True, alpha=0.3)
-    ax2_diff.legend()
+        ax2_diff.plot(hor_off_list, deltaqy_diff_beta0, marker='^', color='tab:green',
+                      label=r'Twiss $-\ \frac{1}{4\pi}\oint(-\delta K_1)\beta_{y,0}\,ds$')
+        ax2_diff.plot(hor_off_list, deltaqy_diff_beta, marker='v', color='tab:red',
+                      label=r'Twiss $-\ \frac{1}{4\pi}\oint(-\delta K_1)\beta_y\,ds$')
+        ax2_diff.axhline(0, color='0.4', linewidth=1)
+        ax2_diff.set_xlabel('Horizontal offset [m]')
+        ax2_diff.set_ylabel(r'$\Delta Q_y$ residual')
+        ax2_diff.grid(True, alpha=0.3)
+        ax2_diff.legend()
 
-    fig_tune_shift_diff.suptitle(case_label)
-    fig_tune_shift_diff.tight_layout()
+        fig_tune_shift_diff.suptitle(case_label)
+        fig_tune_shift_diff.tight_layout()
 
-    # Same residual, before vs. after applying the closest-tune-approach
-    # (betatron coupling) correction computed above -- if the coupling
-    # picture accounts for the residual seen in fig_tune_shift_diff, the
-    # solid (corrected) curves should sit much closer to zero than the
-    # dashed (uncorrected) ones.
-    fig_tune_shift_corr, (ax1_corr, ax2_corr) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
-    ax1_corr.plot(hor_off_list, deltaqx_diff_beta0, marker='^', linestyle='--',
-                  color='tab:green', alpha=0.4, label=r'Uncorrected ($\beta_{x,0}$)')
-    ax1_corr.plot(hor_off_list, data['deltaqx_resid_corr_beta0'], marker='^',
-                  color='tab:green', label=r'$C^-$-corrected ($\beta_{x,0}$)')
-    ax1_corr.plot(hor_off_list, deltaqx_diff_beta, marker='v', linestyle='--',
-                  color='tab:red', alpha=0.4, label=r'Uncorrected ($\beta_x$)')
-    ax1_corr.plot(hor_off_list, data['deltaqx_resid_corr_pert'], marker='v',
-                  color='tab:red', label=r'$C^-$-corrected ($\beta_x$)')
-    ax1_corr.axhline(0, color='0.4', linewidth=1)
-    ax1_corr.set_ylabel(r'$\Delta Q_x$ residual')
-    ax1_corr.set_title('Tune-shift residual before/after closest-tune-approach correction')
-    ax1_corr.grid(True, alpha=0.3)
-    ax1_corr.legend(fontsize=7)
+        # Same residual, before vs. after applying the closest-tune-approach
+        # (betatron coupling) correction computed above -- if the coupling
+        # picture accounts for the residual seen in fig_tune_shift_diff, the
+        # solid (corrected) curves should sit much closer to zero than the
+        # dashed (uncorrected) ones.
+        fig_tune_shift_corr, (ax1_corr, ax2_corr) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
+        ax1_corr.plot(hor_off_list, deltaqx_diff_beta0, marker='^', linestyle='--',
+                      color='tab:green', alpha=0.4, label=r'Uncorrected ($\beta_{x,0}$)')
+        ax1_corr.plot(hor_off_list, data['deltaqx_resid_corr_beta0'], marker='^',
+                      color='tab:green', label=r'$C^-$-corrected ($\beta_{x,0}$)')
+        ax1_corr.plot(hor_off_list, deltaqx_diff_beta, marker='v', linestyle='--',
+                      color='tab:red', alpha=0.4, label=r'Uncorrected ($\beta_x$)')
+        ax1_corr.plot(hor_off_list, data['deltaqx_resid_corr_pert'], marker='v',
+                      color='tab:red', label=r'$C^-$-corrected ($\beta_x$)')
+        ax1_corr.axhline(0, color='0.4', linewidth=1)
+        ax1_corr.set_ylabel(r'$\Delta Q_x$ residual')
+        ax1_corr.set_title('Tune-shift residual before/after closest-tune-approach correction')
+        ax1_corr.grid(True, alpha=0.3)
+        ax1_corr.legend(fontsize=7)
 
-    ax2_corr.plot(hor_off_list, deltaqy_diff_beta0, marker='^', linestyle='--',
-                  color='tab:green', alpha=0.4, label=r'Uncorrected ($\beta_{y,0}$)')
-    ax2_corr.plot(hor_off_list, data['deltaqy_resid_corr_beta0'], marker='^',
-                  color='tab:green', label=r'$C^-$-corrected ($\beta_{y,0}$)')
-    ax2_corr.plot(hor_off_list, deltaqy_diff_beta, marker='v', linestyle='--',
-                  color='tab:red', alpha=0.4, label=r'Uncorrected ($\beta_y$)')
-    ax2_corr.plot(hor_off_list, data['deltaqy_resid_corr_pert'], marker='v',
-                  color='tab:red', label=r'$C^-$-corrected ($\beta_y$)')
-    ax2_corr.axhline(0, color='0.4', linewidth=1)
-    ax2_corr.set_xlabel('Horizontal offset [m]')
-    ax2_corr.set_ylabel(r'$\Delta Q_y$ residual')
-    ax2_corr.grid(True, alpha=0.3)
-    ax2_corr.legend(fontsize=7)
+        ax2_corr.plot(hor_off_list, deltaqy_diff_beta0, marker='^', linestyle='--',
+                      color='tab:green', alpha=0.4, label=r'Uncorrected ($\beta_{y,0}$)')
+        ax2_corr.plot(hor_off_list, data['deltaqy_resid_corr_beta0'], marker='^',
+                      color='tab:green', label=r'$C^-$-corrected ($\beta_{y,0}$)')
+        ax2_corr.plot(hor_off_list, deltaqy_diff_beta, marker='v', linestyle='--',
+                      color='tab:red', alpha=0.4, label=r'Uncorrected ($\beta_y$)')
+        ax2_corr.plot(hor_off_list, data['deltaqy_resid_corr_pert'], marker='v',
+                      color='tab:red', label=r'$C^-$-corrected ($\beta_y$)')
+        ax2_corr.axhline(0, color='0.4', linewidth=1)
+        ax2_corr.set_xlabel('Horizontal offset [m]')
+        ax2_corr.set_ylabel(r'$\Delta Q_y$ residual')
+        ax2_corr.grid(True, alpha=0.3)
+        ax2_corr.legend(fontsize=7)
 
-    fig_tune_shift_corr.suptitle(case_label)
-    fig_tune_shift_corr.tight_layout()
+        fig_tune_shift_corr.suptitle(case_label)
+        fig_tune_shift_corr.tight_layout()
 
-    # Save the 8 figures for this case, named
-    # "<place_label>_<model_label>_<what the figure shows>.pdf".
+    # Save whichever figures were built for this case, named
+    # "<place_label>_<model_label>_<what the figure shows>.pdf". Some
+    # entries are None (skipped for this model_label -- see above) and are
+    # filtered out here rather than saved.
     figures = [
         (fig_field_traj, 'field_along_trajectory'),
         (fig_orbit, 'orbit_comparison'),
@@ -917,6 +936,8 @@ def plot_case(data, place_label, model_label):
         (fig_tune_shift_corr, 'tune_shift_coupling_corrected'),
         ]
     for fig, suffix in figures:
+        if fig is None:
+            continue
         out_path = OUT_DIR / f'{place_label}_{model_label}_{suffix}.pdf'
         fig.savefig(out_path)
         print(f"Saved {out_path}")
