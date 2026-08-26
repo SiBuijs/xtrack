@@ -92,8 +92,7 @@ MODEL_LABELS = ('SB', 'MK')
 # NOTE: the correspondence between this "X11MA" beamline measurement and the
 # ars11_uind_0210_1 / ars11_uind_0610_1 elements simulated below has NOT been
 # confirmed -- overlaid here purely as a shape/order-of-magnitude reference,
-# on its own twin y-axis (so an unmatched absolute baseline/offset between
-# "measured ΔTune" and simulated ΔQ doesn't visually mislead).
+# plotted directly on the same Delta Qx/Qy scale as the simulated curves.
 MEASURED_TUNE_SHIFT_CSV = (
     Path(__file__).resolve().parent.parent.parent / 'test_data' / 'sls'
     / 'x11ma_gap11p5mm_tune_shift_digitized.csv'
@@ -615,21 +614,15 @@ def plot_case(data, place_label, model_label):
 
     measured = load_measured_tune_shift()
     if measured is not None:
-        ax1_meas = ax1.twinx()
-        ax1_meas.plot(measured['bump_amplitude_m'], measured['dtune_x_measured'],
-                       marker='d', linestyle='none', markersize=4,
-                       color='tab:purple', label='X11MA, gap=11.5mm (measured)')
-        ax1_meas.set_ylabel('Measured Delta Tune x', color='tab:purple')
-        ax1_meas.tick_params(axis='y', colors='tab:purple')
-        ax1_meas.legend(loc='lower right', fontsize=8)
+        ax1.plot(measured['bump_amplitude_m'], measured['dtune_x_measured'],
+                  marker='d', linestyle='none', markersize=4,
+                  color='tab:purple', label='X11MA, gap=11.5mm (measured)')
+        ax1.legend()
 
-        ax2_meas = ax2.twinx()
-        ax2_meas.plot(measured['bump_amplitude_m'], measured['dtune_y_measured'],
-                       marker='d', linestyle='none', markersize=4,
-                       color='tab:purple', label='X11MA, gap=11.5mm (measured)')
-        ax2_meas.set_ylabel('Measured Delta Tune y', color='tab:purple')
-        ax2_meas.tick_params(axis='y', colors='tab:purple')
-        ax2_meas.legend(loc='lower right', fontsize=8)
+        ax2.plot(measured['bump_amplitude_m'], measured['dtune_y_measured'],
+                  marker='d', linestyle='none', markersize=4,
+                  color='tab:purple', label='X11MA, gap=11.5mm (measured)')
+        ax2.legend()
 
     fig_tune_shift.suptitle(case_label)
     fig_tune_shift.tight_layout()
