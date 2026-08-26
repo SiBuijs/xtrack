@@ -484,17 +484,7 @@ class TubeFitter:
         Uses the same region grid as ``to_line()``, but replaces each
         region's ``SplineBoris`` (full spatial field integration) with a
         single ``Multipole`` -- a rigidity-normalized multipole kick over
-        that region's length (``model='drift-kick-drift-exact'``, the
-        closest match to how ``SplineBoris`` itself integrates), bracketed
-        by a pair of ``MultipoleEdge`` elements (n>=1 orders only -- the
-        same convention xtrack uses internally to realize
-        ``edge_entry_active``/``edge_exit_active`` on
-        Quadrupole/Sextupole/Octupole, see
-        ``slice_elements_edge.py::_parent_total_kn_ks_for_multipole_edge``).
-        ``xt.Multipole`` itself has no edge-related fields despite its
-        docstring mentioning them, so this is the element-agnostic way to
-        give it a boundary kick at each region's field-gradient
-        discontinuity, rather than a plain thick kick alone.
+        that region's length.
 
         Each ``knl``/``ksl`` order is derived from the corresponding
         ``Bnorm``/``Bskew`` Hermite field value (see ``field_at``),
@@ -507,10 +497,9 @@ class TubeFitter:
         ``brho0 = p0c / (clight * q0)``.
 
         This discards everything ``to_line()`` keeps beyond a single field
-        value per region: longitudinal field variation *within* a region
-        (except at the sampled point and, now, at its boundaries via the
-        edge kicks above), the remaining boundary-derivative (Hermite)
-        terms, and the on-axis solenoid field ``Bs`` (no multipole
+        value per region: longitudinal field variation within a region
+        (except at the sampled point), the remaining boundary-derivative
+        (Hermite) terms, and the on-axis solenoid field ``Bs`` (no multipole
         equivalent, dropped with a warning if significant) -- so it is a
         coarse approximation, useful as a quick comparison baseline against
         the full ``SplineBoris`` line rather than a faithful field model.
@@ -583,42 +572,15 @@ class TubeFitter:
             knl = [region["knl"].get(o, 0.0) * length / brho0 for o in range(multipole_order)]
             ksl = [region["ksl"].get(o, 0.0) * length / brho0 for o in range(multipole_order)]
 
-            # Edge kicks (n>=1 orders only -- same convention xtrack itself
-            # uses to realize edge_entry_active/edge_exit_active on
-            # Quadrupole/Sextupole/Octupole, see
-            # slice_elements_edge.py::_parent_total_kn_ks_for_multipole_edge)
-            # bracket the thick body, so that a particle also picks up the
-            # boundary kick a spatially-resolved field (SplineBoris) would
-            # give it from the region's field gradient turning on/off at
-            # s_start/s_end -- closer to the SplineBoris behaviour than a
-            # bare thick multipole kick alone.
-            kn_edge = np.array(knl) / length
-            ks_edge = np.array(ksl) / length
-            kn_edge[0] = 0.0
-            ks_edge[0] = 0.0
-
-            names.append(f"tubefitter_mult_{i_reg:0{name_width}d}_edge_entry")
-            elements.append(xt.MultipoleEdge(
-                kn=kn_edge, ks=ks_edge, is_exit=False,
-                shift_x=shift_x, shift_y=shift_y,
-            ))
-
-            names.append(f"tubefitter_mult_{i_reg:0{name_width}d}")
             elements.append(xt.Multipole(
                 knl=knl,
                 ksl=ksl,
                 length=length,
                 isthick=True,
-                model='drift-kick-drift-exact',
                 shift_x=shift_x,
                 shift_y=shift_y,
             ))
-
-            names.append(f"tubefitter_mult_{i_reg:0{name_width}d}_edge_exit")
-            elements.append(xt.MultipoleEdge(
-                kn=kn_edge, ks=ks_edge, is_exit=True,
-                shift_x=shift_x, shift_y=shift_y,
-            ))
+            names.append(f"tubefitter_mult_{i_reg:0{name_width}d}")
 
         return xt.Line(elements=elements, element_names=names)
 
