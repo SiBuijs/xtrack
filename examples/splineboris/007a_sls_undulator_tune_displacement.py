@@ -78,7 +78,7 @@ REPLOT = '--replot' in sys.argv
 # Three placement cases (only ars11_uind_0210_1, only ars11_uind_0610_1,
 # both) x two undulator models (SB = SplineBoris, from to_line(); MK =
 # Multipole Kick, from to_multipole_line()) -- compute_case()/plot_case()
-# below build and analyse one such case end to end and save its 8 figures.
+# below build and analyse one such case end to end and save its 3 figures.
 WIGGLER_CASES = [
     ('ars11_uind_0210_1', ['ars11_uind_0210_1']),
     ('ars11_uind_0610_1', ['ars11_uind_0610_1']),
@@ -86,26 +86,24 @@ WIGGLER_CASES = [
 ]
 MODEL_LABELS = ('SB', 'MK')
 
+# Digitized reference measurement (blue "Measurements" diamonds from a plot
+# titled "X11MA, gap = 11.5 mm", pixel-extracted from test_data/sls/image004.png
+# -- see examples/splineboris/claude_notes/ for the digitization method).
+# NOTE: the correspondence between this "X11MA" beamline measurement and the
+# ars11_uind_0210_1 / ars11_uind_0610_1 elements simulated below has NOT been
+# confirmed -- overlaid here purely as a shape/order-of-magnitude reference,
+# on its own twin y-axis (so an unmatched absolute baseline/offset between
+# "measured ΔTune" and simulated ΔQ doesn't visually mislead).
+MEASURED_TUNE_SHIFT_CSV = (
+    Path(__file__).resolve().parent.parent.parent / 'test_data' / 'sls'
+    / 'x11ma_gap11p5mm_tune_shift_digitized.csv'
+)
 
-def _multipole_field_bx_by(knl, ksl, length, brho0, x, y):
-    """(Bx, By) [T] at (x, y) from a thick Multipole's knl/ksl, matching the
-    field convention xtrack's own kick uses internally
-    (track_magnet_kick.h::evaluate_field_from_strengths /
-    kick_simple_single_coordinates): knl[n]/ksl[n] are length-integrated
-    (i.e. K_n*length, J_n*length), so
-    By + i*Bx = brho0/length * sum_n (knl[n]+i*ksl[n])/n! * (x+iy)**n.
-    """
-    z = complex(x, y)
-    s = 0j
-    zpow = 1 + 0j
-    fact = 1.0
-    for n in range(len(knl)):
-        if n > 0:
-            fact *= n
-            zpow *= z
-        s += (knl[n] + 1j * ksl[n]) / fact * zpow
-    field = s * brho0 / length
-    return field.imag, field.real
+
+def load_measured_tune_shift():
+    if not MEASURED_TUNE_SHIFT_CSV.exists():
+        return None
+    return pd.read_csv(MEASURED_TUNE_SHIFT_CSV)
 
 
 def compute_case(place_label, wiggler_places, model_label):
@@ -222,20 +220,6 @@ def compute_case(place_label, wiggler_places, model_label):
     undulator_field_element_names = [
         nn for nn in undulator.element_names if nn.startswith('tubefitter')
         ]
-    # For the MK model, to_multipole_line() now also inserts a pair of thin
-    # xt.MultipoleEdge kicks around each region (see tube_fitter.py) -- they
-    # match the 'tubefitter' name filter above (so they still get shifted
-    # together with their parent region, which is physically correct) but
-    # have no .length/.knl/.ksl/.get_field(), so per-element field sampling
-    # below needs the thick-body-only subset instead.
-    field_element_names_thick = [
-        nn for nn in field_element_names
-        if not isinstance(line_sls[nn], xt.MultipoleEdge)
-        ]
-    undulator_field_element_names_thick = [
-        nn for nn in undulator_field_element_names
-        if not isinstance(undulator[nn], xt.MultipoleEdge)
-        ]
 
     # s ranges (start, end) of the active undulators, for marking their
     # location on the plots below. `tt` still reflects the pre-insertion
@@ -245,59 +229,11 @@ def compute_case(place_label, wiggler_places, model_label):
         for wig_place in wiggler_places
         ]
 
-    brho0 = E0 / (sc_const.c * 1.0)
-
-    # Closed orbit comparison: no undulator vs. on-axis (shift_x=0) vs.
-    # off-axis (shift_x=0.5 mm) undulator.
+    # On-axis Twiss (shift_x=0) -- needed below for the x-deflection-baseline
+    # Twiss-interpolation check.
     for nn in field_element_names:
         line_sls[nn].shift_x = 0.
     tw_onaxis = line_sls.twiss4d(include_collective=True)
-
-    for nn in field_element_names:
-        line_sls[nn].shift_x = 0.5e-3
-    tw_offaxis = line_sls.twiss4d(include_collective=True)
-
-    # Field actually seen along the closed-orbit trajectory (tw_onaxis.x/y/s,
-    # tw_offaxis.x/y/s -- the Twiss closed orbit is sufficient here, no need
-    # to track a probe particle separately), evaluated with whichever model
-    # is primary for this case: SB reads the real fitted field via
-    # SplineBoris.get_field() (Bx, By, Bs all included); MK has no field
-    # evaluator (it's a thick Multipole, no spatial field structure within
-    # the element), so its field is reconstructed from its own knl/ksl and
-    # the reference rigidity via _multipole_field_bx_by() -- exactly the
-    # field xtrack's own multipole kick is implicitly using (Bs is not
-    # defined for MK, no solenoid equivalent -- see
-    # to_multipole_line()).
-    field_tt = line_sls.get_table()
-    n_sub = 6  # field-sample points per field element (for smoother curves)
-
-    def _sample_field(traj_s, traj_x, traj_y, dx):
-        s_out, bx_out, by_out, bs_out = [], [], [], []
-        for nn in field_element_names_thick:
-            s0 = field_tt['s', nn]
-            length = line_sls[nn].length
-            for s_local in np.linspace(0.0, length, n_sub, endpoint=False):
-                s_glob = s0 + s_local
-                x_local = np.interp(s_glob, traj_s, traj_x) - dx
-                y_local = np.interp(s_glob, traj_s, traj_y)
-                if model_label == 'SB':
-                    bx, by, bs = line_sls[nn].get_field(x_local, y_local, s_local)
-                else:
-                    bx, by = _multipole_field_bx_by(
-                        line_sls[nn].knl, line_sls[nn].ksl, length, brho0,
-                        x_local, y_local)
-                    bs = 0.0
-                s_out.append(s_glob)
-                bx_out.append(bx)
-                by_out.append(by)
-                bs_out.append(bs)
-        return (np.array(s_out), np.array(bx_out), np.array(by_out),
-                np.array(bs_out))
-
-    field_s_on, field_bx_on, field_by_on, field_bs_on = _sample_field(
-        tw_onaxis.s, tw_onaxis.x, tw_onaxis.y, 0.0)
-    field_s_off, field_bx_off, field_by_off, field_bs_off = _sample_field(
-        tw_offaxis.s, tw_offaxis.x, tw_offaxis.y, 0.5e-3)
 
     deltaqx_list = []
     deltaqy_list = []
@@ -308,7 +244,6 @@ def compute_case(place_label, wiggler_places, model_label):
     bety_scan = []
     betx2_scan = []
     bety1_scan = []
-    c_minus_scan = []
 
     n_tunes = 30
 
@@ -331,9 +266,9 @@ def compute_case(place_label, wiggler_places, model_label):
     # the undulator's own start/end, not throughout its length). Read via a
     # literal single-particle track through the (still unshifted) standalone
     # `undulator` line at element-by-element resolution, since the coarser
-    # per-region Twiss orbit (tw_onaxis, used above for the field-sampling
-    # comparison) may not resolve the same intra-region curvature -- print
-    # both so the gap motivating this addition is visible, not just assumed.
+    # per-region Twiss orbit (tw_onaxis) may not resolve the same
+    # intra-region curvature -- print both so the gap motivating this
+    # addition is visible, not just assumed.
     # Folded into x_local in the deltaK1 loop below, as a first attempt at
     # explaining part of the theory-vs-simulation gap; may need revisiting.
     p_deflection = p0.copy()
@@ -385,7 +320,6 @@ def compute_case(place_label, wiggler_places, model_label):
         bety_scan.append(tw.bety)
         betx2_scan.append(tw.betx2)
         bety1_scan.append(tw.bety1)
-        c_minus_scan.append(tw.c_minus)
         if orbit_scan_s is None:
             orbit_scan_s = tw.s
 
@@ -399,9 +333,10 @@ def compute_case(place_label, wiggler_places, model_label):
     # der=2) away from the magnet's own physical axis; and skew-sextupole
     # feed-down, -K2_skew(s) * y(s) (Bskew der=2 -- a vertical shift of a
     # skew sextupole also produces a normal-quadrupole component). The sign
-    # on the skew term follows from the same complex-field convention used
-    # in _multipole_field_bx_by() above (By + iBx = brho0/length * sum_n
-    # (knl[n]+i*ksl[n])/n! * (x+iy)^n): writing z=x+iy for the n=2 term,
+    # on the skew term follows from the same complex-field convention xtrack's
+    # own multipole kick uses internally
+    # (track_magnet_kick.h::evaluate_field_from_strengths: By + iBx =
+    # brho0/length * sum_n (knl[n]+i*ksl[n])/n! * (x+iy)^n): writing z=x+iy for the n=2 term,
     # Re(z^2)=x^2-y^2 and Im(z^2)=2xy, so d(By)/dx at fixed y works out to
     # K2*x - K2_skew*y. In this scan y is always ~0 (only shift_x is varied),
     # so this term is expected to evaluate to ~0 -- included for
@@ -480,68 +415,6 @@ def compute_case(place_label, wiggler_places, model_label):
         deltaqx_formula_pert_list.append(integral_x_pert / (4 * np.pi))
         deltaqy_formula_pert_list.append(-integral_y_pert / (4 * np.pi))
 
-    # Closest-tune-approach (betatron coupling) correction of the analytic
-    # formula, using |C-| read directly off the coupled Twiss (tw.c_minus,
-    # computed automatically by twiss4d whenever mux/muy are available -- no
-    # extra tracking needed). The formula above gives *uncoupled* tunes; the
-    # actual observable eigentunes are pulled apart from their uncoupled
-    # values by the coupling resonance,
-    #   Qx_obs = Qbar + sign(Delta)/2 * sqrt(Delta^2 + |C-|^2)
-    #   Qy_obs = Qbar - sign(Delta)/2 * sqrt(Delta^2 + |C-|^2)
-    # with Qbar=(Qx+Qy)/2, Delta=Qx-Qy. This has to be applied to the
-    # *absolute* tunes and then differenced -- not added directly to
-    # deltaQ -- and the reference (tw_no_undulator) needs the same
-    # treatment with its own c_minus before subtracting, since it is not in
-    # general perfectly decoupled either.
-    def _coupling_corrected_tunes(qx, qy, c_minus):
-        qbar = 0.5 * (qx + qy)
-        delta = qx - qy
-        sign = np.where(delta == 0, 1.0, np.sign(delta))
-        sqrt_term = np.sqrt(delta ** 2 + c_minus ** 2)
-        return qbar + 0.5 * sign * sqrt_term, qbar - 0.5 * sign * sqrt_term
-
-    c_minus_scan_arr = np.array(c_minus_scan)
-    c_minus_0 = tw_no_undulator.c_minus
-
-    qx_obs_ref, qy_obs_ref = _coupling_corrected_tunes(qx_0, qy_0, c_minus_0)
-
-    qx_obs_beta0, qy_obs_beta0 = _coupling_corrected_tunes(
-        qx_0 + np.array(deltaqx_formula_list),
-        qy_0 + np.array(deltaqy_formula_list),
-        c_minus_scan_arr)
-    qx_obs_pert, qy_obs_pert = _coupling_corrected_tunes(
-        qx_0 + np.array(deltaqx_formula_pert_list),
-        qy_0 + np.array(deltaqy_formula_pert_list),
-        c_minus_scan_arr)
-
-    deltaqx_formula_corr_list = qx_obs_beta0 - qx_obs_ref
-    deltaqy_formula_corr_list = qy_obs_beta0 - qy_obs_ref
-    deltaqx_formula_pert_corr_list = qx_obs_pert - qx_obs_ref
-    deltaqy_formula_pert_corr_list = qy_obs_pert - qy_obs_ref
-
-    deltaqx_resid_corr_beta0 = np.array(deltaqx_list) - deltaqx_formula_corr_list
-    deltaqy_resid_corr_beta0 = np.array(deltaqy_list) - deltaqy_formula_corr_list
-    deltaqx_resid_corr_pert = np.array(deltaqx_list) - deltaqx_formula_pert_corr_list
-    deltaqy_resid_corr_pert = np.array(deltaqy_list) - deltaqy_formula_pert_corr_list
-
-    # Report the arithmetic at the largest-offset scan point, as requested:
-    # c_minus, Delta (uncoupled formula tunes), and the residual before/after
-    # the coupling correction.
-    i_report = -1
-    delta_report = ((qx_0 + deltaqx_formula_list[i_report])
-                     - (qy_0 + deltaqy_formula_list[i_report]))
-    print(f"[coupling check] dx = {hor_off_list[i_report] * 1e3:.4f} mm")
-    print(f"[coupling check] c_minus (Twiss)            = {c_minus_scan_arr[i_report]:.6e}")
-    print(f"[coupling check] Delta = Qx-Qy (uncoupled)  = {delta_report:.6e}")
-    print(f"[coupling check] deltaQx residual, uncorrected (beta0) = "
-          f"{deltaqx_list[i_report] - deltaqx_formula_list[i_report]:.6e}")
-    print(f"[coupling check] deltaQx residual, corrected   (beta0) = "
-          f"{deltaqx_resid_corr_beta0[i_report]:.6e}")
-    print(f"[coupling check] deltaQy residual, uncorrected (beta0) = "
-          f"{deltaqy_list[i_report] - deltaqy_formula_list[i_report]:.6e}")
-    print(f"[coupling check] deltaQy residual, corrected   (beta0) = "
-          f"{deltaqy_resid_corr_beta0[i_report]:.6e}")
-
     # tw_no_undulator carries a different element grid (no undulator
     # slices), so interpolate it onto the scan's (shared, undulator-
     # including) s grid to overlay it as a reference in the beta plots.
@@ -556,8 +429,6 @@ def compute_case(place_label, wiggler_places, model_label):
         deltaqx_list=np.array(deltaqx_list),
         deltaqy_list=np.array(deltaqy_list),
         orbit_scan_s=orbit_scan_s,
-        orbit_scan_x=np.array(orbit_scan_x),
-        orbit_scan_y=np.array(orbit_scan_y),
         betx_scan=np.array(betx_scan),
         bety_scan=np.array(bety_scan),
         betx2_scan=np.array(betx2_scan),
@@ -570,28 +441,7 @@ def compute_case(place_label, wiggler_places, model_label):
         deltaqy_formula_list=np.array(deltaqy_formula_list),
         deltaqx_formula_pert_list=np.array(deltaqx_formula_pert_list),
         deltaqy_formula_pert_list=np.array(deltaqy_formula_pert_list),
-        deltaqx_formula_corr_list=deltaqx_formula_corr_list,
-        deltaqy_formula_corr_list=deltaqy_formula_corr_list,
-        deltaqx_formula_pert_corr_list=deltaqx_formula_pert_corr_list,
-        deltaqy_formula_pert_corr_list=deltaqy_formula_pert_corr_list,
-        deltaqx_resid_corr_beta0=deltaqx_resid_corr_beta0,
-        deltaqy_resid_corr_beta0=deltaqy_resid_corr_beta0,
-        deltaqx_resid_corr_pert=deltaqx_resid_corr_pert,
-        deltaqy_resid_corr_pert=deltaqy_resid_corr_pert,
         undulator_s_ranges=np.array(undulator_s_ranges),
-        tw_no_undulator_s=tw_no_undulator.s,
-        tw_no_undulator_x=tw_no_undulator.x,
-        tw_no_undulator_y=tw_no_undulator.y,
-        tw_onaxis_s=tw_onaxis.s,
-        tw_onaxis_x=tw_onaxis.x,
-        tw_onaxis_y=tw_onaxis.y,
-        tw_offaxis_s=tw_offaxis.s,
-        tw_offaxis_x=tw_offaxis.x,
-        tw_offaxis_y=tw_offaxis.y,
-        field_s_on=field_s_on, field_bx_on=field_bx_on,
-        field_by_on=field_by_on, field_bs_on=field_bs_on,
-        field_s_off=field_s_off, field_bx_off=field_bx_off,
-        field_by_off=field_by_off, field_bs_off=field_bs_off,
     )
 
 
@@ -610,7 +460,7 @@ def get_case_data(place_label, wiggler_places, model_label):
 
 
 def plot_case(data, place_label, model_label):
-    """Build and save the 8 figures for one case, purely from the dict
+    """Build and save the 3 figures for one case, purely from the dict
     returned by compute_case()/get_case_data() -- no line building, matching
     or twissing happens here, so this is cheap and safe to re-run on its own
     (e.g. via --replot) to iterate on plot styling.
@@ -622,75 +472,10 @@ def plot_case(data, place_label, model_label):
             ax.axvline(s_start, color='0.4', linestyle='--', linewidth=1)
             ax.axvline(s_end, color='0.4', linestyle='--', linewidth=1)
 
-    n_field_rows = 3 if model_label == 'SB' else 2
-    fig_field_traj, field_axes = plt.subplots(
-        n_field_rows, 1, figsize=(10, 3.2 * n_field_rows), sharex=True)
-    ax_bx, ax_by = field_axes[0], field_axes[1]
-    ax_bx.plot(data['field_s_on'], data['field_bx_on'],
-               color='tab:blue', label='On-axis')
-    ax_bx.plot(data['field_s_off'], data['field_bx_off'],
-               color='tab:orange', label='Off-axis (shift_x=0.5 mm)')
-    mark_undulator_bounds(ax_bx)
-    ax_bx.set_ylabel(r'$B_x$ [T]')
-    ax_bx.set_title(f'Field along the tracked trajectory ({model_label} model)')
-    ax_bx.grid(True, alpha=0.3)
-    ax_bx.legend()
-
-    ax_by.plot(data['field_s_on'], data['field_by_on'],
-               color='tab:blue', label='On-axis')
-    ax_by.plot(data['field_s_off'], data['field_by_off'],
-               color='tab:orange', label='Off-axis (shift_x=0.5 mm)')
-    mark_undulator_bounds(ax_by)
-    ax_by.set_ylabel(r'$B_y$ [T]')
-    ax_by.grid(True, alpha=0.3)
-    ax_by.legend()
-
-    if model_label == 'SB':
-        ax_bs = field_axes[2]
-        ax_bs.plot(data['field_s_on'], data['field_bs_on'],
-                   color='tab:blue', label='On-axis')
-        ax_bs.plot(data['field_s_off'], data['field_bs_off'],
-                   color='tab:orange', label='Off-axis (shift_x=0.5 mm)')
-        mark_undulator_bounds(ax_bs)
-        ax_bs.set_ylabel(r'$B_s$ [T]')
-        ax_bs.grid(True, alpha=0.3)
-        ax_bs.legend()
-
-    field_axes[-1].set_xlabel('s [m]')
-    fig_field_traj.suptitle(case_label)
-    fig_field_traj.tight_layout()
-
-    # orbit_comparison -- MK-model version dropped (redundant with the SB
-    # one for reviewing this case).
-    fig_orbit = None
-    if model_label != 'MK':
-        fig_orbit, (ax_x, ax_y) = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
-        for s_arr, x_arr, y_arr, label in [
-                (data['tw_no_undulator_s'], data['tw_no_undulator_x'], data['tw_no_undulator_y'], 'No undulator'),
-                (data['tw_onaxis_s'], data['tw_onaxis_x'], data['tw_onaxis_y'], 'On-axis undulator'),
-                (data['tw_offaxis_s'], data['tw_offaxis_x'], data['tw_offaxis_y'], 'Off-axis undulator (shift_x=0.5 mm)')]:
-            ax_x.plot(s_arr, x_arr, label=label)
-            ax_y.plot(s_arr, y_arr, label=label)
-        mark_undulator_bounds(ax_x)
-        mark_undulator_bounds(ax_y)
-        ax_x.set_ylabel('x [m]')
-        ax_x.set_title('Horizontal closed orbit around the SLS ring')
-        ax_x.grid(True, alpha=0.3)
-        ax_x.legend()
-        ax_y.set_xlabel('s [m]')
-        ax_y.set_ylabel('y [m]')
-        ax_y.set_title('Vertical closed orbit around the SLS ring')
-        ax_y.grid(True, alpha=0.3)
-        ax_y.legend()
-        fig_orbit.suptitle(case_label)
-        fig_orbit.tight_layout()
-
     hor_off_list = data['hor_off_list']
     deltaqx_list = data['deltaqx_list']
     deltaqy_list = data['deltaqy_list']
     orbit_scan_s = data['orbit_scan_s']
-    orbit_scan_x = data['orbit_scan_x']
-    orbit_scan_y = data['orbit_scan_y']
     betx_scan = data['betx_scan']
     bety_scan = data['bety_scan']
     betx2_scan = data['betx2_scan']
@@ -703,70 +488,11 @@ def plot_case(data, place_label, model_label):
     deltaqy_formula_list = data['deltaqy_formula_list']
     deltaqx_formula_pert_list = data['deltaqx_formula_pert_list']
     deltaqy_formula_pert_list = data['deltaqy_formula_pert_list']
-    deltaqx_formula_corr_list = data['deltaqx_formula_corr_list']
-    deltaqy_formula_corr_list = data['deltaqy_formula_corr_list']
-    deltaqx_formula_pert_corr_list = data['deltaqx_formula_pert_corr_list']
-    deltaqy_formula_pert_corr_list = data['deltaqy_formula_pert_corr_list']
 
-    # Closed orbit at each offset of the tune scan above -- same panel
-    # layout as the no-undulator/on-axis/off-axis comparison plot, but
-    # colored by offset (a per-curve legend would be unreadable with
-    # n_tunes=30 curves).
+    # Colour scale for the offset-coloured beta-beat scan plots below (a
+    # per-curve legend would be unreadable with n_tunes=30 curves).
     norm = plt.Normalize(vmin=hor_off_list.min(), vmax=hor_off_list.max())
     cmap = plt.cm.viridis
-
-    # orbit_scan -- MK-model version dropped (redundant with the SB one).
-    fig_orbit_scan = None
-    if model_label != 'MK':
-        fig_orbit_scan, (ax_x_scan, ax_y_scan) = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
-        for dx, x_orbit, y_orbit in zip(hor_off_list, orbit_scan_x, orbit_scan_y):
-            color = cmap(norm(dx))
-            ax_x_scan.plot(orbit_scan_s, x_orbit, color=color)
-            ax_y_scan.plot(orbit_scan_s, y_orbit, color=color)
-        mark_undulator_bounds(ax_x_scan)
-        mark_undulator_bounds(ax_y_scan)
-        ax_x_scan.set_ylabel('x [m]')
-        ax_x_scan.set_title('Horizontal closed orbit across the tune scan')
-        ax_x_scan.grid(True, alpha=0.3)
-        ax_y_scan.set_xlabel('s [m]')
-        ax_y_scan.set_ylabel('y [m]')
-        ax_y_scan.set_title('Vertical closed orbit across the tune scan')
-        ax_y_scan.grid(True, alpha=0.3)
-
-        sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
-        sm.set_array([])
-        fig_orbit_scan.colorbar(sm, ax=[ax_x_scan, ax_y_scan], label='Horizontal offset [m]')
-        fig_orbit_scan.suptitle(case_label)
-
-    # Beta functions at each offset of the tune scan -- same colour-coded-
-    # by-offset layout as the orbit scan above. SB-model version dropped
-    # (redundant with the relative beta_beat plot kept below).
-    fig_beta_scan = None
-    if model_label != 'SB':
-        fig_beta_scan, (ax_betx_scan, ax_bety_scan) = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
-        for dx, betx, bety in zip(hor_off_list, betx_scan, bety_scan):
-            color = cmap(norm(dx))
-            ax_betx_scan.plot(orbit_scan_s, betx, color=color)
-            ax_bety_scan.plot(orbit_scan_s, bety, color=color)
-        ax_betx_scan.plot(orbit_scan_s, betx_no_und_i, color='k', linestyle='--',
-                           linewidth=1, label='No undulator')
-        ax_bety_scan.plot(orbit_scan_s, bety_no_und_i, color='k', linestyle='--',
-                           linewidth=1, label='No undulator')
-        mark_undulator_bounds(ax_betx_scan)
-        mark_undulator_bounds(ax_bety_scan)
-        ax_betx_scan.set_ylabel(r'$\beta_x$ [m]')
-        ax_betx_scan.set_title('Beta functions across the tune scan')
-        ax_betx_scan.grid(True, alpha=0.3)
-        ax_betx_scan.legend()
-        ax_bety_scan.set_xlabel('s [m]')
-        ax_bety_scan.set_ylabel(r'$\beta_y$ [m]')
-        ax_bety_scan.grid(True, alpha=0.3)
-        ax_bety_scan.legend()
-
-        sm_beta_abs = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
-        sm_beta_abs.set_array([])
-        fig_beta_scan.colorbar(sm_beta_abs, ax=[ax_betx_scan, ax_bety_scan], label='Horizontal offset [m]')
-        fig_beta_scan.suptitle(case_label)
 
     # Beta beat at each offset of the tune scan, relative to the
     # no-undulator baseline and normalized by that baseline to show the
@@ -861,12 +587,6 @@ def plot_case(data, place_label, model_label):
               color='tab:green', label=r'$\frac{1}{4\pi}\oint\delta K_1\,\beta_{x,0}\,ds$')
     ax1.plot(hor_off_list, deltaqx_formula_pert_list, marker='v', linestyle='none',
               color='tab:red', label=r'$\frac{1}{4\pi}\oint\delta K_1\,\beta_x\,ds$')
-    ax1.plot(hor_off_list, deltaqx_formula_corr_list, marker='^', linestyle='none',
-              markerfacecolor='none', color='tab:green',
-              label=r'$C^-$-corrected ($\beta_{x,0}$)')
-    ax1.plot(hor_off_list, deltaqx_formula_pert_corr_list, marker='v', linestyle='none',
-              markerfacecolor='none', color='tab:red',
-              label=r'$C^-$-corrected ($\beta_x$)')
     ax1.set_ylabel('Delta Qx')
     ax1.set_title('Tune shift vs undulator horizontal offset')
     ax1.grid(True, alpha=0.3)
@@ -883,12 +603,6 @@ def plot_case(data, place_label, model_label):
               color='tab:green', label=r'$\frac{1}{4\pi}\oint(-\delta K_1)\beta_{y,0}\,ds$')
     ax2.plot(hor_off_list, deltaqy_formula_pert_list, marker='v', linestyle='none',
               color='tab:red', label=r'$\frac{1}{4\pi}\oint(-\delta K_1)\beta_y\,ds$')
-    ax2.plot(hor_off_list, deltaqy_formula_corr_list, marker='^', linestyle='none',
-              markerfacecolor='none', color='tab:green',
-              label=r'$C^-$-corrected ($\beta_{y,0}$)')
-    ax2.plot(hor_off_list, deltaqy_formula_pert_corr_list, marker='v', linestyle='none',
-              markerfacecolor='none', color='tab:red',
-              label=r'$C^-$-corrected ($\beta_y$)')
     ax2.set_xlabel('Horizontal offset [m]')
     ax2.set_ylabel('Delta Qy')
     ax2.grid(True, alpha=0.3)
@@ -899,106 +613,35 @@ def plot_case(data, place_label, model_label):
               f'$\\Delta Q_y(0)$ = {coef_qy[2]:.4e}',
               transform=ax2.transAxes, **text_box_kwargs)
 
+    measured = load_measured_tune_shift()
+    if measured is not None:
+        ax1_meas = ax1.twinx()
+        ax1_meas.plot(measured['bump_amplitude_m'], measured['dtune_x_measured'],
+                       marker='d', linestyle='none', markersize=4,
+                       color='tab:purple', label='X11MA, gap=11.5mm (measured)')
+        ax1_meas.set_ylabel('Measured Delta Tune x', color='tab:purple')
+        ax1_meas.tick_params(axis='y', colors='tab:purple')
+        ax1_meas.legend(loc='lower right', fontsize=8)
+
+        ax2_meas = ax2.twinx()
+        ax2_meas.plot(measured['bump_amplitude_m'], measured['dtune_y_measured'],
+                       marker='d', linestyle='none', markersize=4,
+                       color='tab:purple', label='X11MA, gap=11.5mm (measured)')
+        ax2_meas.set_ylabel('Measured Delta Tune y', color='tab:purple')
+        ax2_meas.tick_params(axis='y', colors='tab:purple')
+        ax2_meas.legend(loc='lower right', fontsize=8)
+
     fig_tune_shift.suptitle(case_label)
     fig_tune_shift.tight_layout()
 
-    # Tracked-vs-calculated tune shift residual (tune_shift_difference) and
-    # its closest-tune-approach-corrected counterpart
-    # (tune_shift_coupling_corrected) -- MK-model versions dropped (the
-    # formula is built from MK's own field model, so these residuals are
-    # near-trivially small there and not informative for this case).
-    fig_tune_shift_diff = None
-    fig_tune_shift_corr = None
-    if model_label != 'MK':
-        # How far the analytic perturbation-theory formula (both beta
-        # variants) is from the actual Twiss/tracked result plotted above,
-        # as a function of offset -- makes the (generally much smaller)
-        # formula/Twiss gap visible on its own scale rather than as an
-        # overlap of near-identical curves.
-        deltaqx_diff_beta0 = deltaqx_list - deltaqx_formula_list
-        deltaqx_diff_beta = deltaqx_list - deltaqx_formula_pert_list
-        deltaqy_diff_beta0 = deltaqy_list - deltaqy_formula_list
-        deltaqy_diff_beta = deltaqy_list - deltaqy_formula_pert_list
-
-        fig_tune_shift_diff, (ax1_diff, ax2_diff) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
-        ax1_diff.plot(hor_off_list, deltaqx_diff_beta0, marker='^', color='tab:green',
-                      label=r'Twiss $-\ \frac{1}{4\pi}\oint\delta K_1\,\beta_{x,0}\,ds$')
-        ax1_diff.plot(hor_off_list, deltaqx_diff_beta, marker='v', color='tab:red',
-                      label=r'Twiss $-\ \frac{1}{4\pi}\oint\delta K_1\,\beta_x\,ds$')
-        ax1_diff.axhline(0, color='0.4', linewidth=1)
-        ax1_diff.set_ylabel(r'$\Delta Q_x$ residual')
-        ax1_diff.set_title('Tracked minus calculated tune shift vs undulator horizontal offset')
-        ax1_diff.grid(True, alpha=0.3)
-        ax1_diff.legend()
-
-        ax2_diff.plot(hor_off_list, deltaqy_diff_beta0, marker='^', color='tab:green',
-                      label=r'Twiss $-\ \frac{1}{4\pi}\oint(-\delta K_1)\beta_{y,0}\,ds$')
-        ax2_diff.plot(hor_off_list, deltaqy_diff_beta, marker='v', color='tab:red',
-                      label=r'Twiss $-\ \frac{1}{4\pi}\oint(-\delta K_1)\beta_y\,ds$')
-        ax2_diff.axhline(0, color='0.4', linewidth=1)
-        ax2_diff.set_xlabel('Horizontal offset [m]')
-        ax2_diff.set_ylabel(r'$\Delta Q_y$ residual')
-        ax2_diff.grid(True, alpha=0.3)
-        ax2_diff.legend()
-
-        fig_tune_shift_diff.suptitle(case_label)
-        fig_tune_shift_diff.tight_layout()
-
-        # Same residual, before vs. after applying the closest-tune-approach
-        # (betatron coupling) correction computed above -- if the coupling
-        # picture accounts for the residual seen in fig_tune_shift_diff, the
-        # solid (corrected) curves should sit much closer to zero than the
-        # dashed (uncorrected) ones.
-        fig_tune_shift_corr, (ax1_corr, ax2_corr) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
-        ax1_corr.plot(hor_off_list, deltaqx_diff_beta0, marker='^', linestyle='--',
-                      color='tab:green', alpha=0.4, label=r'Uncorrected ($\beta_{x,0}$)')
-        ax1_corr.plot(hor_off_list, data['deltaqx_resid_corr_beta0'], marker='^',
-                      color='tab:green', label=r'$C^-$-corrected ($\beta_{x,0}$)')
-        ax1_corr.plot(hor_off_list, deltaqx_diff_beta, marker='v', linestyle='--',
-                      color='tab:red', alpha=0.4, label=r'Uncorrected ($\beta_x$)')
-        ax1_corr.plot(hor_off_list, data['deltaqx_resid_corr_pert'], marker='v',
-                      color='tab:red', label=r'$C^-$-corrected ($\beta_x$)')
-        ax1_corr.axhline(0, color='0.4', linewidth=1)
-        ax1_corr.set_ylabel(r'$\Delta Q_x$ residual')
-        ax1_corr.set_title('Tune-shift residual before/after closest-tune-approach correction')
-        ax1_corr.grid(True, alpha=0.3)
-        ax1_corr.legend(fontsize=7)
-
-        ax2_corr.plot(hor_off_list, deltaqy_diff_beta0, marker='^', linestyle='--',
-                      color='tab:green', alpha=0.4, label=r'Uncorrected ($\beta_{y,0}$)')
-        ax2_corr.plot(hor_off_list, data['deltaqy_resid_corr_beta0'], marker='^',
-                      color='tab:green', label=r'$C^-$-corrected ($\beta_{y,0}$)')
-        ax2_corr.plot(hor_off_list, deltaqy_diff_beta, marker='v', linestyle='--',
-                      color='tab:red', alpha=0.4, label=r'Uncorrected ($\beta_y$)')
-        ax2_corr.plot(hor_off_list, data['deltaqy_resid_corr_pert'], marker='v',
-                      color='tab:red', label=r'$C^-$-corrected ($\beta_y$)')
-        ax2_corr.axhline(0, color='0.4', linewidth=1)
-        ax2_corr.set_xlabel('Horizontal offset [m]')
-        ax2_corr.set_ylabel(r'$\Delta Q_y$ residual')
-        ax2_corr.grid(True, alpha=0.3)
-        ax2_corr.legend(fontsize=7)
-
-        fig_tune_shift_corr.suptitle(case_label)
-        fig_tune_shift_corr.tight_layout()
-
-    # Save whichever figures were built for this case, named
-    # "<place_label>_<model_label>_<what the figure shows>.pdf". Some
-    # entries are None (skipped for this model_label -- see above) and are
-    # filtered out here rather than saved.
+    # Save the 3 figures for this case, named
+    # "<place_label>_<model_label>_<what the figure shows>.pdf".
     figures = [
-        (fig_field_traj, 'field_along_trajectory'),
-        (fig_orbit, 'orbit_comparison'),
-        (fig_orbit_scan, 'orbit_scan'),
-        (fig_beta_scan, 'beta_functions'),
         (fig_beta_diff, 'beta_beat'),
         (fig_beta_diff_coupled, 'beta_beat_coupled'),
         (fig_tune_shift, 'tune_shift'),
-        (fig_tune_shift_diff, 'tune_shift_difference'),
-        (fig_tune_shift_corr, 'tune_shift_coupling_corrected'),
         ]
     for fig, suffix in figures:
-        if fig is None:
-            continue
         out_path = OUT_DIR / f'{place_label}_{model_label}_{suffix}.pdf'
         fig.savefig(out_path)
         print(f"Saved {out_path}")
@@ -1009,7 +652,8 @@ for place_label, wiggler_places in WIGGLER_CASES:
         case_data = get_case_data(place_label, wiggler_places, model_label)
         plot_case(case_data, place_label, model_label)
 
-# All 8*3*2 = 48 figures across every case are kept open (not closed inside
-# plot_case()) so they can all be reviewed interactively here, in addition
-# to having been saved as PDFs above.
+# All 3*2*3 = 18 figures across every case (3 figures x 2 models x 3
+# placements) are kept open (not closed inside plot_case()) so they can all
+# be reviewed interactively here, in addition to having been saved as PDFs
+# above.
 plt.show()
