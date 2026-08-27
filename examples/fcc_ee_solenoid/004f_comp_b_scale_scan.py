@@ -250,6 +250,56 @@ K1S_KNOBS_BY_IP = {
     for ip_name in IP_NAMES
 }
 
+# Orbit-corrector knob names, reconstructed the same way as
+# 004c_correct_solenoids_in_fcc_ring.py's opt_orbit vary list (12 per side,
+# right then left) -- these are NOT re-solved by this scan (only the
+# coupling/skew-quad knobs above are), so their printed table is a constant
+# sanity check, not a result of this scan.
+_ORBIT_CORRECTOR_SUFFIXES = (
+    'acbh1', 'acbv1', 'acbh2', 'acbh3', 'acbh4', 'acbh5', 'acbh6',
+    'acbv2', 'acbv3', 'acbv4', 'acbv5', 'acbv6',
+)
+
+
+def _orbit_corrector_knobs_for_ip(ip_name):
+    knob_names = [
+        f'{suffix}_sol_{side}_{ip_name}'
+        for side in ('right', 'left')
+        for suffix in _ORBIT_CORRECTOR_SUFFIXES
+    ]
+    missing = [nn for nn in knob_names if nn not in line.vars]
+    if missing:
+        raise SystemExit(
+            f'{INPUT_LATTICE_JSON.name} is missing orbit-corrector knob(s), '
+            f'e.g. {missing[0]!r}, for {ip_name} -- same '
+            '004c_correct_solenoids_in_fcc_ring.py requirement as the '
+            'coupling knobs above.'
+        )
+    return knob_names
+
+
+ORBIT_CORRECTOR_KNOBS_BY_IP = {
+    ip_name: _orbit_corrector_knobs_for_ip(ip_name) for ip_name in IP_NAMES
+}
+
+
+def _knob_value_table(title, knob_names, values_by_scale):
+    """Print one row per knob, one column per COMP_B_SCALE_VALUES entry.
+
+    `values_by_scale` is a list (same order/length as COMP_B_SCALE_VALUES) of
+    {knob_name: value} dicts, as accumulated in the main scan loop below.
+    """
+    col_width = 13
+    header = f'{"knob":<42s}' + ''.join(
+        f'{cb:>{col_width}.4f}' for cb in COMP_B_SCALE_VALUES)
+    print(f'\n{title}')
+    print(header)
+    print('-' * len(header))
+    for nn in knob_names:
+        row = f'{nn:<42s}' + ''.join(
+            f'{values[nn]:>{col_width}.3e}' for values in values_by_scale)
+        print(row)
+
 
 def _resolve_coupling_correction(ip_name):
     name_start, name_end = _straight_section_boundary_names(ip_name)
@@ -295,6 +345,8 @@ for ip_name in IP_NAMES:
     line[f'on_sol_corr_{ip_name}'] = 1
 
 TWISS_BY_COMP_B_SCALE = []
+K1S_VALUES_BY_COMP_B_SCALE = []
+ORBIT_VALUES_BY_COMP_B_SCALE = []
 for comp_b_scale in COMP_B_SCALE_VALUES:
     set_lattice_knobs(
         line, with_solenoids=True, with_correctors=True,
@@ -307,7 +359,31 @@ for comp_b_scale in COMP_B_SCALE_VALUES:
     tw = line.twiss4d(strengths=True)
     tw.zero_at(IP_PLOT)
     TWISS_BY_COMP_B_SCALE.append(tw)
+    K1S_VALUES_BY_COMP_B_SCALE.append({
+        nn: float(line.vars[nn]._value)
+        for ip_name in IP_NAMES for nn in K1S_KNOBS_BY_IP[ip_name]})
+    ORBIT_VALUES_BY_COMP_B_SCALE.append({
+        nn: float(line.vars[nn]._value)
+        for ip_name in IP_NAMES for nn in ORBIT_CORRECTOR_KNOBS_BY_IP[ip_name]})
     print(f'comp_b_scale={comp_b_scale:+.2f}: twiss OK (skew quads re-solved)')
+
+
+###################################################################
+# Corrector-knob value tables: one row per knob, one column per   #
+# COMP_B_SCALE_VALUES entry, printed separately for each IP.      #
+###################################################################
+
+for ip_name in IP_NAMES:
+    _knob_value_table(
+        f'Skew-quad coupling-correction knobs (k1s_*_sol_coupling_corr) '
+        f'-- {ip_name} -- re-solved at each comp_b_scale',
+        K1S_KNOBS_BY_IP[ip_name], K1S_VALUES_BY_COMP_B_SCALE)
+
+for ip_name in IP_NAMES:
+    _knob_value_table(
+        f'Orbit-corrector knobs (acbh/acbv_sol_*) -- {ip_name} -- frozen at '
+        'the nominal comp_b_scale=1.0 fit, NOT re-solved by this scan',
+        ORBIT_CORRECTOR_KNOBS_BY_IP[ip_name], ORBIT_VALUES_BY_COMP_B_SCALE)
 
 
 #########
