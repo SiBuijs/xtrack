@@ -66,6 +66,13 @@ comp_solenoid_template = solenoid_templates['compensation_solenoid']
 
 env['sext_amp'] = 1.0
 
+# Global multiplier on the compensation solenoids' field, on top of their
+# built-in charge-balance scale (comp_scale_b, baked into the template by
+# 004a) and each IP's on_comp_sol_{ip} on/off knob. 1.0 = nominal
+# compensation (net solenoid integral cancels); over/under-compensating lets
+# studies probe how sensitive the correction is to that balance.
+env['comp_b_scale'] = 1.0
+
 for ip_name in IP_NAMES:
 
     # Use the same local line orientation around each IP as in the original
@@ -81,19 +88,22 @@ for ip_name in IP_NAMES:
     env[f'on_sol_{ip_name}'] = 0
     env[f'on_comp_sol_{ip_name}'] = 0
 
+    comp_knob_ref = (
+        env.ref[f'on_comp_sol_{ip_name}'] * env.ref['comp_b_scale'])
     solenoid_lines = {}
     clone_specs = [
         ('main', main_solenoid_template,
          f'sol_slice_{ip_name}', env.ref[f'on_sol_{ip_name}']),
         ('comp_left', comp_solenoid_template,
-         f'comp_sol_slice_left_{ip_name}', env.ref[f'on_comp_sol_{ip_name}']),
+         f'comp_sol_slice_left_{ip_name}', comp_knob_ref),
         ('comp_right', comp_solenoid_template,
-         f'comp_sol_slice_right_{ip_name}', env.ref[f'on_comp_sol_{ip_name}']),
+         f'comp_sol_slice_right_{ip_name}', comp_knob_ref),
     ]
 
     # Clone the isolated templates into the environment. The compensation
     # template already carries the scale needed to cancel the main integral;
-    # here it is only multiplied by the local on/off knob.
+    # here it is only multiplied by the local on/off knob and the global
+    # comp_b_scale knob.
     for clone_name, template_line, element_prefix, knob_ref in clone_specs:
         element_names = []
         name_width = len(str(max(0, len(template_line.element_names) - 1)))

@@ -33,6 +33,7 @@ def set_lattice_knobs(
     with_solenoids: bool,
     with_correctors: bool,
     sext_amp: float = 1.0,
+    comp_b_scale: float = 1.0,
 ) -> None:
     for ip_name in IP_NAMES:
         if f"on_sol_{ip_name}" in line.vars:
@@ -52,6 +53,9 @@ def set_lattice_knobs(
 
     if "sext_amp" in line.vars:
         line["sext_amp"] = float(sext_amp)
+
+    if "comp_b_scale" in line.vars:
+        line["comp_b_scale"] = float(comp_b_scale)
 
 
 def set_solenoid_offset(
