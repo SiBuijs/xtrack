@@ -9,14 +9,17 @@ coupling-correction target (+-1362 m or so, from
 end_ds_start_straight_{ip}/end_straight_start_ds_{ip}).
 
 comp_b_scale=1.0 is nominal compensation (net main+compensation solenoid
-integral cancels, as designed by 004a/004b); the coupling-correction knobs
-(on_sol_coupling_corr_{ip}) were solved once in 004c at that nominal value
-and are NOT re-solved here as comp_b_scale is varied -- deliberately, so the
-plots show how much residual coupling appears as the compensation is thrown
-off-balance relative to a correction that assumes it is exact. This mirrors
-how the (removed) Bz-ramp coupling study measured raw/uncorrected coupling
-under a fixed correction rather than re-solving 004c each time -- see
-claude_notes/04_bz_ramp_coupling_amplification.md.
+integral cancels, as designed by 004a/004b). The coupling-correction knobs
+(on_sol_coupling_corr_{ip}) were first solved in 004c at that nominal value,
+but here their underlying k1s_*_sol_coupling_corr skew-quad knobs are
+re-solved fresh at every comp_b_scale value (see _resolve_coupling_correction
+below, same targets/vary set as 004c's opt_coupling block), so the plots show
+how well the coupling correction can track a compensation solenoid thrown
+off-balance, rather than how much residual coupling appears under a
+correction that assumes it is exact (the latter is what the (removed)
+Bz-ramp coupling study did with a fixed correction -- see
+claude_notes/04_bz_ramp_coupling_amplification.md -- and what this script
+itself did before skew-quad re-correction was added here).
 
 Requires a corrected lattice built with the comp_b_scale knob, i.e. a
 004b_install_solenoids_in_fcc_ring.py / 004c_correct_solenoids_in_fcc_ring.py
@@ -65,8 +68,14 @@ INPUT_LATTICE_JSON = (
 IP_NAMES = ['ipa', 'ipd', 'ipg', 'ipj']
 IP_PLOT = 'ipa'
 
-# Eleven comp_b_scale values, evenly spaced between 0.99 and 1.01.
-COMP_B_SCALE_VALUES = np.linspace(0.95, 1.05, 11)
+# Five comp_b_scale values, evenly spaced between 0.95 and 1.05. Kept small
+# (rather than the original 11) because each point now re-solves the
+# on_sol_coupling_corr_{ip} skew-quad knobs for all 4 IPs -- a single
+# opt_coupling.solve(rcond=3e-3) pass took ~8.5 minutes per IP per scale
+# value in testing (84 vary knobs, numerical Jacobian), so an 11-point x
+# 4-IP scan would take on the order of hours even with the warm-start
+# continuation across scale values below.
+COMP_B_SCALE_VALUES = np.linspace(0.95, 1.05, 5)
 
 # Quads carrying the orbit correctors (corr_1..4_{left,right}_on_quad in
 # 004c_correct_solenoids_in_fcc_ring.py's per-IP `config` dict) -- copied here
@@ -192,6 +201,91 @@ STRAIGHT_SECTION_S_RANGE = (
 )
 
 
+#####################################################################
+# Per-IP skew-quad (coupling) re-correction, one comp_b_scale at a  #
+# time -- same targets/vary set as 004c_correct_solenoids_in_fcc_   #
+# ring.py's opt_coupling block, but re-solved fresh at each scan    #
+# point instead of staying frozen at its comp_b_scale=1.0 solution. #
+#####################################################################
+# This changes what the scan measures relative to the module docstring above:
+# instead of showing how much residual coupling appears under a correction
+# that assumes comp_b_scale=1.0 is exact, it shows how well the correction
+# can track a compensation solenoid thrown off-balance, and whether the
+# skew-quad knobs run out of strength/authority to do so.
+
+def _straight_section_boundary_names(ip_name):
+    return (
+        f'end_ds_start_straight_{ip_name}',
+        f'end_straight_start_ds_{ip_name}',
+    )
+
+
+def _k1s_coupling_knobs_for_ip(table, ip_name):
+    name_start, name_end = _straight_section_boundary_names(ip_name)
+    quad_names = []
+    for table_part in (
+            table.rows[name_start:ip_name], table.rows[ip_name:name_end]):
+        for element_type, env_name in zip(
+                table_part.element_type, table_part.env_name):
+            if element_type == 'Quadrupole' and env_name not in quad_names:
+                quad_names.append(env_name)
+    knob_names = [f'k1s_{nn}_sol_coupling_corr' for nn in quad_names]
+    missing = [nn for nn in knob_names if nn not in line.vars]
+    if missing:
+        raise SystemExit(
+            f'{INPUT_LATTICE_JSON.name} is missing coupling-correction knob(s), '
+            f'e.g. {missing[0]!r} -- it must be a lattice produced by '
+            '004c_correct_solenoids_in_fcc_ring.py (which creates the '
+            'k1s_*_sol_coupling_corr vars this scan re-solves).'
+        )
+    return knob_names
+
+
+# Built from table_before_cuts (not the cut `line`) so the quad names match
+# exactly what 004c used to build the k1s_*_sol_coupling_corr knob names --
+# line.cut_at_s above only splits drift-like regions far from these quads,
+# but the pre-cut table removes any doubt.
+K1S_KNOBS_BY_IP = {
+    ip_name: _k1s_coupling_knobs_for_ip(table_before_cuts, ip_name)
+    for ip_name in IP_NAMES
+}
+
+
+def _resolve_coupling_correction(ip_name):
+    name_start, name_end = _straight_section_boundary_names(ip_name)
+    tw_local = line.twiss4d(strengths=True)
+    opt_coupling = line.match(
+        solve=False,
+        betx=tw_local['betx', ip_name],
+        bety=tw_local['bety', ip_name],
+        init_at=ip_name,
+        start=name_start,
+        end=name_end,
+        n_steps_max=100,
+        # See 004c: the first pass can leave 1-2 targets just outside tol
+        # even though the knob is well-behaved; take_best (solve()'s
+        # default) keeps the best point found regardless.
+        assert_within_tol=False,
+        vary=xt.VaryList(K1S_KNOBS_BY_IP[ip_name], step=1e-6),
+        targets=[
+            xt.TargetSet(betx2=0, bety1=0, at=xt.START, tol=5e-5),
+            xt.TargetSet(betx2=0, bety1=0, at=xt.END, tol=5e-5),
+            xt.TargetSet(alfx2=0, alfy1=0, at=xt.START, tol=1e-6),
+            xt.TargetSet(alfx2=0, alfy1=0, at=xt.END, tol=1e-6),
+            xt.TargetSet(dy=0, at=xt.START, tol=5e-5),
+            xt.TargetSet(dy=0, at=xt.END, tol=5e-5),
+            xt.TargetSet(dpy=0, at=xt.START, tol=1e-7),
+            xt.TargetSet(dpy=0, at=xt.END, tol=1e-7),
+        ])
+    # Same rank-deficient-Jacobian truncation as 004c (many more k1s knobs
+    # than targets).
+    opt_coupling.solve(rcond=3e-3)
+    status = opt_coupling.target_status(ret=True)
+    if not all(status.tol_met):
+        print(f'  WARNING: on_sol_coupling_corr_{ip_name} re-fit did not '
+              'fully converge to tolerance; using best point found.')
+
+
 ############################################
 # Twiss once per comp_b_scale, solenoids on #
 ############################################
@@ -205,10 +299,15 @@ for comp_b_scale in COMP_B_SCALE_VALUES:
     set_lattice_knobs(
         line, with_solenoids=True, with_correctors=True,
         comp_b_scale=float(comp_b_scale))
+    # Warm-started from whichever comp_b_scale was solved previously (the
+    # scan is monotonic in COMP_B_SCALE_VALUES), rather than reset to the
+    # nominal comp_b_scale=1.0 solution each time.
+    for ip_name in IP_NAMES:
+        _resolve_coupling_correction(ip_name)
     tw = line.twiss4d(strengths=True)
     tw.zero_at(IP_PLOT)
     TWISS_BY_COMP_B_SCALE.append(tw)
-    print(f'comp_b_scale={comp_b_scale:+.2f}: twiss OK')
+    print(f'comp_b_scale={comp_b_scale:+.2f}: twiss OK (skew quads re-solved)')
 
 
 #########
