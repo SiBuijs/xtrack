@@ -211,6 +211,13 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   `tau_pol` from Twiss `polarization_analysis=True`, `tau_depol` from a
   linear fit of tracked polarization decay), structurally a sibling of
   `014_emittance_evolution.py`. Not part of the 000-014 pipeline numbering.
+- `06_coupling_matching_convergence.md` — why `004f_comp_b_scale_scan.py`'s
+  per-scan-point coupling re-solve (84 skew-quad vary knobs vs. 12 targets)
+  is slow/sometimes fails to converge (ill-conditioned Jacobian, SVD
+  diagnosis), the `004g_coupling_svd_diagnostic.py` tool built to inspect
+  it, the `broyden=True` fix applied, and a ranked list of further options
+  for outright non-convergence (not yet applied). `004f`/`004g` themselves
+  are not otherwise documented in this pipeline overview yet.
 
 Removed 2026-07-15: the `kill_higher_order_{upstream,downstream}_{ip}` knob
 (zeroed sextupole-and-above multipole content for one half of one IP's main
