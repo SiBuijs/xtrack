@@ -39,6 +39,7 @@ import matplotlib.colors as mcolors
 import numpy as np
 import xtrack as xt
 
+from aperture_study_io import PLOT_DIR as _BASE_PLOT_DIR
 from lattice_knobs import set_lattice_knobs
 from solenoid_params import (
     COMP_SOLENOID_LENGTH,
@@ -87,7 +88,7 @@ IP_PLOT = 'ipa'
 # value in testing (84 vary knobs, numerical Jacobian), so an 11-point x
 # 4-IP scan would take on the order of hours even with the warm-start
 # continuation across scale values below.
-COMP_B_SCALE_VALUES = np.linspace(0.995, 1.005, 5)
+COMP_B_SCALE_VALUES = np.linspace(0.990, 1.010, 21)
 
 # Main-solenoid field strength for this run (fixed -- comp_b_scale scales
 # only the compensation solenoids, not the main one), used to annotate the
@@ -667,5 +668,44 @@ fig_emit.tight_layout()
 
 print(f'Loaded {INPUT_LATTICE_JSON}')
 print(f'comp_b_scale values: {COMP_B_SCALE_VALUES}')
+
+
+#####################################################################
+# Save every figure to disk under Coupling_Studies, labeled by main- #
+# solenoid field strength, the comp_b_scale scan range, IR-vs-full-  #
+# straight-section, and what each figure shows -- same PLOT_DIR      #
+# (FCC_SOLENOID_PLOT_DIR-overridable, see aperture_study_io.py)      #
+# convention the DA/MA/EMIT/POL/TUNE studies already use.            #
+#####################################################################
+
+COUPLING_STUDIES_PLOT_DIR = _BASE_PLOT_DIR / 'Coupling_Studies'
+COUPLING_STUDIES_PLOT_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _scan_range_tag(values):
+    """e.g. [0.998 ... 1.002] -> '998-1002' (matches the tag scheme already
+    used by hand for earlier scans in this directory, e.g.
+    IR_coupled_beta_corrected_scan_999-1001.pdf)."""
+    return f'{round(values.min() * 1000)}-{round(values.max() * 1000)}'
+
+
+_SCAN_TAG = _scan_range_tag(COMP_B_SCALE_VALUES)
+
+
+def _save_fig(fig, stem):
+    path = COUPLING_STUDIES_PLOT_DIR / f'{stem}.pdf'
+    fig.savefig(path, bbox_inches='tight')
+    print(f'Saved plot: {path}')
+
+
+_save_fig(fig1, f'IR_coupled_beta_{FIELD_TAG}_scan{_SCAN_TAG}')
+_save_fig(fig2, f'full_straight_coupled_beta_{FIELD_TAG}_scan{_SCAN_TAG}')
+_save_fig(fig_beta_ir, f'IR_beta_{FIELD_TAG}_scan{_SCAN_TAG}')
+_save_fig(fig_beta_full, f'full_straight_beta_{FIELD_TAG}_scan{_SCAN_TAG}')
+_save_fig(fig_disp_ir, f'IR_dispersion_{FIELD_TAG}_scan{_SCAN_TAG}')
+_save_fig(fig_disp_full, f'full_straight_dispersion_{FIELD_TAG}_scan{_SCAN_TAG}')
+_save_fig(fig3, f'c_minus_vs_comp_b_scale_{FIELD_TAG}_scan{_SCAN_TAG}')
+_save_fig(
+    fig_emit, f'eq_emittance_shift_vs_comp_b_scale_{FIELD_TAG}_scan{_SCAN_TAG}')
 
 plt.show()
