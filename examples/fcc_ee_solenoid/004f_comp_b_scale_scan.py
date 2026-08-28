@@ -75,7 +75,7 @@ IP_PLOT = 'ipa'
 # value in testing (84 vary knobs, numerical Jacobian), so an 11-point x
 # 4-IP scan would take on the order of hours even with the warm-start
 # continuation across scale values below.
-COMP_B_SCALE_VALUES = np.linspace(0.95, 1.05, 5)
+COMP_B_SCALE_VALUES = np.linspace(0.999, 1.001, 5)
 
 # Quads carrying the orbit correctors (corr_1..4_{left,right}_on_quad in
 # 004c_correct_solenoids_in_fcc_ring.py's per-IP `config` dict) -- copied here
