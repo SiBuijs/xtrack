@@ -26,6 +26,12 @@ parser.add_argument(
 )
 add_b0_argument(parser, default=MAIN_SOLENOID_B0)
 add_max_order_argument(parser)
+parser.add_argument(
+    '--output-tag', default='',
+    help='Optional extra suffix appended to BOTH the input temp lattice and '
+         'the output corrected lattice filenames (e.g. "mainscale"). Must '
+         'match the --output-tag passed to 004b_install_solenoids_in_fcc_'
+         'ring.py. Empty (default) keeps the standard filenames.')
 args = parser.parse_args()
 
 FIELD_TAG = field_tag(args.b0)
@@ -33,14 +39,15 @@ FIELD_TAG = field_tag(args.b0)
 # linear-only, see 00_overview.md) -- its tag is left out of the varsol
 # filenames so --max-transverse-order has no effect on --model varsol.
 ORDER_TAG = order_tag(args.max_transverse_order)
+OUT_TAG = f'_{args.output_tag}' if args.output_tag else ''
 _MODEL_LATTICE_PATHS = {
     'splineboris': (
-        f'temp_fcc_ee_lcc_splineboris_solenoids_{FIELD_TAG}{ORDER_TAG}.json',
-        f'fccee_z_lcc_splineboris_solenoids_coupling_corrected_{FIELD_TAG}{ORDER_TAG}.json',
+        f'temp_fcc_ee_lcc_splineboris_solenoids_{FIELD_TAG}{ORDER_TAG}{OUT_TAG}.json',
+        f'fccee_z_lcc_splineboris_solenoids_coupling_corrected_{FIELD_TAG}{ORDER_TAG}{OUT_TAG}.json',
     ),
     'varsol': (
-        f'temp_fcc_ee_lcc_varsol_solenoids_{FIELD_TAG}.json',
-        f'fccee_z_lcc_varsol_solenoids_coupling_corrected_{FIELD_TAG}.json',
+        f'temp_fcc_ee_lcc_varsol_solenoids_{FIELD_TAG}{OUT_TAG}.json',
+        f'fccee_z_lcc_varsol_solenoids_coupling_corrected_{FIELD_TAG}{OUT_TAG}.json',
     ),
 }
 

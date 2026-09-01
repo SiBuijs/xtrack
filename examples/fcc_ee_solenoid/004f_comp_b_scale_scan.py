@@ -66,15 +66,22 @@ _parser.add_argument(
          "script's behavior before orbit re-correction was added). By "
          'default, both the orbit and coupling corrections are re-solved '
          'at each scan point.')
+_parser.add_argument(
+    '--input-tag', default='',
+    help='--output-tag that 004b/004c were run with to produce the lattice '
+         'to load (empty = the standard untagged lattice). When set, it is '
+         'also appended to the output plot filenames so tagged and untagged '
+         'runs do not collide.')
 _args = _parser.parse_args()
 FIELD_TAG = field_tag(_args.b0)
 ORDER_TAG = order_tag(_args.max_transverse_order)
+INPUT_TAG = f'_{_args.input_tag}' if _args.input_tag else ''
 
 HERE = Path(__file__).parent
 INPUT_LATTICE_JSON = (
     HERE / (
         'fccee_z_lcc_splineboris_solenoids_coupling_corrected_'
-        f'{FIELD_TAG}{ORDER_TAG}.json'
+        f'{FIELD_TAG}{ORDER_TAG}{INPUT_TAG}.json'
     )
 )
 
@@ -420,7 +427,7 @@ def _resolve_coupling_correction(ip_name):
     # warm start): it converged to tol in ~200 total evaluations, versus not
     # converging at all in 446 evaluations (5 full-Jacobian steps) without
     # broyden.
-    opt_coupling.solve(rcond=3e-3, broyden=True)
+    opt_coupling.solve(rcond=0, broyden=True)
     status = opt_coupling.target_status(ret=True)
     if not all(status.tol_met):
         print(f'  WARNING: on_sol_coupling_corr_{ip_name} re-fit did not '
@@ -698,14 +705,18 @@ def _save_fig(fig, stem):
     print(f'Saved plot: {path}')
 
 
-_save_fig(fig1, f'IR_coupled_beta_{FIELD_TAG}_scan{_SCAN_TAG}')
-_save_fig(fig2, f'full_straight_coupled_beta_{FIELD_TAG}_scan{_SCAN_TAG}')
-_save_fig(fig_beta_ir, f'IR_beta_{FIELD_TAG}_scan{_SCAN_TAG}')
-_save_fig(fig_beta_full, f'full_straight_beta_{FIELD_TAG}_scan{_SCAN_TAG}')
-_save_fig(fig_disp_ir, f'IR_dispersion_{FIELD_TAG}_scan{_SCAN_TAG}')
-_save_fig(fig_disp_full, f'full_straight_dispersion_{FIELD_TAG}_scan{_SCAN_TAG}')
-_save_fig(fig3, f'c_minus_vs_comp_b_scale_{FIELD_TAG}_scan{_SCAN_TAG}')
+_save_fig(fig1, f'IR_coupled_beta_{FIELD_TAG}{INPUT_TAG}_scan{_SCAN_TAG}')
+_save_fig(fig2,
+          f'full_straight_coupled_beta_{FIELD_TAG}{INPUT_TAG}_scan{_SCAN_TAG}')
+_save_fig(fig_beta_ir, f'IR_beta_{FIELD_TAG}{INPUT_TAG}_scan{_SCAN_TAG}')
+_save_fig(fig_beta_full,
+          f'full_straight_beta_{FIELD_TAG}{INPUT_TAG}_scan{_SCAN_TAG}')
+_save_fig(fig_disp_ir, f'IR_dispersion_{FIELD_TAG}{INPUT_TAG}_scan{_SCAN_TAG}')
+_save_fig(fig_disp_full,
+          f'full_straight_dispersion_{FIELD_TAG}{INPUT_TAG}_scan{_SCAN_TAG}')
+_save_fig(fig3, f'c_minus_vs_comp_b_scale_{FIELD_TAG}{INPUT_TAG}_scan{_SCAN_TAG}')
 _save_fig(
-    fig_emit, f'eq_emittance_shift_vs_comp_b_scale_{FIELD_TAG}_scan{_SCAN_TAG}')
+    fig_emit,
+    f'eq_emittance_shift_vs_comp_b_scale_{FIELD_TAG}{INPUT_TAG}_scan{_SCAN_TAG}')
 
 plt.show()

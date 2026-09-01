@@ -23,16 +23,25 @@ _parser = argparse.ArgumentParser(
     description='Install SplineBoris solenoids and correctors in the FCC ring.')
 add_b0_argument(_parser, default=MAIN_SOLENOID_B0)
 add_max_order_argument(_parser)
+_parser.add_argument(
+    '--output-tag', default='',
+    help='Optional extra suffix appended to the output lattice filename '
+         '(e.g. "mainscale" -> temp_fcc_ee_lcc_splineboris_solenoids_'
+         '3T_mainscale.json). Empty (default) keeps the standard filename. '
+         '004c_correct_solenoids_in_fcc_ring.py must be run with the same '
+         '--output-tag to pick up this file.')
 _args = _parser.parse_args()
 FIELD_TAG = field_tag(_args.b0)
 ORDER_TAG = order_tag(_args.max_transverse_order)
+OUT_TAG = f'_{_args.output_tag}' if _args.output_tag else ''
 MAIN_SOLENOID_CORRECTOR_DS_START = corrector_ds_start_for_b0(_args.b0)
 
 HERE = Path(__file__).parent
 INPUT_LATTICE_JSON = HERE / 'fccee_z_lcc.json'
 INPUT_SOLENOID_LINES_JSON = HERE / f'004_solenoid_lines_{FIELD_TAG}{ORDER_TAG}.json'
 OUTPUT_LATTICE_JSON = (
-    HERE / f'temp_fcc_ee_lcc_splineboris_solenoids_{FIELD_TAG}{ORDER_TAG}.json')
+    HERE
+    / f'temp_fcc_ee_lcc_splineboris_solenoids_{FIELD_TAG}{ORDER_TAG}{OUT_TAG}.json')
 
 IP_NAMES = ['ipa', 'ipd', 'ipg', 'ipj']
 
@@ -73,6 +82,12 @@ env['sext_amp'] = 1.0
 # studies probe how sensitive the correction is to that balance.
 env['comp_b_scale'] = 1.0
 
+# Global multiplier on every main detector solenoid's field, analogous to
+# comp_b_scale above but for the main solenoids. 1.0 = nominal. Scanned by
+# 004h_main_b_scale_scan.py; left at 1.0 by 004c so the nominal correction
+# (doublet tilt, orbit/optics/coupling knobs) is still solved at design field.
+env['main_b_scale'] = 1.0
+
 for ip_name in IP_NAMES:
 
     # Use the same local line orientation around each IP as in the original
@@ -88,16 +103,31 @@ for ip_name in IP_NAMES:
     env[f'on_sol_{ip_name}'] = 0
     env[f'on_comp_sol_{ip_name}'] = 0
 
-    comp_knob_ref = (
-        env.ref[f'on_comp_sol_{ip_name}'] * env.ref['comp_b_scale'])
+    # Per-side, per-IP compensation-solenoid field multipliers (default 1.0),
+    # on top of the global comp_b_scale. Left at 1.0 by 004c; used by
+    # 004h_main_b_scale_scan.py as free skew-/dispersion-correction parameters
+    # (varied in the coupling match alongside the k1s_*_sol_coupling_corr
+    # skew quads). Note: letting these float breaks the exact net-int(Bs)
+    # cancellation the nominal design relies on.
+    env[f'comp_b_scale_left_{ip_name}'] = 1.0
+    env[f'comp_b_scale_right_{ip_name}'] = 1.0
+
+    main_knob_ref = (
+        env.ref[f'on_sol_{ip_name}'] * env.ref['main_b_scale'])
+    comp_left_knob_ref = (
+        env.ref[f'on_comp_sol_{ip_name}'] * env.ref['comp_b_scale']
+        * env.ref[f'comp_b_scale_left_{ip_name}'])
+    comp_right_knob_ref = (
+        env.ref[f'on_comp_sol_{ip_name}'] * env.ref['comp_b_scale']
+        * env.ref[f'comp_b_scale_right_{ip_name}'])
     solenoid_lines = {}
     clone_specs = [
         ('main', main_solenoid_template,
-         f'sol_slice_{ip_name}', env.ref[f'on_sol_{ip_name}']),
+         f'sol_slice_{ip_name}', main_knob_ref),
         ('comp_left', comp_solenoid_template,
-         f'comp_sol_slice_left_{ip_name}', comp_knob_ref),
+         f'comp_sol_slice_left_{ip_name}', comp_left_knob_ref),
         ('comp_right', comp_solenoid_template,
-         f'comp_sol_slice_right_{ip_name}', comp_knob_ref),
+         f'comp_sol_slice_right_{ip_name}', comp_right_knob_ref),
     ]
 
     # Clone the isolated templates into the environment. The compensation
