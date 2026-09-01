@@ -211,6 +211,15 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   `tau_pol` from Twiss `polarization_analysis=True`, `tau_depol` from a
   linear fit of tracked polarization decay), structurally a sibling of
   `014_emittance_evolution.py`. Not part of the 000-014 pipeline numbering.
+- `07_main_b_scale_scans.md` — the `main_b_scale` / per-side
+  `comp_b_scale_{side}_{ip}` knobs (new in 004b/004c, `--output-tag
+  mainscale` lattices) and the three scan scripts that use them:
+  `004h_main_b_scale_scan.py` (004f analogue, floats the per-side comp
+  knobs), `004i_comp_weight_sweep.py` (comp-knob-weight diagnostic), and
+  `004j_main_b_scale_suite.py` (combined 2 T + 3 T suite: emittance / tune
+  / chromaticity / `C^-` vs `main_b_scale`, plus IR/straight β /
+  coupled-β / dispersion / beam-size profiles + skew-corrector strengths;
+  plain skew-only unit-weight coupling re-solve).
 - `06_coupling_matching_convergence.md` — why `004f_comp_b_scale_scan.py`'s
   per-scan-point coupling re-solve (84 skew-quad vary knobs vs. 12 targets)
   is slow/sometimes fails to converge (ill-conditioned Jacobian, SVD
