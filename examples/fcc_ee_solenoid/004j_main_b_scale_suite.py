@@ -45,17 +45,28 @@ Plus, per field case, at main_b_scale = 1.0 and with the default
 corrector's integrated strength k1s*L as a fraction of the arc-cell normal
 quadrupole strength <|k1 L|>_arc, plotted as thick red dots against the
 host quad's longitudinal position s.
+
+Every run (without --replot) pickles the full scan result (per field case:
+per-scan-point scalars, packed s-profile arrays, the skew-quad snapshot and
+the bare-ring baseline) to data/main_b_scale_suite_<...>.pkl -- labelled by
+--b0/--input-tag/--max-transverse-order/--coupling-only and the scan grid,
+see _data_path(). --replot reloads that file and only re-runs the plotting
+code, skipping the expensive per-point orbit/coupling re-solve entirely.
 """
 
 from pathlib import Path
+from types import SimpleNamespace
 import argparse
+import pickle
 
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
+from matplotlib.offsetbox import AnchoredText
 import numpy as np
 import xtrack as xt
 
+from aperture_study_io import DATA_DIR as _DATA_DIR
 from aperture_study_io import PLOT_DIR as _BASE_PLOT_DIR
 from lattice_knobs import set_lattice_knobs
 from solenoid_params import (
@@ -94,6 +105,13 @@ _parser.add_argument(
 _parser.add_argument(
     '--no-show', action='store_true',
     help='Save the figures without opening an interactive window.')
+_parser.add_argument(
+    '--replot', action='store_true',
+    help='Skip the (expensive) scan entirely and reload the scan data saved '
+         'by a previous run -- matched on --b0/--input-tag/'
+         '--max-transverse-order/--coupling-only and the MAIN_B_SCALE_VALUES '
+         'grid -- to only regenerate the plots. Every non-replot run saves '
+         'its data automatically; see _data_path() for the exact file.')
 _args = _parser.parse_args()
 
 ORDER_TAG = order_tag(_args.max_transverse_order)
@@ -142,6 +160,27 @@ _ORBIT_CORRECTOR_SUFFIXES = (
 )
 
 _B0_COLORS = {2.0: 'C0', 3.0: 'C3'}
+
+
+##############################################################
+# Saved-data labelling (for --replot).                       #
+##############################################################
+
+def _scan_tag():
+    return (f'{round(MAIN_B_SCALE_VALUES.min() * 1000)}-'
+            f'{round(MAIN_B_SCALE_VALUES.max() * 1000)}')
+
+
+def _data_path():
+    """Path for this run's pickled scan data -- labelled by every knob that
+    changes what's in it, so a mismatched --replot (wrong --b0/--input-tag/
+    --max-transverse-order/--coupling-only) misses the file instead of
+    silently loading the wrong scan."""
+    b0_tag = ''.join(field_tag(b0) for b0 in B0_VALUES)
+    extra = '_couplingonly' if _args.coupling_only else ''
+    return _DATA_DIR / (
+        f'main_b_scale_suite_{b0_tag}{ORDER_TAG}{INPUT_TAG}{extra}'
+        f'_scan{_scan_tag()}.pkl')
 
 
 ##############################################################
@@ -329,6 +368,32 @@ def _resolve_coupling_correction(line, ip_name, k1s_knobs):
 
 
 ##############################################################
+# Packing a twiss/beam-size table down to what the s-profile plots use.  #
+##############################################################
+
+# Columns the _PROFILE_SPECS column-accessor lambdas actually read (see
+# _BETA/_COUPLED_BETA/.../_PHASE below). Reducing to just these before
+# storing each scan point drops the Line/env references a full TwissTable
+# carries, so the saved --replot data is a plain, picklable stack of float
+# ndarrays instead of ~1 GB of live-object graph per case.
+_TW_PROFILE_FIELDS = (
+    's', 'betx', 'bety', 'betx2', 'bety1', 'x', 'y', 'dx', 'dy', 'mux', 'muy')
+_BS_PROFILE_FIELDS = ('s', 'sigma_x', 'sigma_y')
+
+
+def _pack_tw(tw):
+    return SimpleNamespace(**{
+        f: np.asarray(getattr(tw, f), dtype=float)
+        for f in _TW_PROFILE_FIELDS})
+
+
+def _pack_beam_sizes(beam_sizes):
+    return SimpleNamespace(**{
+        f: np.asarray(getattr(beam_sizes, f), dtype=float)
+        for f in _BS_PROFILE_FIELDS})
+
+
+##############################################################
 # Run one field-strength case end to end.                    #
 ##############################################################
 
@@ -415,8 +480,15 @@ def run_field_case(b0):
         line[f'on_sol_{ip_name}'] = 1
         line[f'on_sol_corr_{ip_name}'] = 1
 
+    # Nominal (main_b_scale = 1.0) scan-point index -- its skew-corrector
+    # snapshot is captured inline below, while tw is still the full
+    # TwissTable (dict-style column access), before it gets reduced to the
+    # packed s-profile namespace stored in `points`.
+    nominal_idx = int(np.argmin(np.abs(MAIN_B_SCALE_VALUES - 1.0)))
+    skew_dots = None
+
     points = []
-    for main_b_scale in MAIN_B_SCALE_VALUES:
+    for i, main_b_scale in enumerate(MAIN_B_SCALE_VALUES):
         set_lattice_knobs(
             line, with_solenoids=True, with_correctors=True,
             main_b_scale=float(main_b_scale))
@@ -452,42 +524,40 @@ def run_field_case(b0):
             eq_gemitt_x=float(tw.rad_int_eq_gemitt_x),
             eq_gemitt_y=float(tw.rad_int_eq_gemitt_y),
         )
+
+        if i == nominal_idx:
+            # One IP only (IP_PLOT): the per-IP skew-corrector solutions are
+            # near-identical across the 4 IPs, so a single IP's straight
+            # section is enough and keeps the s-axis readable.
+            k1l_ref, n_ref, ref_label = _arc_cell_k1l_reference(tw)
+            L_by_name = dict(zip(np.asarray(tw['name']),
+                                 np.asarray(tw['length'])))
+            s_rel = []
+            ratio = []
+            for knob, quad in zip(k1s_knobs_by_ip[IP_PLOT],
+                                  quad_hosts_by_ip[IP_PLOT]):
+                L = float(L_by_name.get(quad, np.nan))
+                if not np.isfinite(L) or L <= 0:
+                    continue
+                k1s = k1s_values[knob]
+                s_rel.append(float(table_before_cuts['s', quad]) - s_ip_ref)
+                ratio.append(k1s * L / k1l_ref)
+            skew_dots = dict(
+                s=np.asarray(s_rel), ratio=np.asarray(ratio),
+                k1l_ref=k1l_ref, n_ref=n_ref, ref_label=ref_label,
+            )
+
         tw.zero_at(IP_PLOT)
         beam_sizes = tw.get_beam_covariance(
             nemitt_x=NEMITT_X, nemitt_y=NEMITT_Y, gemitt_zeta=GEMITT_ZETA)
 
         points.append(dict(
-            main_b_scale=float(main_b_scale), tw=tw, beam_sizes=beam_sizes,
+            main_b_scale=float(main_b_scale), tw=_pack_tw(tw),
+            beam_sizes=_pack_beam_sizes(beam_sizes),
             k1s_values=k1s_values, **scalars))
         print(f'  main_b_scale={main_b_scale:+.4f}: twiss OK '
               f'(qx={scalars["qx"]:.5f} qy={scalars["qy"]:.5f} '
               f'C-={scalars["c_minus"]:.3e})')
-
-    # Nominal (main_b_scale = 1.0) skew-corrector snapshot for the red-dot plot.
-    nominal_idx = int(np.argmin(np.abs(MAIN_B_SCALE_VALUES - 1.0)))
-    tw_nom = points[nominal_idx]['tw']
-    skew_dots = None
-    if tw_nom is not None:
-        # One IP only (IP_PLOT): the per-IP skew-corrector solutions are
-        # near-identical across the 4 IPs, so a single IP's straight section
-        # is enough and keeps the s-axis readable.
-        k1l_ref, n_ref, ref_label = _arc_cell_k1l_reference(tw_nom)
-        L_by_name = dict(zip(np.asarray(tw_nom['name']),
-                             np.asarray(tw_nom['length'])))
-        s_rel = []
-        ratio = []
-        for knob, quad in zip(k1s_knobs_by_ip[IP_PLOT],
-                              quad_hosts_by_ip[IP_PLOT]):
-            L = float(L_by_name.get(quad, np.nan))
-            if not np.isfinite(L) or L <= 0:
-                continue
-            k1s = points[nominal_idx]['k1s_values'][knob]
-            s_rel.append(float(table_before_cuts['s', quad]) - s_ip_ref)
-            ratio.append(k1s * L / k1l_ref)
-        skew_dots = dict(
-            s=np.asarray(s_rel), ratio=np.asarray(ratio),
-            k1l_ref=k1l_ref, n_ref=n_ref, ref_label=ref_label,
-        )
 
     return dict(
         b0=b0, field_tag=field_t, points=points,
@@ -639,6 +709,26 @@ def _skew_dot_fig(case):
     return fig
 
 
+def _fmt_bare(v):
+    v = float(v)
+    if v == 0.0 or 1e-3 <= abs(v) < 1e5:
+        return f'{v:.5f}'
+    return f'{v:.4e}'
+
+
+def _add_bare_ring_box(ax, rows, loc='upper left'):
+    """rows: list of (label, formatted_value_str). Framed reference box in a
+    corner of the axes showing the bare-ring value(s) each curve is a
+    difference from."""
+    text = 'bare ring\n' + '\n'.join(f'{lab}: {val}' for lab, val in rows)
+    at = AnchoredText(text, loc=loc, frameon=True, pad=0.4, borderpad=0.4,
+                      prop=dict(size=7, family='monospace'))
+    at.patch.set(boxstyle='round', facecolor='white', edgecolor='0.6',
+                 alpha=0.9)
+    at.set_zorder(5)
+    ax.add_artist(at)
+
+
 def _scalar_overlay_fig(cases, panel_specs, suptitle):
     """panel_specs: list of (key, ylabel, scale). One panel each, 2 T and 3 T
     overlaid. Each quantity is plotted as (scan value - bare-ring value)."""
@@ -656,6 +746,9 @@ def _scalar_overlay_fig(cases, panel_specs, suptitle):
         ax.set_ylabel(ylabel)
         ax.grid(True)
         ax.legend(loc='best', fontsize=8)
+        _add_bare_ring_box(
+            ax, [(f'{case["b0"]:g} T', _fmt_bare(case['baseline'][key]))
+                 for case in cases])
     axs[-1].set_xlabel('main_b_scale')
     axs[0].set_title(suptitle)
     fig.tight_layout()
@@ -680,6 +773,14 @@ def _emittance_overlay_fig(cases):
     axs[0].set_title(
         'Equilibrium emittance shift vs main_b_scale '
         '(relative to the bare ring)')
+    _add_bare_ring_box(
+        axs[0], [(f'{case["b0"]:g} T',
+                  _fmt_bare(case['baseline']['eq_gemitt_x'] * 1e9) + ' nm')
+                 for case in cases])
+    _add_bare_ring_box(
+        axs[1], [(f'{case["b0"]:g} T',
+                  _fmt_bare(case['baseline']['eq_gemitt_y'] * 1e12) + ' pm')
+                 for case in cases])
     for ax in axs:
         ax.grid(True)
         ax.legend(loc='best', fontsize=8)
@@ -692,7 +793,23 @@ def _emittance_overlay_fig(cases):
 ##############################################################
 
 def main():
-    cases = [run_field_case(b0) for b0 in B0_VALUES]
+    data_path = _data_path()
+    if _args.replot:
+        if not data_path.exists():
+            raise SystemExit(
+                f'--replot: no saved scan data at {data_path}\n'
+                'Run the suite once without --replot (with the same --b0 / '
+                '--input-tag / --max-transverse-order / --coupling-only) to '
+                'create it first.')
+        print(f'--replot: loading saved scan data from {data_path}')
+        with open(data_path, 'rb') as f:
+            cases = pickle.load(f)
+    else:
+        cases = [run_field_case(b0) for b0 in B0_VALUES]
+        _DATA_DIR.mkdir(parents=True, exist_ok=True)
+        with open(data_path, 'wb') as f:
+            pickle.dump(cases, f)
+        print(f'Saved scan data: {data_path}')
 
     plt.close('all')
     figs = {}  # stem -> figure
@@ -730,8 +847,7 @@ def main():
     # --- Save. ---
     plot_dir = _BASE_PLOT_DIR / 'Coupling_Studies' / 'main_b_scale_suite'
     plot_dir.mkdir(parents=True, exist_ok=True)
-    scan_tag = (f'{round(MAIN_B_SCALE_VALUES.min() * 1000)}-'
-                f'{round(MAIN_B_SCALE_VALUES.max() * 1000)}')
+    scan_tag = _scan_tag()
     for stem, fig in figs.items():
         path = plot_dir / f'{stem}_scan{scan_tag}.pdf'
         fig.savefig(path, bbox_inches='tight')
