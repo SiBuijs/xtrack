@@ -443,24 +443,25 @@ def run_field_case(b0):
     tw_nom = points[nominal_idx]['tw']
     skew_dots = None
     if tw_nom is not None:
+        # One IP only (IP_PLOT): the per-IP skew-corrector solutions are
+        # near-identical across the 4 IPs, so a single IP's straight section
+        # is enough and keeps the s-axis readable.
         k1l_ref, n_ref, ref_label = _arc_cell_k1l_reference(tw_nom)
         L_by_name = dict(zip(np.asarray(tw_nom['name']),
                              np.asarray(tw_nom['length'])))
-        s_ring = []
+        s_rel = []
         ratio = []
-        for ip_name in IP_NAMES:
-            for knob, quad in zip(k1s_knobs_by_ip[ip_name],
-                                  quad_hosts_by_ip[ip_name]):
-                L = float(L_by_name.get(quad, np.nan))
-                if not np.isfinite(L) or L <= 0:
-                    continue
-                k1s = points[nominal_idx]['k1s_values'][knob]
-                s_ring.append(float(table_before_cuts['s', quad]))
-                ratio.append(k1s * L / k1l_ref)
+        for knob, quad in zip(k1s_knobs_by_ip[IP_PLOT],
+                              quad_hosts_by_ip[IP_PLOT]):
+            L = float(L_by_name.get(quad, np.nan))
+            if not np.isfinite(L) or L <= 0:
+                continue
+            k1s = points[nominal_idx]['k1s_values'][knob]
+            s_rel.append(float(table_before_cuts['s', quad]) - s_ip_ref)
+            ratio.append(k1s * L / k1l_ref)
         skew_dots = dict(
-            s=np.asarray(s_ring), ratio=np.asarray(ratio),
+            s=np.asarray(s_rel), ratio=np.asarray(ratio),
             k1l_ref=k1l_ref, n_ref=n_ref, ref_label=ref_label,
-            ip_s={ip: float(table_before_cuts['s', ip]) for ip in IP_NAMES},
         )
 
     return dict(
@@ -531,13 +532,18 @@ def _make_profile_fig(case, xlim, region_suffix, top_fn, bot_fn,
         ax.grid(True)
     axs[-1].set_xlabel('s [m]')
     axs[-1].set_xlim(*xlim)
+    # Autoscale y to the visible x-window BEFORE adding the axvspan/axvline
+    # annotations -- an axvline is a Line2D with y-data [0, 1], which
+    # _autoscale_y_to_xlim would otherwise fold into the min/max and blow
+    # the vertical scale out (making e.g. the mm-scale IR dispersion panel
+    # a flat sliver).
+    if autoscale:
+        for ax in axs:
+            _autoscale_y_to_xlim(ax, xlim)
     if xlim == _IR_XLIM:
         _decorate_ir(axs, case)
     else:
         _decorate_straight(axs, case)
-    if autoscale:
-        for ax in axs:
-            _autoscale_y_to_xlim(ax, xlim)
     fig.subplots_adjust(
         hspace=0.15, top=0.92, bottom=0.1, left=0.12, right=0.88)
     _add_colorbar(fig, axs)
@@ -559,30 +565,37 @@ _BEAMSIZE = (
     (lambda tw, bs: (bs.s, bs.sigma_x * 1e6),
      lambda tw, bs: (bs.s, bs.sigma_y * 1e6)),
     (r'$\sigma_x$ [$\mu$m]', r'$\sigma_y$ [$\mu$m]'), True)
+# mux/muy are in units of 2*pi and are cyclical quantities, so tw.zero_at
+# (IP_PLOT) has already referenced them to zero at the IP -- the profile is
+# the phase advance accumulated from the IP.
+_PHASE = (
+    (lambda tw, bs: (tw.s, tw.mux), lambda tw, bs: (tw.s, tw.muy)),
+    (r'$\mu_x\,/\,2\pi$', r'$\mu_y\,/\,2\pi$'), True)
 
 _PROFILE_SPECS = [
     ('beta', _BETA),
     ('coupled_beta', _COUPLED_BETA),
     ('dispersion', _DISP),
     ('beam_size', _BEAMSIZE),
+    ('phase_advance', _PHASE),
 ]
 
 
 def _skew_dot_fig(case):
     sd = case['skew_dots']
-    fig, ax = plt.subplots(figsize=(11.0, 4.8))
+    fig, ax = plt.subplots(figsize=(9.0, 4.8))
     ax.axhline(0.0, color='0.5', linewidth=0.8)
+    ax.axvline(0.0, color='0.7', linewidth=0.8, linestyle='--')
+    ax.text(0.0, 1.0, f' {IP_PLOT}', transform=ax.get_xaxis_transform(),
+            va='top', ha='left', fontsize=8, color='0.4')
     ax.plot(sd['s'], sd['ratio'], linestyle='none', marker='o',
-            markersize=8, color='red', label='skew coupling correctors')
-    for ip_name, s_ip in sd['ip_s'].items():
-        ax.axvline(s_ip, color='0.7', linewidth=0.8, linestyle='--')
-        ax.text(s_ip, 1.0, f' {ip_name}', transform=ax.get_xaxis_transform(),
-                va='top', ha='left', fontsize=8, color='0.4')
-    ax.set_xlabel('s [m]  (host quadrupole position)')
+            markersize=8, color='red')
+    ax.set_xlabel(r'$s - s_{\mathrm{IP}}$ [m]  (host quadrupole position)')
     ax.set_ylabel(r'$k_{1s}L \,/\, \langle |k_1 L|\rangle_{\mathrm{arc}}$')
     ax.set_title(
-        f'Skew coupling-corrector integrated strength ({case["b0"]:g} T main '
-        f'solenoid, main_b_scale = 1.0, unit-weight correction)\n'
+        f'{IP_PLOT} skew coupling-corrector integrated strength '
+        f'({case["b0"]:g} T main solenoid, main_b_scale = 1.0, '
+        f'unit-weight correction)\n'
         r'relative to arc-cell $\langle|k_1 L|\rangle$ = '
         f'{sd["k1l_ref"]:.3e} 1/m (median over {sd["n_ref"]} '
         f'{sd["ref_label"]} quads)')
