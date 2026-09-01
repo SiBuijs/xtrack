@@ -17,12 +17,15 @@ but:
   compensation-field knobs 004h floats are left pinned at 1.0 here);
 * an expanded deliverable set.
 
-As a function of main_b_scale (2 T and 3 T overlaid on shared axes):
-  - equilibrium emittance shift Deps_x / Deps_y (from radiation integrals,
-    relative to the main_b_scale=1.0 point -- same as 004f/004h)
-  - horizontal / vertical tune qx / qy          (Twiss table, new)
-  - horizontal / vertical chromaticity dqx / dqy (Twiss table, new)
-  - the coupling coefficient C^- (tw.c_minus)
+As a function of main_b_scale (2 T and 3 T overlaid on shared axes; every
+quantity shown as a difference from the bare ring -- the same lattice with
+the solenoid structure and all of its corrections switched off,
+set_lattice_knobs(with_solenoids=False, with_correctors=False)):
+  - equilibrium emittance shift Deps_x / Deps_y (from radiation integrals)
+  - horizontal / vertical tune shift Dqx / Dqy   (Twiss table)
+  - horizontal / vertical chromaticity shift DQ'x / DQ'y (Twiss table)
+  - the coupling coefficient shift DC^- (tw.c_minus; ~ the absolute value,
+    the bare ring being essentially uncoupled)
 
 In the IR (+-20 m) and over the whole straight section, one curve per
 main_b_scale value (curve colour = field-strength multiplier), one figure
@@ -30,9 +33,12 @@ set per field case:
   - beta_x / beta_y
   - the coupled-mode betas normalised by their primary beta,
     betx2/betx and bety1/bety
+  - the coupled-mode betas un-normalised, betx2 / bety1 [m]
   - dispersion D_x / D_y
-  - beam sizes sigma_x / sigma_y (new -- tw.get_beam_covariance with the
-    fixed design emittances below)
+  - beam sizes sigma_x / sigma_y (tw.get_beam_covariance with the fixed
+    design emittances below)
+  - phase advance mu_x / mu_y  (units of 2*pi, referenced to the IP)
+  - closed orbit x / y
 
 Plus, per field case, at main_b_scale = 1.0 and with the default
 (unit-weight, skew-quad-only) coupling correction: every skew coupling
@@ -101,7 +107,7 @@ IP_PLOT = 'ipa'
 
 # main_b_scale scan grid: 21 points, +-1 % about the nominal main-solenoid
 # field (as requested). Same span/count as 004f/004h.
-MAIN_B_SCALE_VALUES = np.linspace(0.990, 1.010, 21)
+MAIN_B_SCALE_VALUES = np.linspace(0.995, 1.005, 21)
 
 # Fixed design beam parameters used for the beam-size (tw.get_beam_covariance)
 # panels -- deliberately NOT the per-scan-point equilibrium values, so the
@@ -386,6 +392,25 @@ def run_field_case(b0):
         table_before_cuts['s', f'end_straight_start_ds_{IP_PLOT}'] - s_ip_ref,
     )
 
+    # Bare-ring baseline: solenoid structure + every correction off. The
+    # scalar-vs-main_b_scale plots are shown as differences from this.
+    # Computed before the scan loop so the k1s_*_sol_coupling_corr vars are
+    # still their original on_sol_coupling_corr-gated expressions (which
+    # line.match would later replace with constants).
+    set_lattice_knobs(line, with_solenoids=False, with_correctors=False)
+    tw_bare = line.twiss4d(strengths=True, radiation_integrals=True)
+    baseline = dict(
+        qx=float(tw_bare.qx), qy=float(tw_bare.qy),
+        dqx=float(getattr(tw_bare, 'dqx', np.nan)),
+        dqy=float(getattr(tw_bare, 'dqy', np.nan)),
+        c_minus=float(tw_bare.c_minus),
+        eq_gemitt_x=float(tw_bare.rad_int_eq_gemitt_x),
+        eq_gemitt_y=float(tw_bare.rad_int_eq_gemitt_y),
+    )
+    print(f'  bare ring: qx={baseline["qx"]:.5f} qy={baseline["qy"]:.5f} '
+          f"dqx={baseline['dqx']:.3f} dqy={baseline['dqy']:.3f} "
+          f'C-={baseline["c_minus"]:.3e}')
+
     for ip_name in IP_NAMES:
         line[f'on_sol_{ip_name}'] = 1
         line[f'on_sol_corr_{ip_name}'] = 1
@@ -469,7 +494,7 @@ def run_field_case(b0):
         main_range=main_range, comp_ranges=comp_ranges,
         corrector_positions=corrector_positions,
         straight_section_s_range=straight_section_s_range,
-        nominal_idx=nominal_idx, skew_dots=skew_dots,
+        nominal_idx=nominal_idx, skew_dots=skew_dots, baseline=baseline,
     )
 
 
@@ -558,6 +583,14 @@ _COUPLED_BETA = (
     (lambda tw, bs: (tw.s, tw.betx2 / tw.betx),
      lambda tw, bs: (tw.s, tw.bety1 / tw.bety)),
     (r'$\beta_{x2}/\beta_x$', r'$\beta_{y1}/\beta_y$'), False)
+_COUPLED_BETA_ABS = (
+    (lambda tw, bs: (tw.s, tw.betx2), lambda tw, bs: (tw.s, tw.bety1)),
+    (r'$\beta_{x2}$ [m]', r'$\beta_{y1}$ [m]'), True)
+# Closed orbit from the twiss (tw.x / tw.y). Not cyclical, but plotted
+# against the IP-referenced s from zero_at like everything else.
+_ORBIT = (
+    (lambda tw, bs: (tw.s, tw.x * 1e3), lambda tw, bs: (tw.s, tw.y * 1e3)),
+    (r'$x$ [mm]', r'$y$ [mm]'), True)
 _DISP = (
     (lambda tw, bs: (tw.s, tw.dx * 1e3), lambda tw, bs: (tw.s, tw.dy * 1e3)),
     (r'$D_x$ [mm]', r'$D_y$ [mm]'), True)
@@ -575,9 +608,11 @@ _PHASE = (
 _PROFILE_SPECS = [
     ('beta', _BETA),
     ('coupled_beta', _COUPLED_BETA),
+    ('coupled_beta_abs', _COUPLED_BETA_ABS),
     ('dispersion', _DISP),
     ('beam_size', _BEAMSIZE),
     ('phase_advance', _PHASE),
+    ('closed_orbit', _ORBIT),
 ]
 
 
@@ -606,7 +641,7 @@ def _skew_dot_fig(case):
 
 def _scalar_overlay_fig(cases, panel_specs, suptitle):
     """panel_specs: list of (key, ylabel, scale). One panel each, 2 T and 3 T
-    overlaid."""
+    overlaid. Each quantity is plotted as (scan value - bare-ring value)."""
     n = len(panel_specs)
     fig, axs = plt.subplots(n, 1, sharex=True, figsize=(7.0, 2.6 * n + 0.6))
     if n == 1:
@@ -614,7 +649,8 @@ def _scalar_overlay_fig(cases, panel_specs, suptitle):
     for ax, (key, ylabel, scale) in zip(axs, panel_specs):
         for case in cases:
             x = MAIN_B_SCALE_VALUES
-            y = np.array([pt[key] for pt in case['points']]) * scale
+            base = case['baseline'][key]
+            y = (np.array([pt[key] for pt in case['points']]) - base) * scale
             ax.plot(x, y, '-o', color=_B0_COLORS.get(case['b0'], None),
                     label=f'{case["b0"]:g} T')
         ax.set_ylabel(ylabel)
@@ -629,20 +665,21 @@ def _scalar_overlay_fig(cases, panel_specs, suptitle):
 def _emittance_overlay_fig(cases):
     fig, axs = plt.subplots(2, 1, sharex=True, figsize=(7.0, 6.4))
     for case in cases:
-        idx = case['nominal_idx']
+        bx = case['baseline']['eq_gemitt_x']
+        by = case['baseline']['eq_gemitt_y']
         ex = np.array([pt['eq_gemitt_x'] for pt in case['points']])
         ey = np.array([pt['eq_gemitt_y'] for pt in case['points']])
         color = _B0_COLORS.get(case['b0'], None)
-        axs[0].plot(MAIN_B_SCALE_VALUES, (ex - ex[idx]) * 1e9, '-o',
+        axs[0].plot(MAIN_B_SCALE_VALUES, (ex - bx) * 1e9, '-o',
                     color=color, label=f'{case["b0"]:g} T')
-        axs[1].plot(MAIN_B_SCALE_VALUES, (ey - ey[idx]) * 1e12, '-o',
+        axs[1].plot(MAIN_B_SCALE_VALUES, (ey - by) * 1e12, '-o',
                     color=color, label=f'{case["b0"]:g} T')
     axs[0].set_ylabel(r'$\Delta\varepsilon_{x,\mathrm{eq}}$ [nm]')
     axs[1].set_ylabel(r'$\Delta\varepsilon_{y,\mathrm{eq}}$ [pm]')
     axs[1].set_xlabel('main_b_scale')
     axs[0].set_title(
         'Equilibrium emittance shift vs main_b_scale '
-        '(relative to main_b_scale = 1.0)')
+        '(relative to the bare ring)')
     for ax in axs:
         ax.grid(True)
         ax.legend(loc='best', fontsize=8)
@@ -664,15 +701,16 @@ def main():
     figs['eq_emittance_shift_vs_main_b_scale'] = _emittance_overlay_fig(cases)
     figs['tunes_vs_main_b_scale'] = _scalar_overlay_fig(
         cases,
-        [('qx', r'$q_x$', 1.0), ('qy', r'$q_y$', 1.0)],
-        'Betatron tunes vs main_b_scale')
+        [('qx', r'$\Delta q_x$', 1.0), ('qy', r'$\Delta q_y$', 1.0)],
+        'Betatron tune shift vs main_b_scale (relative to the bare ring)')
     figs['chromaticity_vs_main_b_scale'] = _scalar_overlay_fig(
         cases,
-        [('dqx', r"$Q'_x$", 1.0), ('dqy', r"$Q'_y$", 1.0)],
-        'Linear chromaticity vs main_b_scale')
+        [('dqx', r"$\Delta Q'_x$", 1.0), ('dqy', r"$\Delta Q'_y$", 1.0)],
+        'Linear chromaticity shift vs main_b_scale (relative to the bare ring)')
     figs['c_minus_vs_main_b_scale'] = _scalar_overlay_fig(
-        cases, [('c_minus', r'$C^-$', 1.0)],
-        r'Coupling coefficient $C^-$ vs main_b_scale')
+        cases, [('c_minus', r'$\Delta C^-$', 1.0)],
+        r'Coupling coefficient shift $\Delta C^-$ vs main_b_scale '
+        '(relative to the bare ring)')
 
     # --- Per-field-case s-profiles (colour = main_b_scale). ---
     for case in cases:
