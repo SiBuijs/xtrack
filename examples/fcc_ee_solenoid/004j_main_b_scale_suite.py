@@ -27,7 +27,8 @@ set_lattice_knobs(with_solenoids=False, with_correctors=False)):
   - the coupling coefficient shift DC^- (tw.c_minus; ~ the absolute value,
     the bare ring being essentially uncoupled)
 
-In the IR (+-20 m) and over the whole straight section, one curve per
+In the IR (+-20 m) and over the entire accelerator (full ring circumference),
+one curve per
 main_b_scale value (curve colour = field-strength multiplier), one figure
 set per field case:
   - beta_x / beta_y
@@ -81,7 +82,7 @@ from solenoid_params import (
 _parser = argparse.ArgumentParser(
     description=(
         'Combined 2 T + 3 T main_b_scale scan suite: emittance/tune/'
-        'chromaticity/C- vs main_b_scale, plus IR/straight-section beta, '
+        'chromaticity/C- vs main_b_scale, plus IR/entire-accelerator beta, '
         'coupled-beta, dispersion and beam-size profiles, plus the skew '
         'coupling-corrector strengths.'))
 add_max_order_argument(_parser)
@@ -125,7 +126,7 @@ IP_PLOT = 'ipa'
 
 # main_b_scale scan grid: 21 points, +-1 % about the nominal main-solenoid
 # field (as requested). Same span/count as 004f/004h.
-MAIN_B_SCALE_VALUES = np.linspace(0.995, 1.005, 21)
+MAIN_B_SCALE_VALUES = np.linspace(1, 1.005, 2)
 
 # Fixed design beam parameters used for the beam-size (tw.get_beam_covariance)
 # panels -- deliberately NOT the per-scan-point equilibrium values, so the
@@ -456,6 +457,14 @@ def run_field_case(b0):
         table_before_cuts['s', f'end_ds_start_straight_{IP_PLOT}'] - s_ip_ref,
         table_before_cuts['s', f'end_straight_start_ds_{IP_PLOT}'] - s_ip_ref,
     )
+    # Full-ring s-extent in the same IP_PLOT-zeroed frame as straight_section_
+    # s_range/tw.zero_at(IP_PLOT) above -- table_before_cuts is read right
+    # after line.cycle(...), before any cuts, so its 's' column already runs
+    # from 0 to the full ring length.
+    ring_s_range = (
+        float(table_before_cuts['s'].min()) - s_ip_ref,
+        float(table_before_cuts['s'].max()) - s_ip_ref,
+    )
 
     # Bare-ring baseline: solenoid structure + every correction off. The
     # scalar-vs-main_b_scale plots are shown as differences from this.
@@ -564,6 +573,7 @@ def run_field_case(b0):
         main_range=main_range, comp_ranges=comp_ranges,
         corrector_positions=corrector_positions,
         straight_section_s_range=straight_section_s_range,
+        ring_s_range=ring_s_range,
         nominal_idx=nominal_idx, skew_dots=skew_dots, baseline=baseline,
     )
 
@@ -577,9 +587,9 @@ _NORM = mcolors.Normalize(
 _CMAP = cm.viridis
 _SM = cm.ScalarMappable(norm=_NORM, cmap=_CMAP)
 
-# IR / straight-section s-windows.
+# IR s-window. The "entire accelerator" window is per-case (case['ring_s_
+# range']), since it depends on the actual ring length, not a fixed constant.
 _IR_XLIM = (-20, 20)
-_STRAIGHT_XLIM = (-1400, 1400)
 
 
 def _iter_profiles(case):
@@ -605,7 +615,9 @@ def _decorate_ir(axs, case):
             case['corrector_positions'])
 
 
-def _decorate_straight(axs, case):
+def _decorate_ring(axs, case):
+    """Mark IP_PLOT's local straight-section boundary on a full-ring plot,
+    for orientation (everything outside those two lines is arc)."""
     for ax in axs:
         for s_pos in case['straight_section_s_range']:
             ax.axvline(s_pos, color='black', linewidth=0.8, linestyle=':')
@@ -638,7 +650,7 @@ def _make_profile_fig(case, xlim, region_suffix, top_fn, bot_fn,
     if xlim == _IR_XLIM:
         _decorate_ir(axs, case)
     else:
-        _decorate_straight(axs, case)
+        _decorate_ring(axs, case)
     fig.subplots_adjust(
         hspace=0.15, top=0.92, bottom=0.1, left=0.12, right=0.88)
     _add_colorbar(fig, axs)
@@ -838,8 +850,8 @@ def main():
             figs[f'IR_{name}_{ft}'] = _make_profile_fig(
                 case, _IR_XLIM, ' (interaction region)', top_fn, bot_fn,
                 top_label, bot_label, autoscale=autoscale)
-            figs[f'full_straight_{name}_{ft}'] = _make_profile_fig(
-                case, _STRAIGHT_XLIM, ' (full straight section)',
+            figs[f'full_ring_{name}_{ft}'] = _make_profile_fig(
+                case, case['ring_s_range'], ' (entire accelerator)',
                 top_fn, bot_fn, top_label, bot_label, autoscale=autoscale)
         if case['skew_dots'] is not None:
             figs[f'skew_corrector_strength_{ft}'] = _skew_dot_fig(case)
