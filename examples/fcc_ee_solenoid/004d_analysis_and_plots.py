@@ -50,6 +50,30 @@ CORRECTOR_QUADS_BY_IP = {
             'qd0al.2', 'qd0bl.2', 'qf1al.2', 'qf1bl.2'],
 }
 
+# The full final-focus doublet rotated between the main and compensation
+# solenoids (doublet_quad_left/right in 004c_correct_solenoids_in_fcc_ring.py's
+# per-IP `config` dict -- rot_s_rad = +-phi_rot_doublet there). This is a
+# superset of CORRECTOR_QUADS_BY_IP above: qd0c/qf1c/qf1d are rotated too but
+# do not carry an orbit corrector, so they were previously not marked at all.
+DOUBLET_QUADS_BY_IP = {
+    'ipa': ['qd0ar.0', 'qd0br.0', 'qd0cr.0', 'qf1ar.0', 'qf1br.0',
+            'qf1cr.0', 'qf1dr.0',
+            'qd0al.3', 'qd0bl.3', 'qd0cl.3', 'qf1al.3', 'qf1bl.3',
+            'qf1cl.3', 'qf1dl.3'],
+    'ipd': ['qd0ar.1', 'qd0br.1', 'qd0cr.1', 'qf1ar.1', 'qf1br.1',
+            'qf1cr.1', 'qf1dr.1',
+            'qd0al.0', 'qd0bl.0', 'qd0cl.0', 'qf1al.0', 'qf1bl.0',
+            'qf1cl.0', 'qf1dl.0'],
+    'ipg': ['qd0ar.2', 'qd0br.2', 'qd0cr.2', 'qf1ar.2', 'qf1br.2',
+            'qf1cr.2', 'qf1dr.2',
+            'qd0al.1', 'qd0bl.1', 'qd0cl.1', 'qf1al.1', 'qf1bl.1',
+            'qf1cl.1', 'qf1dl.1'],
+    'ipj': ['qd0ar.3', 'qd0br.3', 'qd0cr.3', 'qf1ar.3', 'qf1br.3',
+            'qf1cr.3', 'qf1dr.3',
+            'qd0al.2', 'qd0bl.2', 'qd0cl.2', 'qf1al.2', 'qf1bl.2',
+            'qf1cl.2', 'qf1dl.2'],
+}
+
 
 ################################
 # Load and prepare the lattice #
@@ -184,23 +208,31 @@ def _compute_marker_positions(table, ip_plot, b0):
         table['s', name] - s_ip_ref
         for name in CORRECTOR_QUADS_BY_IP[ip_plot]
     ]
-    return main_range, comp_ranges, corrector_positions
+    doublet_positions = [
+        table['s', name] - s_ip_ref
+        for name in DOUBLET_QUADS_BY_IP[ip_plot]
+    ]
+    return main_range, comp_ranges, corrector_positions, doublet_positions
 
 
-MAIN_SOLENOID_S_RANGE, COMP_SOLENOID_S_RANGES, CORRECTOR_QUAD_S_POSITIONS = (
+(MAIN_SOLENOID_S_RANGE, COMP_SOLENOID_S_RANGES, CORRECTOR_QUAD_S_POSITIONS,
+ DOUBLET_QUAD_S_POSITIONS) = (
     _compute_marker_positions(table_before_cuts, IP_PLOT, _args.b0)
 )
 
 
-def _mark_solenoid_regions(ax, main_range, comp_ranges, corrector_positions):
-    """Mark main solenoid / compensation solenoid extents and corrector-quad
-    locations on an s-axis plot (vertical lines only, no legend entries)."""
-    s_start, s_end = main_range
-    ax.axvline(s_start, color='red', linewidth=0.8, linestyle='--')
-    ax.axvline(s_end, color='red', linewidth=0.8, linestyle='--')
-    for s_start, s_end in comp_ranges:
-        ax.axvline(s_start, color='orange', linewidth=0.8, linestyle='--')
-        ax.axvline(s_end, color='orange', linewidth=0.8, linestyle='--')
+def _mark_solenoid_regions(
+        ax, main_range, comp_ranges, corrector_positions, doublet_positions):
+    """Mark main solenoid / compensation solenoid extents (shaded spans),
+    the rotated final-focus doublet quads (thin purple dotted lines), and
+    corrector-quad locations (dashed grey lines, a subset of the doublet) on
+    an s-axis plot -- shading matches 004h_main_b_scale_scan.py's (and
+    onward) style."""
+    ax.axvspan(*main_range, color='red', alpha=0.15, linewidth=0)
+    for comp_range in comp_ranges:
+        ax.axvspan(*comp_range, color='orange', alpha=0.15, linewidth=0)
+    for s_pos in doublet_positions:
+        ax.axvline(s_pos, color='purple', linewidth=0.6, linestyle=':')
     for s_pos in corrector_positions:
         ax.axvline(s_pos, color='grey', linewidth=0.8, linestyle='--')
 
@@ -242,7 +274,7 @@ ax5.grid(True)
 for _ax in (ax1, ax2, ax3, ax4, ax5):
     _mark_solenoid_regions(
         _ax, MAIN_SOLENOID_S_RANGE, COMP_SOLENOID_S_RANGES,
-        CORRECTOR_QUAD_S_POSITIONS)
+        CORRECTOR_QUAD_S_POSITIONS, DOUBLET_QUAD_S_POSITIONS)
 
 ax1.set_xlabel('')
 ax5.set_xlabel('s [m]')
@@ -278,7 +310,7 @@ ax5.grid(True)
 for _ax in (ax1, ax2, ax3, ax4, ax5):
     _mark_solenoid_regions(
         _ax, MAIN_SOLENOID_S_RANGE, COMP_SOLENOID_S_RANGES,
-        CORRECTOR_QUAD_S_POSITIONS)
+        CORRECTOR_QUAD_S_POSITIONS, DOUBLET_QUAD_S_POSITIONS)
 
 ax1.set_xlabel('')
 ax5.set_xlabel('s [m]')
@@ -301,7 +333,7 @@ def _twiss_on_for_tag(tag):
     if tag == FIELD_TAG:
         return tw, (
             MAIN_SOLENOID_S_RANGE, COMP_SOLENOID_S_RANGES,
-            CORRECTOR_QUAD_S_POSITIONS)
+            CORRECTOR_QUAD_S_POSITIONS, DOUBLET_QUAD_S_POSITIONS)
 
     input_json = (
         HERE / f'fccee_z_lcc_splineboris_solenoids_coupling_corrected_{tag}.json'
