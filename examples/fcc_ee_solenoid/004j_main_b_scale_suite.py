@@ -126,7 +126,7 @@ IP_PLOT = 'ipa'
 
 # main_b_scale scan grid: 21 points, +-1 % about the nominal main-solenoid
 # field (as requested). Same span/count as 004f/004h.
-MAIN_B_SCALE_VALUES = np.linspace(1, 1.005, 2)
+MAIN_B_SCALE_VALUES = np.linspace(0.995, 1.005, 21)
 
 # Fixed design beam parameters used for the beam-size (tw.get_beam_covariance)
 # panels -- deliberately NOT the per-scan-point equilibrium values, so the
