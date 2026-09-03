@@ -21,7 +21,12 @@ As a function of main_b_scale (2 T and 3 T overlaid on shared axes; every
 quantity shown as a difference from the bare ring -- the same lattice with
 the solenoid structure and all of its corrections switched off,
 set_lattice_knobs(with_solenoids=False, with_correctors=False)):
-  - equilibrium emittance shift Deps_x / Deps_y (from radiation integrals)
+  - equilibrium emittance shift Deps_x / Deps_y, from a 6D radiative Twiss
+    (radiation_analysis=True -> tw.eq_gemitt_x/y, the Chao formalism: the
+    equilibrium of the one-turn map with SR damping and excitation, which
+    needs the RF on and treats x-y coupling properly). eps_zeta and the
+    energy loss per turn are stored and printed too. Radiation integrals are
+    not used anywhere in this script. See _chao_equilibrium_emittances.
   - horizontal / vertical tune shift Dqx / Dqy   (Twiss table)
   - horizontal / vertical chromaticity shift DQ'x / DQ'y (Twiss table)
   - the coupling coefficient shift DC^- (tw.c_minus; ~ the absolute value,
@@ -453,6 +458,85 @@ def _resolve_coupling_correction(line, ip_name, k1s_knobs):
 
 
 ##############################################################
+# Equilibrium emittances from the 6D radiative Twiss (Chao). #
+##############################################################
+
+# Cavity attributes compensate_radiation_energy_loss() writes to (it restores
+# voltage/frequency/harmonic itself, but leaves phase_taper/lag_taper set), so
+# that each call starts from the pristine RF state rather than from the
+# previous scan point's compensation.
+_CAVITY_STATE_FIELDS = (
+    'voltage', 'frequency', 'lag', 'phase', 'lag_taper', 'phase_taper')
+
+# What _chao_equilibrium_emittances returns, and the NaNs it falls back to.
+_CHAO_FIELDS = (
+    'chao_eq_gemitt_x', 'chao_eq_gemitt_y', 'chao_eq_gemitt_zeta',
+    'chao_energy_loss')
+_CHAO_NANS = {ff: np.nan for ff in _CHAO_FIELDS}
+
+
+def _chao_equilibrium_emittances(line):
+    """Equilibrium emittances straight out of a 6D radiative Twiss.
+
+    `twiss(method='6d', radiation_analysis=True)` builds the one-turn map
+    with radiation damping and the SR excitation, and reads the equilibrium
+    emittances off its eigen-decomposition (the Chao formalism, xtrack's
+    `eq_gemitt_x/y/zeta`). It needs the RF on and the longitudinal plane in
+    the map, and in exchange it treats x-y coupling and vertical excitation
+    properly instead of plane by plane.
+
+    This replaced the radiation integrals (`rad_int_eq_gemitt_*`), which are
+    no longer used anywhere here. They agreed on eps_x to ~1 % and on the
+    bare uncoupled ring to 0.03 %, but their eps_y is built from the
+    vertical dispersion alone and misses the horizontal excitation coupled
+    into mode 2: with the solenoid correction on it came out ~20 % low, and
+    at 2 T with --no-correctors (C^- ~ 3e-2) ~30x low -- i.e. wrong exactly
+    where this study looks.
+
+    Requires the lattice's cavity to be present and radiation configured.
+    The line is put in the radiative/tapered state only for the duration of
+    the twiss and restored afterwards (in a `finally`, so a failed point
+    can't leave the scan's 4D matching in a radiative state):
+      - `configure_radiation(model=None)` switches the radiation flags back
+        off. The `delta_taper` values `compensate_radiation_energy_loss`
+        wrote onto ~16k magnets are then inert -- the tracking code only
+        applies them `if (radiation_flag)` -- and are left in place
+        (verified: the 4D twiss after the restore reproduces qx/qy/c_minus
+        of the one before it to machine precision).
+      - the cavity's own RF state is snapshotted and written back.
+    """
+    cavity_names = [nn for nn in line.element_names
+                    if isinstance(line[nn], xt.Cavity)]
+    if not cavity_names:
+        print('  WARNING: no Cavity in the line -- cannot compute the 6D '
+              'radiative equilibrium emittances.')
+        return dict(_CHAO_NANS)
+    rf_snapshot = {
+        nn: {ff: getattr(line[nn], ff) for ff in _CAVITY_STATE_FIELDS}
+        for nn in cavity_names}
+
+    try:
+        line.configure_radiation(model='mean')
+        line.compensate_radiation_energy_loss(verbose=False)
+        tw6d = line.twiss(method='6d', radiation_analysis=True)
+        return dict(
+            chao_eq_gemitt_x=float(tw6d.eq_gemitt_x),
+            chao_eq_gemitt_y=float(tw6d.eq_gemitt_y),
+            chao_eq_gemitt_zeta=float(tw6d.eq_gemitt_zeta),
+            chao_energy_loss=float(tw6d.energy_loss),
+        )
+    except Exception as exc:  # noqa: BLE001 -- radiative 6D twiss can fail
+        print(f'  WARNING: 6D radiative twiss failed ({exc!r}); recording '
+              'NaN equilibrium emittances for this point.')
+        return dict(_CHAO_NANS)
+    finally:
+        line.configure_radiation(model=None)
+        for nn in cavity_names:
+            for ff, value in rf_snapshot[nn].items():
+                setattr(line[nn], ff, value)
+
+
+##############################################################
 # Packing a twiss/beam-size table down to what the s-profile plots use.  #
 ##############################################################
 
@@ -586,18 +670,22 @@ def run_field_case(b0):
     # still their original on_sol_coupling_corr-gated expressions (which
     # line.match would later replace with constants).
     set_lattice_knobs(line, with_solenoids=False, with_correctors=False)
-    tw_bare = line.twiss4d(strengths=True, radiation_integrals=True)
+    tw_bare = line.twiss4d(strengths=True)
     baseline = dict(
         qx=float(tw_bare.qx), qy=float(tw_bare.qy),
         dqx=float(getattr(tw_bare, 'dqx', np.nan)),
         dqy=float(getattr(tw_bare, 'dqy', np.nan)),
         c_minus=float(tw_bare.c_minus),
-        eq_gemitt_x=float(tw_bare.rad_int_eq_gemitt_x),
-        eq_gemitt_y=float(tw_bare.rad_int_eq_gemitt_y),
+        **_chao_equilibrium_emittances(line),
     )
     print(f'  bare ring: qx={baseline["qx"]:.5f} qy={baseline["qy"]:.5f} '
           f"dqx={baseline['dqx']:.3f} dqy={baseline['dqy']:.3f} "
           f'C-={baseline["c_minus"]:.3e}')
+    print(f'    eq. emittance (6D radiative twiss, Chao): '
+          f'ex={baseline["chao_eq_gemitt_x"]:.5e} '
+          f'ey={baseline["chao_eq_gemitt_y"]:.5e} '
+          f'ez={baseline["chao_eq_gemitt_zeta"]:.5e} '
+          f'U0={baseline["chao_energy_loss"] * 1e-6:.3f} MeV')
 
     for ip_name in IP_NAMES:
         line[f'on_sol_{ip_name}'] = 1
@@ -628,14 +716,14 @@ def run_field_case(b0):
         }
 
         try:
-            tw = line.twiss4d(strengths=True, radiation_integrals=True)
+            tw = line.twiss4d(strengths=True)
         except Exception as exc:  # noqa: BLE001 -- coupled optics can fail
             print(f'  WARNING: twiss failed at main_b_scale={main_b_scale:.4f}'
                   f' ({exc!r}); recording NaNs for this point.')
             points.append(dict(
                 main_b_scale=float(main_b_scale), tw=None, beam_sizes=None,
                 qx=np.nan, qy=np.nan, dqx=np.nan, dqy=np.nan, c_minus=np.nan,
-                eq_gemitt_x=np.nan, eq_gemitt_y=np.nan, k1s_values=k1s_values))
+                k1s_values=k1s_values, **_CHAO_NANS))
             continue
 
         scalars = dict(
@@ -643,8 +731,7 @@ def run_field_case(b0):
             dqx=float(getattr(tw, 'dqx', np.nan)),
             dqy=float(getattr(tw, 'dqy', np.nan)),
             c_minus=float(tw.c_minus),
-            eq_gemitt_x=float(tw.rad_int_eq_gemitt_x),
-            eq_gemitt_y=float(tw.rad_int_eq_gemitt_y),
+            **_chao_equilibrium_emittances(line),
         )
 
         if i == nominal_idx:
@@ -669,7 +756,10 @@ def run_field_case(b0):
             k1s_values=k1s_values, **scalars))
         print(f'  main_b_scale={main_b_scale:+.4f}: twiss OK '
               f'(qx={scalars["qx"]:.5f} qy={scalars["qy"]:.5f} '
-              f'C-={scalars["c_minus"]:.3e})')
+              f'C-={scalars["c_minus"]:.3e}) '
+              f'eq. emitt ex={scalars["chao_eq_gemitt_x"]:.4e} '
+              f'ey={scalars["chao_eq_gemitt_y"]:.4e} '
+              f'ez={scalars["chao_eq_gemitt_zeta"]:.4e}')
 
     return dict(
         b0=b0, field_tag=field_t, points=points,
@@ -902,6 +992,16 @@ def _fmt_bare(v):
     return f'{v:.4e}'
 
 
+def _place_legend_clear_of_bare_ring_box(ax):
+    """The bare-ring box is anchored upper-left, and `loc='best'` doesn't see
+    AnchoredText artists -- on a rising curve it puts the legend right on top
+    of it. Pin the legend opposite and add headroom so neither lands on the
+    data."""
+    ax.legend(loc='upper right', fontsize=8)
+    ax.set_ymargin(0.30)
+    ax.autoscale_view()
+
+
 def _add_bare_ring_box(ax, rows, loc='upper left'):
     """rows: list of (label, formatted_value_str). Framed reference box in a
     corner of the axes showing the bare-ring value(s) each curve is a
@@ -931,7 +1031,7 @@ def _scalar_overlay_fig(cases, panel_specs, suptitle):
                     label=f'{case["b0"]:g} T')
         ax.set_ylabel(ylabel)
         ax.grid(True)
-        ax.legend(loc='best', fontsize=8)
+        _place_legend_clear_of_bare_ring_box(ax)
         _add_bare_ring_box(
             ax, [(f'{case["b0"]:g} T', _fmt_bare(case['baseline'][key]))
                  for case in cases])
@@ -942,12 +1042,22 @@ def _scalar_overlay_fig(cases, panel_specs, suptitle):
 
 
 def _emittance_overlay_fig(cases):
+    """Returns None (and says so) for scan data saved before the 6D
+    radiative-Twiss emittances went in on 2026-09-03: those runs only stored
+    the radiation-integral values, which are no longer plotted. Every other
+    figure still replots from such a file."""
+    key_x, key_y = 'chao_eq_gemitt_x', 'chao_eq_gemitt_y'
+    if not all(key_x in case['baseline'] for case in cases):
+        print('NOTE: the loaded scan data predates the 6D radiative-Twiss '
+              'equilibrium emittances, so the emittance figure is skipped. '
+              'Re-run without --replot to produce it.')
+        return None
     fig, axs = plt.subplots(2, 1, sharex=True, figsize=(7.0, 6.4))
     for case in cases:
-        bx = case['baseline']['eq_gemitt_x']
-        by = case['baseline']['eq_gemitt_y']
-        ex = np.array([pt['eq_gemitt_x'] for pt in case['points']])
-        ey = np.array([pt['eq_gemitt_y'] for pt in case['points']])
+        bx = case['baseline'][key_x]
+        by = case['baseline'][key_y]
+        ex = np.array([pt[key_x] for pt in case['points']])
+        ey = np.array([pt[key_y] for pt in case['points']])
         color = _B0_COLORS.get(case['b0'], None)
         axs[0].plot(MAIN_B_SCALE_VALUES, (ex - bx) * 1e9, '-o',
                     color=color, label=f'{case["b0"]:g} T')
@@ -958,18 +1068,18 @@ def _emittance_overlay_fig(cases):
     axs[1].set_xlabel('main_b_scale')
     axs[0].set_title(
         'Equilibrium emittance shift vs main_b_scale '
-        '(relative to the bare ring)')
+        '(relative to the bare ring)\n6D radiative Twiss, Chao formalism')
     _add_bare_ring_box(
         axs[0], [(f'{case["b0"]:g} T',
-                  _fmt_bare(case['baseline']['eq_gemitt_x'] * 1e9) + ' nm')
+                  _fmt_bare(case['baseline'][key_x] * 1e9) + ' nm')
                  for case in cases])
     _add_bare_ring_box(
         axs[1], [(f'{case["b0"]:g} T',
-                  _fmt_bare(case['baseline']['eq_gemitt_y'] * 1e12) + ' pm')
+                  _fmt_bare(case['baseline'][key_y] * 1e12) + ' pm')
                  for case in cases])
     for ax in axs:
         ax.grid(True)
-        ax.legend(loc='best', fontsize=8)
+        _place_legend_clear_of_bare_ring_box(ax)
     fig.tight_layout()
     return fig
 
@@ -1008,7 +1118,9 @@ def main():
     figs = {}  # stem -> figure
 
     # --- Scalar quantities vs main_b_scale, 2 T + 3 T overlaid. ---
-    figs['eq_emittance_shift_vs_main_b_scale'] = _emittance_overlay_fig(cases)
+    emittance_fig = _emittance_overlay_fig(cases)
+    if emittance_fig is not None:
+        figs['eq_emittance_shift_vs_main_b_scale'] = emittance_fig
     figs['tunes_vs_main_b_scale'] = _scalar_overlay_fig(
         cases,
         [('qx', r'$\Delta q_x$', 1.0), ('qy', r'$\Delta q_y$', 1.0)],
