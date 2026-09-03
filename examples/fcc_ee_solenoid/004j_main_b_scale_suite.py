@@ -1042,16 +1042,7 @@ def _scalar_overlay_fig(cases, panel_specs, suptitle):
 
 
 def _emittance_overlay_fig(cases):
-    """Returns None (and says so) for scan data saved before the 6D
-    radiative-Twiss emittances went in on 2026-09-03: those runs only stored
-    the radiation-integral values, which are no longer plotted. Every other
-    figure still replots from such a file."""
     key_x, key_y = 'chao_eq_gemitt_x', 'chao_eq_gemitt_y'
-    if not all(key_x in case['baseline'] for case in cases):
-        print('NOTE: the loaded scan data predates the 6D radiative-Twiss '
-              'equilibrium emittances, so the emittance figure is skipped. '
-              'Re-run without --replot to produce it.')
-        return None
     fig, axs = plt.subplots(2, 1, sharex=True, figsize=(7.0, 6.4))
     for case in cases:
         bx = case['baseline'][key_x]
@@ -1118,9 +1109,7 @@ def main():
     figs = {}  # stem -> figure
 
     # --- Scalar quantities vs main_b_scale, 2 T + 3 T overlaid. ---
-    emittance_fig = _emittance_overlay_fig(cases)
-    if emittance_fig is not None:
-        figs['eq_emittance_shift_vs_main_b_scale'] = emittance_fig
+    figs['eq_emittance_shift_vs_main_b_scale'] = _emittance_overlay_fig(cases)
     figs['tunes_vs_main_b_scale'] = _scalar_overlay_fig(
         cases,
         [('qx', r'$\Delta q_x$', 1.0), ('qy', r'$\Delta q_y$', 1.0)],
