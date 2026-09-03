@@ -104,16 +104,34 @@ _parser.add_argument(
          'default both orbit and coupling corrections are re-solved at each '
          'scan point.')
 _parser.add_argument(
+    '--no-correctors', action='store_true',
+    help='Turn off the actively-solved orbit-corrector dipoles and the '
+         'coupling skew-quad correction (and skip re-solving them at every '
+         'scan point -- their strengths are pinned to exactly 0 instead of '
+         'the nominal main_b_scale=1.0 fit loaded from the lattice JSON), '
+         'and turn off the optics-rematch knob. The compensation solenoids '
+         '(on_comp_sol_{ip}) and the doublet-quad rotation/tilt '
+         '(on_rot_doublet_{left,right}_{ip}, which compensates the main '
+         "solenoid's own Larmor rotation rather than being an actively-"
+         'solved corrector) are left on. Incompatible with --coupling-only '
+         '(which only makes sense when correctors are being re-solved).')
+_parser.add_argument(
     '--no-show', action='store_true',
     help='Save the figures without opening an interactive window.')
 _parser.add_argument(
     '--replot', action='store_true',
     help='Skip the (expensive) scan entirely and reload the scan data saved '
          'by a previous run -- matched on --b0/--input-tag/'
-         '--max-transverse-order/--coupling-only and the MAIN_B_SCALE_VALUES '
-         'grid -- to only regenerate the plots. Every non-replot run saves '
-         'its data automatically; see _data_path() for the exact file.')
+         '--max-transverse-order/--coupling-only/--no-correctors and the '
+         'MAIN_B_SCALE_VALUES grid -- to only regenerate the plots. Every '
+         'non-replot run saves its data automatically; see _data_path() for '
+         'the exact file.')
 _args = _parser.parse_args()
+
+if _args.no_correctors and _args.coupling_only:
+    raise SystemExit('--no-correctors and --coupling-only are incompatible: '
+                      'with correctors off there is nothing left to '
+                      "re-solve, coupling-only or otherwise.")
 
 ORDER_TAG = order_tag(_args.max_transverse_order)
 INPUT_TAG = f'_{_args.input_tag}' if _args.input_tag else ''
@@ -175,10 +193,12 @@ def _scan_tag():
 def _data_path():
     """Path for this run's pickled scan data -- labelled by every knob that
     changes what's in it, so a mismatched --replot (wrong --b0/--input-tag/
-    --max-transverse-order/--coupling-only) misses the file instead of
-    silently loading the wrong scan."""
+    --max-transverse-order/--coupling-only/--no-correctors) misses the file
+    instead of silently loading the wrong scan."""
     b0_tag = ''.join(field_tag(b0) for b0 in B0_VALUES)
-    extra = '_couplingonly' if _args.coupling_only else ''
+    extra = (
+        '_nocorr' if _args.no_correctors else
+        '_couplingonly' if _args.coupling_only else '')
     return _DATA_DIR / (
         f'main_b_scale_suite_{b0_tag}{ORDER_TAG}{INPUT_TAG}{extra}'
         f'_scan{_scan_tag()}.pkl')
@@ -415,7 +435,9 @@ def run_field_case(b0):
             f'--output-tag {_args.input_tag or "mainscale"}'
         )
 
-    print(f'\n=== {field_t} main solenoid: loading {lattice_json.name} ===')
+    correctors_note = ' [correctors OFF, comp. solenoid ON]' if _args.no_correctors else ''
+    print(f'\n=== {field_t} main solenoid: loading {lattice_json.name}'
+          f'{correctors_note} ===')
     env = xt.load(lattice_json)
     line = env.fccee_p_ring.copy(shallow=True)
     line.particle_ref.anomalous_magnetic_moment = 0.00115965218128
@@ -499,15 +521,32 @@ def run_field_case(b0):
     points = []
     for i, main_b_scale in enumerate(MAIN_B_SCALE_VALUES):
         set_lattice_knobs(
-            line, with_solenoids=True, with_correctors=True,
+            line, with_solenoids=True, with_correctors=not _args.no_correctors,
             main_b_scale=float(main_b_scale))
-        # Warm-started from the previous scan point (grid is monotonic).
-        for ip_name in IP_NAMES:
-            if not _args.coupling_only:
-                _resolve_orbit_correction(
-                    line, ip_name, orbit_knobs_by_ip[ip_name])
-            _resolve_coupling_correction(
-                line, ip_name, k1s_knobs_by_ip[ip_name])
+        if _args.no_correctors:
+            # set_lattice_knobs(with_correctors=False) also turned off the
+            # compensation solenoids and the doublet-quad rotation/tilt --
+            # neither is an actively-solved "corrector" here (the tilt
+            # compensates the main solenoid's own Larmor rotation), so turn
+            # them back on. The orbit-corrector dipoles and coupling
+            # skew-quads stay pinned to exactly 0 below, instead of being
+            # re-solved at every scan point.
+            for ip_name in IP_NAMES:
+                line[f'on_comp_sol_{ip_name}'] = 1
+                line[f'on_rot_doublet_left_{ip_name}'] = 1
+                line[f'on_rot_doublet_right_{ip_name}'] = 1
+                for nn in orbit_knobs_by_ip[ip_name]:
+                    line[nn] = 0.0
+                for nn in k1s_knobs_by_ip[ip_name]:
+                    line[nn] = 0.0
+        else:
+            # Warm-started from the previous scan point (grid is monotonic).
+            for ip_name in IP_NAMES:
+                if not _args.coupling_only:
+                    _resolve_orbit_correction(
+                        line, ip_name, orbit_knobs_by_ip[ip_name])
+                _resolve_coupling_correction(
+                    line, ip_name, k1s_knobs_by_ip[ip_name])
 
         k1s_values = {
             nn: float(line.vars[nn]._value)
@@ -600,8 +639,9 @@ def _iter_profiles(case):
 
 
 def _profile_title(case, suffix):
+    correctors_note = ' [correctors off]' if _args.no_correctors else ''
     return (f'{IP_PLOT} main solenoid ({case["b0"]:g} T) -- '
-            f'main_b_scale scan{suffix}')
+            f'main_b_scale scan{suffix}{correctors_note}')
 
 
 def _add_colorbar(fig, axs):
