@@ -43,9 +43,11 @@ set per field case:
 
 Plus, per field case, at main_b_scale = 1.0 and with the default
 (unit-weight, skew-quad-only) coupling correction: every skew coupling
-corrector's integrated strength k1s*L as a fraction of the arc-cell normal
-quadrupole strength <|k1 L|>_arc, plotted as thick red dots against the
-host quad's longitudinal position s.
+corrector's integrated strength k1s*L as a fraction of the integrated
+normal gradient |k1*L| of the quadrupole that corrector is attached to
+(004c adds each k1s as a skew component on an existing quad), plotted as
+thick red dots against that host quad's longitudinal position s, with the
+equivalent host-quad roll angle 0.5*atan(k1s/k1) on the right-hand axis.
 
 Every run (without --replot) pickles the full scan result (per field case:
 per-scan-point scalars, packed s-profile arrays, the skew-quad snapshot and
@@ -317,16 +319,78 @@ def _orbit_corrector_knobs_for_ip(line, ip_name, lattice_name):
     return knob_names
 
 
-def _arc_cell_k1l_reference(tw):
+def _arc_cell_k1l_reference(table_attr):
     """Median |k1*L| over the arc FODO-cell quads (qf2a.*/qd1a.*). Falls back
-    to the median over all quads if that naming isn't found. Same as 004h."""
-    mask = tw['element_type'] == 'Quadrupole'
-    names = np.asarray([str(n) for n in tw['name']])[mask]
-    k1l = np.abs(np.asarray(tw['k1l'])[mask])
+    to the median over all quads if that naming isn't found. Same as 004h.
+    Only used here to set the "host quad is effectively unpowered" threshold
+    in _build_skew_dots (arc quads are never sliced by the near-IP cut_at_s,
+    so no host aggregation is needed for this one)."""
+    mask = table_attr['element_type'] == 'Quadrupole'
+    names = np.asarray([str(n) for n in table_attr['name']])[mask]
+    k1l = np.abs(np.asarray(table_attr['k1l'])[mask])
     arc = np.array([n.startswith(('qf2a.', 'qd1a.')) for n in names])
     if arc.sum() < 50:
         return float(np.median(k1l)), int(mask.sum()), 'all quads'
     return float(np.median(k1l[arc])), int(arc.sum()), 'qf2a.*/qd1a.*'
+
+
+def _host_attr_maps(table_attr):
+    """Integrated gradient and length of every element, summed over its
+    slices: -> ({host name: k1*L}, {host name: L}).
+
+    Needed because the near-IP `line.cut_at_s` calls slice the thick
+    quadrupoles within +-11 m of each IP into `<name>..0`, `<name>..1`, ...
+    rows whose `parent_name` is the original element -- the host name itself
+    then no longer appears in the table's `name` column at all. Summing by
+    parent recovers the host quad's own k1*L (and L) whether or not it was
+    sliced, for all 84 coupling-corrector hosts per IP.
+    """
+    names = np.asarray([str(n) for n in table_attr['name']])
+    parents = np.asarray([str(n) for n in table_attr['parent_name']])
+    host_names = np.where(np.isin(parents, ('None', '')), names, parents)
+    k1l = np.asarray(table_attr['k1l'], dtype=float)
+    lengths = np.asarray(table_attr['length'], dtype=float)
+
+    k1l_by_host, l_by_host = {}, {}
+    for host, k1l_i, l_i in zip(host_names, k1l, lengths):
+        k1l_by_host[host] = k1l_by_host.get(host, 0.0) + k1l_i
+        l_by_host[host] = l_by_host.get(host, 0.0) + l_i
+    return k1l_by_host, l_by_host
+
+
+def _build_skew_dots(table_attr, table_uncut, s_ip_ref, k1s_knobs,
+                     quad_hosts, k1s_values):
+    """Per skew coupling corrector: its integrated strength k1s*L, the host
+    quadrupole's own integrated gradient k1*L, and the host's position
+    relative to the IP.
+
+    Every corrector is a k1s component added onto an existing quadrupole
+    (004c does `env[quad].k1s += env.ref[knob]`), so `k1s*L / |k1*L|_host`
+    is a meaningful per-corrector measure of how hard it is driven relative
+    to the magnet carrying it (= tan of twice the equivalent host roll).
+    The arc-cell reference is kept only to flag hosts whose own gradient is
+    ~0 (the unpowered qf1c/qf1d spares), for which that ratio is meaningless.
+    """
+    k1l_ref, n_ref, ref_label = _arc_cell_k1l_reference(table_attr)
+    k1l_by_host, l_by_host = _host_attr_maps(table_attr)
+
+    names, s_rel, k1s_l, k1l_host = [], [], [], []
+    for knob, quad in zip(k1s_knobs, quad_hosts):
+        length = float(l_by_host.get(quad, np.nan))
+        if not np.isfinite(length) or length <= 0:
+            print(f'  WARNING: no length found for skew-corrector host quad '
+                  f'{quad!r}; dropping it from the skew-corrector figure.')
+            continue
+        names.append(quad)
+        s_rel.append(float(table_uncut['s', quad]) - s_ip_ref)
+        k1s_l.append(k1s_values[knob] * length)
+        k1l_host.append(float(k1l_by_host.get(quad, np.nan)))
+
+    return dict(
+        name=np.asarray(names), s=np.asarray(s_rel),
+        k1s_l=np.asarray(k1s_l), k1l_host=np.asarray(k1l_host),
+        k1l_ref=k1l_ref, n_ref=n_ref, ref_label=ref_label,
+    )
 
 
 ##############################################################
@@ -418,14 +482,11 @@ def _pack_beam_sizes(beam_sizes):
 # Run one field-strength case end to end.                    #
 ##############################################################
 
-def run_field_case(b0):
-    field_t = field_tag(b0)
-    lattice_json = (
-        HERE / (
-            'fccee_z_lcc_splineboris_solenoids_coupling_corrected_'
-            f'{field_t}{ORDER_TAG}{INPUT_TAG}.json'
-        )
-    )
+def _load_case_line(b0):
+    """Load one field case's corrected lattice and return the cycled line."""
+    lattice_json = HERE / (
+        'fccee_z_lcc_splineboris_solenoids_coupling_corrected_'
+        f'{field_tag(b0)}{ORDER_TAG}{INPUT_TAG}.json')
     if not lattice_json.exists():
         raise SystemExit(
             f'{lattice_json.name} not found -- build it with\n'
@@ -435,8 +496,9 @@ def run_field_case(b0):
             f'--output-tag {_args.input_tag or "mainscale"}'
         )
 
-    correctors_note = ' [correctors OFF, comp. solenoid ON]' if _args.no_correctors else ''
-    print(f'\n=== {field_t} main solenoid: loading {lattice_json.name}'
+    correctors_note = (
+        ' [correctors OFF, comp. solenoid ON]' if _args.no_correctors else '')
+    print(f'\n=== {field_tag(b0)} main solenoid: loading {lattice_json.name}'
           f'{correctors_note} ===')
     env = xt.load(lattice_json)
     line = env.fccee_p_ring.copy(shallow=True)
@@ -450,6 +512,36 @@ def run_field_case(b0):
         )
 
     line.cycle(f'end_ds_start_straight_{IP_NAMES[0]}')
+    return line, lattice_json
+
+
+def _set_scan_point_knobs(line, main_b_scale, orbit_knobs_by_ip,
+                          k1s_knobs_by_ip):
+    """Put the lattice in the state one scan point is evaluated in."""
+    set_lattice_knobs(
+        line, with_solenoids=True, with_correctors=not _args.no_correctors,
+        main_b_scale=float(main_b_scale))
+    if _args.no_correctors:
+        # set_lattice_knobs(with_correctors=False) also turned off the
+        # compensation solenoids and the doublet-quad rotation/tilt --
+        # neither is an actively-solved "corrector" here (the tilt
+        # compensates the main solenoid's own Larmor rotation), so turn
+        # them back on. The orbit-corrector dipoles and coupling
+        # skew-quads stay pinned to exactly 0, instead of being re-solved
+        # at every scan point.
+        for ip_name in IP_NAMES:
+            line[f'on_comp_sol_{ip_name}'] = 1
+            line[f'on_rot_doublet_left_{ip_name}'] = 1
+            line[f'on_rot_doublet_right_{ip_name}'] = 1
+            for nn in orbit_knobs_by_ip[ip_name]:
+                line[nn] = 0.0
+            for nn in k1s_knobs_by_ip[ip_name]:
+                line[nn] = 0.0
+
+
+def run_field_case(b0):
+    field_t = field_tag(b0)
+    line, lattice_json = _load_case_line(b0)
     table_before_cuts = line.get_table()
     for ip_name in IP_NAMES:
         line.cut_at_s(np.arange(
@@ -512,34 +604,16 @@ def run_field_case(b0):
         line[f'on_sol_corr_{ip_name}'] = 1
 
     # Nominal (main_b_scale = 1.0) scan-point index -- its skew-corrector
-    # snapshot is captured inline below, while tw is still the full
-    # TwissTable (dict-style column access), before it gets reduced to the
-    # packed s-profile namespace stored in `points`.
+    # snapshot is captured inline below, while the line is still in that
+    # scan point's knob state.
     nominal_idx = int(np.argmin(np.abs(MAIN_B_SCALE_VALUES - 1.0)))
     skew_dots = None
 
     points = []
     for i, main_b_scale in enumerate(MAIN_B_SCALE_VALUES):
-        set_lattice_knobs(
-            line, with_solenoids=True, with_correctors=not _args.no_correctors,
-            main_b_scale=float(main_b_scale))
-        if _args.no_correctors:
-            # set_lattice_knobs(with_correctors=False) also turned off the
-            # compensation solenoids and the doublet-quad rotation/tilt --
-            # neither is an actively-solved "corrector" here (the tilt
-            # compensates the main solenoid's own Larmor rotation), so turn
-            # them back on. The orbit-corrector dipoles and coupling
-            # skew-quads stay pinned to exactly 0 below, instead of being
-            # re-solved at every scan point.
-            for ip_name in IP_NAMES:
-                line[f'on_comp_sol_{ip_name}'] = 1
-                line[f'on_rot_doublet_left_{ip_name}'] = 1
-                line[f'on_rot_doublet_right_{ip_name}'] = 1
-                for nn in orbit_knobs_by_ip[ip_name]:
-                    line[nn] = 0.0
-                for nn in k1s_knobs_by_ip[ip_name]:
-                    line[nn] = 0.0
-        else:
+        _set_scan_point_knobs(
+            line, main_b_scale, orbit_knobs_by_ip, k1s_knobs_by_ip)
+        if not _args.no_correctors:
             # Warm-started from the previous scan point (grid is monotonic).
             for ip_name in IP_NAMES:
                 if not _args.coupling_only:
@@ -576,24 +650,14 @@ def run_field_case(b0):
         if i == nominal_idx:
             # One IP only (IP_PLOT): the per-IP skew-corrector solutions are
             # near-identical across the 4 IPs, so a single IP's straight
-            # section is enough and keeps the s-axis readable.
-            k1l_ref, n_ref, ref_label = _arc_cell_k1l_reference(tw)
-            L_by_name = dict(zip(np.asarray(tw['name']),
-                                 np.asarray(tw['length'])))
-            s_rel = []
-            ratio = []
-            for knob, quad in zip(k1s_knobs_by_ip[IP_PLOT],
-                                  quad_hosts_by_ip[IP_PLOT]):
-                L = float(L_by_name.get(quad, np.nan))
-                if not np.isfinite(L) or L <= 0:
-                    continue
-                k1s = k1s_values[knob]
-                s_rel.append(float(table_before_cuts['s', quad]) - s_ip_ref)
-                ratio.append(k1s * L / k1l_ref)
-            skew_dots = dict(
-                s=np.asarray(s_rel), ratio=np.asarray(ratio),
-                k1l_ref=k1l_ref, n_ref=n_ref, ref_label=ref_label,
-            )
+            # section is enough and keeps the s-axis readable. Host gradients
+            # come from a fresh attr table rather than from `tw`, so that the
+            # slices the near-IP cut_at_s produced can be summed back onto
+            # their parent quad (see _host_attr_maps).
+            skew_dots = _build_skew_dots(
+                line.get_table(attr=True), table_before_cuts, s_ip_ref,
+                k1s_knobs_by_ip[IP_PLOT], quad_hosts_by_ip[IP_PLOT],
+                k1s_values)
 
         tw.zero_at(IP_PLOT)
         beam_sizes = tw.get_beam_covariance(
@@ -615,6 +679,41 @@ def run_field_case(b0):
         ring_s_range=ring_s_range,
         nominal_idx=nominal_idx, skew_dots=skew_dots, baseline=baseline,
     )
+
+
+def _rebuild_skew_dots(case):
+    """Recompute a pre-2026-09-03 run's skew-corrector snapshot in the
+    current (host-quad-relative) format.
+
+    Runs saved before that stored only k1s*L / <|k1L|>_arc ratios, with no
+    host gradients -- and silently dropped the ~14 quads per IP that the
+    near-IP cut_at_s had sliced, i.e. the whole final-focus doublet. Both
+    are recoverable without redoing the (hours-long) scan: the nominal scan
+    point's k1s knob values are in the saved data, and the host quads' own
+    k1*L depends only on the lattice and the knob state at main_b_scale=1.0,
+    neither of which the scan changes. Costs one lattice load per case.
+    """
+    line, lattice_json = _load_case_line(case['b0'])
+    table = line.get_table()
+    knobs_by_ip, hosts_by_ip = {}, {}
+    for ip_name in IP_NAMES:
+        knobs_by_ip[ip_name], hosts_by_ip[ip_name] = (
+            _k1s_coupling_knobs_for_ip(
+                line, table, ip_name, lattice_json.name))
+    orbit_knobs_by_ip = {
+        ip_name: _orbit_corrector_knobs_for_ip(
+            line, ip_name, lattice_json.name)
+        for ip_name in IP_NAMES
+    }
+    for ip_name in IP_NAMES:
+        line[f'on_sol_{ip_name}'] = 1
+        line[f'on_sol_corr_{ip_name}'] = 1
+    _set_scan_point_knobs(line, 1.0, orbit_knobs_by_ip, knobs_by_ip)
+
+    return _build_skew_dots(
+        line.get_table(attr=True), table, table['s', IP_PLOT],
+        knobs_by_ip[IP_PLOT], hosts_by_ip[IP_PLOT],
+        case['points'][case['nominal_idx']]['k1s_values'])
 
 
 ##############################################################
@@ -738,24 +837,59 @@ _PROFILE_SPECS = [
 ]
 
 
+# Host quads whose own |k1*L| is below this fraction of the arc-cell median
+# are treated as unpowered and listed separately rather than plotted: their
+# k1s/k1 is dominated by dividing by ~0 (up to 4e-2, i.e. a 20 mrad
+# "equivalent roll", from |k1s*L| < 1e-6 1/m -- the weakest correctors in
+# the whole set), which would flatten the y-scale for everything else.
+# The threshold sits in a clean two-decade gap in the actual lattices: the
+# four unpowered qf1c/qf1d spares either side of the IP run 0.0006-0.011 of
+# the arc-cell median (2 T and 3 T), while the weakest genuinely powered
+# host, qf17l.3/qd9l.3, is at 0.065. (004h uses 0.1 for its roll statistics,
+# which would also drop those two.)
+_WEAK_HOST_FRACTION = 0.03
+
+
 def _skew_dot_fig(case):
     sd = case['skew_dots']
+    k1l_host = np.abs(sd['k1l_host'])
+    weak = ~(k1l_host > _WEAK_HOST_FRACTION * sd['k1l_ref'])
+    ratio = np.full(k1l_host.shape, np.nan)
+    ratio[~weak] = sd['k1s_l'][~weak] / k1l_host[~weak]
+
     fig, ax = plt.subplots(figsize=(9.0, 4.8))
     ax.axhline(0.0, color='0.5', linewidth=0.8)
     ax.axvline(0.0, color='0.7', linewidth=0.8, linestyle='--')
     ax.text(0.0, 1.0, f' {IP_PLOT}', transform=ax.get_xaxis_transform(),
             va='top', ha='left', fontsize=8, color='0.4')
-    ax.plot(sd['s'], sd['ratio'], linestyle='none', marker='o',
+    ax.plot(sd['s'][~weak], ratio[~weak], linestyle='none', marker='o',
             markersize=8, color='red')
     ax.set_xlabel(r'$s - s_{\mathrm{IP}}$ [m]  (host quadrupole position)')
-    ax.set_ylabel(r'$k_{1s}L \,/\, \langle |k_1 L|\rangle_{\mathrm{arc}}$')
+    ax.set_ylabel(r'$k_{1s}L \,/\, |k_1 L|_{\mathrm{host\ quad}}$')
     ax.set_title(
         f'{IP_PLOT} skew coupling-corrector integrated strength '
         f'({case["b0"]:g} T main solenoid, main_b_scale = 1.0, '
         f'unit-weight correction)\n'
-        r'relative to arc-cell $\langle|k_1 L|\rangle$ = '
-        f'{sd["k1l_ref"]:.3e} 1/m (median over {sd["n_ref"]} '
-        f'{sd["ref_label"]} quads)')
+        'relative to the integrated gradient of the quadrupole each '
+        'corrector sits on')
+    # Same number read as the equivalent roll of the host quad: a quad rolled
+    # by phi has k1s/k1 = tan(2 phi).
+    sec = ax.secondary_yaxis(
+        'right',
+        functions=(lambda r: 0.5 * np.arctan(r) * 1e3,
+                   lambda phi: np.tan(2.0 * phi * 1e-3)))
+    sec.set_ylabel('equivalent host-quad roll [mrad]')
+    if weak.any():
+        ax.text(
+            0.5, -0.22,
+            f'not shown: {int(weak.sum())} corrector(s) on unpowered host '
+            r'quads ($|k_1L|_{\mathrm{main}} < $'
+            f'{_WEAK_HOST_FRACTION:.0%} of the arc-cell median), all with '
+            r'$|k_{1s}L| \leq $'
+            f'{np.max(np.abs(sd["k1s_l"][weak])):.1e} 1/m:\n'
+            + ', '.join(sd['name'][weak]),
+            transform=ax.transAxes, ha='center', va='top', fontsize=7,
+            color='0.35')
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
     return fig
@@ -856,6 +990,13 @@ def main():
         print(f'--replot: loading saved scan data from {data_path}')
         with open(data_path, 'rb') as f:
             cases = pickle.load(f)
+        for case in cases:
+            if case['skew_dots'] is not None and 'k1l_host' not in (
+                    case['skew_dots']):
+                print(f'--replot: {case["field_tag"]} skew-corrector data is '
+                      'in the old arc-relative format; recomputing the host '
+                      'quadrupole gradients from the lattice.')
+                case['skew_dots'] = _rebuild_skew_dots(case)
     else:
         cases = [run_field_case(b0) for b0 in B0_VALUES]
         _DATA_DIR.mkdir(parents=True, exist_ok=True)
