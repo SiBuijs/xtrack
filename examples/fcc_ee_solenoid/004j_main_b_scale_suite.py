@@ -12,9 +12,21 @@ but:
 * run for both --b0 2.0 and --b0 3.0 in one process (loads
   ..._{FIELD_TAG}_mainscale.json for each; both must already be built with
   004b/004c --output-tag mainscale);
-* the coupling re-solve is the plain 004f one -- only the 84
-  k1s_*_sol_coupling_corr skew quads, unit weights (the per-side
-  compensation-field knobs 004h floats are left pinned at 1.0 here);
+* the global comp_b_scale knob is set equal to main_b_scale at every scan
+  point (see the comment at _set_scan_point_knobs) -- each comp solenoid's
+  own scale_b already bakes in the factor that lets the *pair* of them
+  (left+right) cancel one main solenoid's field integral at comp_b_scale=1,
+  so tracking main_b_scale 1:1 keeps that cancellation exact as main_b_scale
+  is scanned, instead of 004f/004h's comp_b_scale=1.0-always (which leaves a
+  net-integral imbalance growing with |main_b_scale - 1|);
+* the coupling re-solve is otherwise the 004f one (only the 84
+  k1s_*_sol_coupling_corr skew quads, unit weights) by default;
+  --comp-weight (0 = off, matching 004f) optionally *additionally* floats
+  the per-side compensation-field knobs 004h uses
+  (comp_b_scale_{left,right}_{ip}, weight=--comp-weight, limits=(0.5, 1.5))
+  as extra coupling handles, on top of the global comp_b_scale=main_b_scale
+  tracking above -- see the comment at _resolve_coupling_correction for
+  why/when this helps and what it costs;
 * an expanded deliverable set.
 
 As a function of main_b_scale (2 T and 3 T overlaid on shared axes; every
@@ -29,6 +41,10 @@ set_lattice_knobs(with_solenoids=False, with_correctors=False)):
     not used anywhere in this script. See _chao_equilibrium_emittances.
   - horizontal / vertical tune shift Dqx / Dqy   (Twiss table)
   - horizontal / vertical chromaticity shift DQ'x / DQ'y (Twiss table)
+  - horizontal / vertical 2nd-order chromaticity shift DQ''x/2 / DQ''y/2,
+    from get_nonlinear_chromaticity (examples/nonlinear_tunes/detuning.py --
+    an off-momentum 4D-twiss sweep + polynomial fit, not an xtrack/Twiss
+    method). See _nonlinear_chromaticity_scalars.
   - the coupling coefficient shift DC^- (tw.c_minus; ~ the absolute value,
     the bare ring being essentially uncoupled)
 
@@ -66,6 +82,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import argparse
 import pickle
+import sys
 
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -123,6 +140,16 @@ _parser.add_argument(
          'solved corrector) are left on. Incompatible with --coupling-only '
          '(which only makes sense when correctors are being re-solved).')
 _parser.add_argument(
+    '--comp-weight', type=float, default=0.0,
+    help='If > 0, also float the per-side compensation-solenoid field knobs '
+         '(comp_b_scale_{left,right}_{ip}) as extra coupling-correction '
+         'handles, at this Vary weight (004h_main_b_scale_scan.py\'s '
+         'recipe; try 1e4-3e4 -- see the comment at '
+         '_resolve_coupling_correction). Default 0 = pinned at 1.0, the '
+         'plain 004f-style skew-quad-only correction. Floating the comp '
+         'field breaks the exact net solenoid-field cancellation the '
+         'unpinned default preserves.')
+_parser.add_argument(
     '--no-show', action='store_true',
     help='Save the figures without opening an interactive window.')
 _parser.add_argument(
@@ -146,12 +173,22 @@ B0_VALUES = list(_args.b0)
 
 HERE = Path(__file__).parent
 
+# get_nonlinear_chromaticity lives in the sibling nonlinear_tunes example,
+# not in xtrack proper -- see the comment at _nonlinear_chromaticity_scalars.
+sys.path.insert(0, str(HERE.parent / 'nonlinear_tunes'))
+from detuning import get_nonlinear_chromaticity  # noqa: E402
+
 IP_NAMES = ['ipa', 'ipd', 'ipg', 'ipj']
 IP_PLOT = 'ipa'
 
 # main_b_scale scan grid: 21 points, +-1 % about the nominal main-solenoid
 # field (as requested). Same span/count as 004f/004h.
 MAIN_B_SCALE_VALUES = np.linspace(0.995, 1.005, 21)
+
+# Cap on how far a single Newton step in _resolve_coupling_correction can
+# move any one k1s_*_sol_coupling_corr knob -- see claude_notes/06 and the
+# comment at its use site. Typical converged |k1s| is ~1e-6.
+MAX_STEP_K1S = 2e-5
 
 # Fixed design beam parameters used for the beam-size (tw.get_beam_covariance)
 # panels -- deliberately NOT the per-scan-point equilibrium values, so the
@@ -200,12 +237,19 @@ def _scan_tag():
 def _data_path():
     """Path for this run's pickled scan data -- labelled by every knob that
     changes what's in it, so a mismatched --replot (wrong --b0/--input-tag/
-    --max-transverse-order/--coupling-only/--no-correctors) misses the file
-    instead of silently loading the wrong scan."""
+    --max-transverse-order/--coupling-only/--no-correctors/--comp-weight)
+    misses the file instead of silently loading the wrong scan."""
     b0_tag = ''.join(field_tag(b0) for b0 in B0_VALUES)
     extra = (
         '_nocorr' if _args.no_correctors else
         '_couplingonly' if _args.coupling_only else '')
+    extra += f'_compw{_args.comp_weight:g}' if _args.comp_weight > 0 else ''
+    # _compsync: comp_b_scale now tracks main_b_scale 1:1 (see the comment at
+    # _set_scan_point_knobs) instead of the old comp_b_scale=1.0-always --
+    # bumps every filename so a pre-this-change pickle (different, more
+    # coupled physics under the same nominal name) misses on --replot rather
+    # than silently loading stale numbers.
+    extra += '_compsync'
     return _DATA_DIR / (
         f'main_b_scale_suite_{b0_tag}{ORDER_TAG}{INPUT_TAG}{extra}'
         f'_scan{_scan_tag()}.pkl')
@@ -324,6 +368,21 @@ def _orbit_corrector_knobs_for_ip(line, ip_name, lattice_name):
     return knob_names
 
 
+def _comp_scale_knobs_for_ip(line, ip_name, lattice_name):
+    """comp_b_scale_{left,right}_{ip_name} -- only looked up when
+    --comp-weight > 0 (see _resolve_coupling_correction)."""
+    knob_names = [f'comp_b_scale_{side}_{ip_name}' for side in ('left', 'right')]
+    missing = [nn for nn in knob_names if nn not in line.vars]
+    if missing:
+        raise SystemExit(
+            f'{lattice_name} is missing compensation-solenoid scale knob(s), '
+            f'e.g. {missing[0]!r}, for {ip_name} -- needed for --comp-weight '
+            '> 0; it must be a lattice built with 004b/004c --output-tag '
+            'mainscale.'
+        )
+    return knob_names
+
+
 def _arc_cell_k1l_reference(table_attr):
     """Median |k1*L| over the arc FODO-cell quads (qf2a.*/qd1a.*). Falls back
     to the median over all quads if that naming isn't found. Same as 004h.
@@ -423,9 +482,36 @@ def _resolve_orbit_correction(line, ip_name, orbit_knobs):
               'to tolerance; using best point found.')
 
 
-def _resolve_coupling_correction(line, ip_name, k1s_knobs):
+def _resolve_coupling_correction(line, ip_name, k1s_knobs, comp_knobs=None):
     name_start, name_end = _straight_section_boundary_names(ip_name)
     tw_local = line.twiss4d(strengths=True)
+    # max_step: see claude_notes/06_coupling_matching_convergence.md --
+    # bounds how far a single Newton step can move any one knob, to cap
+    # the 1/sigma-amplified overshoot on the near-null alfy1/alfx2
+    # directions without deleting those correction directions the way
+    # rcond truncation does. Untested against the actual cross-IP
+    # cascade failure as of this change -- typical converged |k1s|
+    # magnitudes are ~1e-6, so this gives ~10-30x headroom for a normal
+    # step while still capping a runaway one; tune down if points still
+    # get stuck, up if legitimate steps are being clipped (check
+    # opt_coupling.log() / target_status for hints).
+    vary = [xt.VaryList(k1s_knobs, step=1e-8)]  # , max_step=MAX_STEP_K1S)]
+    if comp_knobs:
+        # --comp-weight: floats the per-side compensation-solenoid field as
+        # an extra coupling handle, 004h_main_b_scale_scan.py's recipe.
+        # Unlike reweighting the 84 skew quads (tested in conversation and
+        # found to move the weak alfy1 singular value by, at most, ~20% even
+        # with an aggressive 4x/0.25x reweight -- the near-null combination
+        # spans ~6 comparably-weighted knobs, not 2, so rescaling existing
+        # columns can't manufacture missing signal), this is a genuinely
+        # independent physical direction: at weight=3e4 it raised alfy1's
+        # singular value ~55-62% in the SVD diagnostic (mode now dominated
+        # by the comp knob itself, not a skew quad). Costs the exact net
+        # solenoid-field cancellation the pinned (--comp-weight 0) default
+        # preserves -- see claude_notes/07_main_b_scale_scans.md.
+        vary.append(xt.VaryList(
+            comp_knobs, step=1e-4, limits=(0.5, 1.5),
+            weight=_args.comp_weight))
     opt_coupling = line.match(
         solve=False,
         betx=tw_local['betx', ip_name],
@@ -435,12 +521,12 @@ def _resolve_coupling_correction(line, ip_name, k1s_knobs):
         end=name_end,
         n_steps_max=100,
         assert_within_tol=False,
-        vary=xt.VaryList(k1s_knobs, step=1e-6),
+        vary=vary,
         targets=[
-            xt.TargetSet(betx2=0, bety1=0, at=xt.START, tol=5e-5),
-            xt.TargetSet(betx2=0, bety1=0, at=xt.END, tol=5e-5),
-            xt.TargetSet(alfx2=0, alfy1=0, at=xt.START, tol=1e-6),
-            xt.TargetSet(alfx2=0, alfy1=0, at=xt.END, tol=1e-6),
+            xt.TargetSet(betx2=0, bety1=0, at=xt.START, tol=5e-7),
+            xt.TargetSet(betx2=0, bety1=0, at=xt.END, tol=5e-7),
+            xt.TargetSet(alfx2=0, alfy1=0, at=xt.START, tol=1e-8),
+            xt.TargetSet(alfx2=0, alfy1=0, at=xt.END, tol=1e-8),
             xt.TargetSet(dy=0, at=xt.START, tol=5e-5),
             xt.TargetSet(dy=0, at=xt.END, tol=5e-5),
             xt.TargetSet(dpy=0, at=xt.START, tol=1e-7),
@@ -450,7 +536,7 @@ def _resolve_coupling_correction(line, ip_name, k1s_knobs):
     # convergence.md -- the ~84-skew-quad Jacobian is severely
     # ill-conditioned; broyden reuses it via cheap rank-1 updates and
     # rcond=0 keeps the tight alfx2/alfy1 directions from being truncated.
-    opt_coupling.solve(rcond=0, broyden=True)
+    opt_coupling.solve(rcond=0, broyden=False)
     status = opt_coupling.target_status(ret=True)
     if not all(status.tol_met):
         print(f'  WARNING: coupling re-fit for {ip_name} did not fully '
@@ -537,6 +623,40 @@ def _chao_equilibrium_emittances(line):
 
 
 ##############################################################
+# 2nd-order chromaticity (get_nonlinear_chromaticity).       #
+##############################################################
+
+# tw.dqx/dqy (already used for the linear ΔQ'x/ΔQ'y panel) come for free off
+# the periodic 4D twiss's internal delta_chrom probe -- no extra evaluations.
+# The 2nd-order term isn't available that way: get_nonlinear_chromaticity
+# (examples/nonlinear_tunes/detuning.py -- not an xtrack/Twiss method, a
+# standalone helper) gets it by sweeping `npoints` off-momentum 4D twiss
+# calls (method='4d', no strengths/radiation) and fitting a degree-`order`
+# polynomial to Qx(delta)/Qy(delta); `.qx_derivatives[n]`/`.qy_derivatives[n]`
+# is the n-th delta-derivative already divided by n!, so index 1 reproduces
+# tw.dqx/dqy (not used here, redundant) and index 2 is the new quantity,
+# Q''x/2 and Q''y/2. Cost: npoints+1 extra plain 4D twiss evaluations per
+# scan point (default npoints=21) -- cheap individually, negligible next to
+# the orbit/coupling re-solves, same as the Chao emittance twiss above.
+_NL_CHROM_FIELDS = ('d2qx', 'd2qy')
+_NL_CHROM_NANS = {ff: np.nan for ff in _NL_CHROM_FIELDS}
+
+
+def _nonlinear_chromaticity_scalars(line):
+    try:
+        chrom = get_nonlinear_chromaticity(line, order=2)
+        return dict(
+            d2qx=float(chrom.qx_derivatives[2]),
+            d2qy=float(chrom.qy_derivatives[2]),
+        )
+    except Exception as exc:  # noqa: BLE001 -- off-momentum twiss can fail
+        print(f'  WARNING: nonlinear-chromaticity twiss sweep failed '
+              f'({exc!r}); recording NaN 2nd-order chromaticity for this '
+              'point.')
+        return dict(_NL_CHROM_NANS)
+
+
+##############################################################
 # Packing a twiss/beam-size table down to what the s-profile plots use.  #
 ##############################################################
 
@@ -602,9 +722,21 @@ def _load_case_line(b0):
 def _set_scan_point_knobs(line, main_b_scale, orbit_knobs_by_ip,
                           k1s_knobs_by_ip):
     """Put the lattice in the state one scan point is evaluated in."""
+    # comp_b_scale = main_b_scale (not main_b_scale/2): each comp solenoid's
+    # own scale_b was already built (004a_build_and_check_solenoids.py,
+    # comp_scale_b = -main_bs_integral/comp_bs_integral_unscaled/2.0) so
+    # that the *two* of them (comp_left + comp_right) together cancel one
+    # main solenoid's integral at comp_b_scale=1 -- the /2 split between
+    # the pair is already baked in there, not something the scan-time knob
+    # needs to redo. Net integral (both linear in B0/current) is
+    # main_b_scale*main_bs_integral + comp_b_scale*(-main_bs_integral), so
+    # comp_b_scale must track main_b_scale 1:1 to keep it at zero; without
+    # this (comp_b_scale pinned at 1.0, as before) the residual imbalance
+    # grows with |main_b_scale - 1| -- a real, physical coupling driver on
+    # top of whatever the skew-quad correction was already fighting.
     set_lattice_knobs(
         line, with_solenoids=True, with_correctors=not _args.no_correctors,
-        main_b_scale=float(main_b_scale))
+        main_b_scale=float(main_b_scale), comp_b_scale=float(main_b_scale))
     if _args.no_correctors:
         # set_lattice_knobs(with_correctors=False) also turned off the
         # compensation solenoids and the doublet-quad rotation/tilt --
@@ -647,6 +779,11 @@ def run_field_case(b0):
             line, ip_name, lattice_json.name)
         for ip_name in IP_NAMES
     }
+    comp_knobs_by_ip = {
+        ip_name: (_comp_scale_knobs_for_ip(line, ip_name, lattice_json.name)
+                  if _args.comp_weight > 0 else None)
+        for ip_name in IP_NAMES
+    }
 
     main_range, comp_ranges, corrector_positions = _compute_marker_positions(
         table_before_cuts, IP_PLOT, b0)
@@ -677,6 +814,7 @@ def run_field_case(b0):
         dqy=float(getattr(tw_bare, 'dqy', np.nan)),
         c_minus=float(tw_bare.c_minus),
         **_chao_equilibrium_emittances(line),
+        **_nonlinear_chromaticity_scalars(line),
     )
     print(f'  bare ring: qx={baseline["qx"]:.5f} qy={baseline["qy"]:.5f} '
           f"dqx={baseline['dqx']:.3f} dqy={baseline['dqy']:.3f} "
@@ -686,6 +824,8 @@ def run_field_case(b0):
           f'ey={baseline["chao_eq_gemitt_y"]:.5e} '
           f'ez={baseline["chao_eq_gemitt_zeta"]:.5e} '
           f'U0={baseline["chao_energy_loss"] * 1e-6:.3f} MeV')
+    print(f"    2nd-order chromaticity: Q''x/2={baseline['d2qx']:.3f} "
+          f"Q''y/2={baseline['d2qy']:.3f}")
 
     for ip_name in IP_NAMES:
         line[f'on_sol_{ip_name}'] = 1
@@ -708,7 +848,8 @@ def run_field_case(b0):
                     _resolve_orbit_correction(
                         line, ip_name, orbit_knobs_by_ip[ip_name])
                 _resolve_coupling_correction(
-                    line, ip_name, k1s_knobs_by_ip[ip_name])
+                    line, ip_name, k1s_knobs_by_ip[ip_name],
+                    comp_knobs_by_ip[ip_name])
 
         k1s_values = {
             nn: float(line.vars[nn]._value)
@@ -723,7 +864,7 @@ def run_field_case(b0):
             points.append(dict(
                 main_b_scale=float(main_b_scale), tw=None, beam_sizes=None,
                 qx=np.nan, qy=np.nan, dqx=np.nan, dqy=np.nan, c_minus=np.nan,
-                k1s_values=k1s_values, **_CHAO_NANS))
+                k1s_values=k1s_values, **_CHAO_NANS, **_NL_CHROM_NANS))
             continue
 
         scalars = dict(
@@ -732,6 +873,7 @@ def run_field_case(b0):
             dqy=float(getattr(tw, 'dqy', np.nan)),
             c_minus=float(tw.c_minus),
             **_chao_equilibrium_emittances(line),
+            **_nonlinear_chromaticity_scalars(line),
         )
 
         if i == nominal_idx:
@@ -1118,6 +1260,11 @@ def main():
         cases,
         [('dqx', r"$\Delta Q'_x$", 1.0), ('dqy', r"$\Delta Q'_y$", 1.0)],
         'Linear chromaticity shift vs main_b_scale (relative to the bare ring)')
+    figs['nonlinear_chromaticity_vs_main_b_scale'] = _scalar_overlay_fig(
+        cases,
+        [('d2qx', r"$\Delta Q''_x/2$", 1.0), ('d2qy', r"$\Delta Q''_y/2$", 1.0)],
+        '2nd-order chromaticity shift vs main_b_scale (relative to the bare '
+        'ring)\nget_nonlinear_chromaticity, off-momentum 4D-twiss sweep')
     figs['c_minus_vs_main_b_scale'] = _scalar_overlay_fig(
         cases, [('c_minus', r'$\Delta C^-$', 1.0)],
         r'Coupling coefficient shift $\Delta C^-$ vs main_b_scale '
