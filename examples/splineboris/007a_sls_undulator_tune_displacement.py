@@ -471,6 +471,46 @@ def plot_case(data, place_label, model_label):
             ax.axvline(s_start, color='0.4', linestyle='--', linewidth=1)
             ax.axvline(s_end, color='0.4', linestyle='--', linewidth=1)
 
+    def legend_outside(ax):
+        # Anchor the legend to the top of the margin just outside the right
+        # edge of the axes, so it doesn't sit on top of the data. Figures
+        # using this get saved with bbox_inches='tight' and a
+        # subplots_adjust(right=...) so the legend stays on-canvas both on
+        # screen and in the PDF.
+        ax.legend(loc='upper left', bbox_to_anchor=(1.01, 1.0), fontsize=8)
+
+    def stack_boxes_under_legend(ax, boxes):
+        # Stack coefficient text boxes down the right margin, starting just
+        # below the legend and left-aligned with it. The legend's (and each
+        # box's) rendered size is only known once the figure has been laid
+        # out and drawn, hence the canvas.draw() calls -- so this must run
+        # *after* tight_layout()/subplots_adjust(), otherwise the measured
+        # geometry refers to an axes about to change size.
+        fig = ax.get_figure()
+        fig.canvas.draw()
+        to_axes = ax.transAxes.inverted()
+
+        def frame_bbox(artist):
+            # The drawn rounded frame, not the text inside it -- so boxes are
+            # spaced and aligned frame-to-frame, like the legend.
+            patch = artist.get_bbox_patch()
+            return (patch or artist).get_window_extent().transformed(to_axes)
+
+        legend_bbox = ax.get_legend().get_window_extent().transformed(to_axes)
+        y = legend_bbox.y0
+        for text, kwargs in boxes:
+            y -= 0.04
+            artist = ax.text(1.01, y, text, transform=ax.transAxes, **kwargs)
+            fig.canvas.draw()
+            # ax.text() anchors the *text*, while the legend's bbox_to_anchor
+            # anchors its *frame*, so at the same x the rounded box overhangs
+            # to the left of the legend by its padding. Measure that and
+            # shift x by the difference to line the two frames up.
+            artist.set_x(artist.get_position()[0]
+                         + (legend_bbox.x0 - frame_bbox(artist).x0))
+            fig.canvas.draw()
+            y = frame_bbox(artist).y0
+
     hor_off_list = data['hor_off_list']
     deltaqx_list = data['deltaqx_list']
     deltaqy_list = data['deltaqy_list']
@@ -576,25 +616,32 @@ def plot_case(data, place_label, model_label):
     print(f"[formula, perturbed beta] d(ΔQy)/dx         = {coef_qy_formula_pert[1]}")
     print(f"[formula, perturbed beta] ΔQy(0)            = {coef_qy_formula_pert[2]}")
 
+    # Coefficient boxes live outside the axes, stacked down the right margin
+    # underneath the legend (see stack_boxes_under_legend), so they don't sit
+    # on top of the data. Collected per-axes here and only placed once the
+    # figure has been laid out, since where they go depends on how tall the
+    # legend turns out to be.
     text_box_kwargs = dict(va='top', ha='left', fontsize=8, linespacing=1.4,
                             bbox=dict(boxstyle='round', fc='white', alpha=0.85, edgecolor='0.7'))
+    ax1_boxes = []
+    ax2_boxes = []
 
-    fig_tune_shift, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
+    fig_tune_shift, (ax1, ax2) = plt.subplots(2, 1, figsize=(9, 9), sharex=True)
     ax1.plot(hor_off_list, deltaqx_list, marker='o', color='tab:blue', label='Twiss')
     ax1.plot(hor_off_list, poly_qx(hor_off_list), linestyle='--', color='k', label='Quadratic fit')
     ax1.plot(hor_off_list, deltaqx_formula_list, marker='^', linestyle='none',
               color='tab:green', label=r'$\frac{1}{4\pi}\oint\delta K_1\,\beta_{x,0}\,ds$')
     ax1.plot(hor_off_list, deltaqx_formula_pert_list, marker='v', linestyle='none',
               color='tab:red', label=r'$\frac{1}{4\pi}\oint\delta K_1\,\beta_x\,ds$')
-    ax1.set_ylabel('Delta Qx')
+    ax1.set_ylabel(r'$\Delta Q_x$')
     ax1.set_title('Tune shift vs undulator horizontal offset')
     ax1.grid(True, alpha=0.3)
-    ax1.legend()
-    ax1.text(0.02, 0.95,
-              f'$\\frac{{1}}{{2}}\\frac{{d^2\\Delta Q_x}}{{dx^2}}$ = {coef_qx[0]:.4e}\n'
-              f'$\\frac{{d\\Delta Q_x}}{{dx}}$ = {coef_qx[1]:.4e}\n'
-              f'$\\Delta Q_x(0)$ = {coef_qx[2]:.4e}',
-              transform=ax1.transAxes, **text_box_kwargs)
+    legend_outside(ax1)
+    ax1_boxes.append((
+        f'$\\frac{{1}}{{2}}\\frac{{d^2\\Delta Q_x}}{{dx^2}}$ = {coef_qx[0]:.4e}\n'
+        f'$\\frac{{d\\Delta Q_x}}{{dx}}$ = {coef_qx[1]:.4e}\n'
+        f'$\\Delta Q_x(0)$ = {coef_qx[2]:.4e}',
+        text_box_kwargs))
 
     ax2.plot(hor_off_list, deltaqy_list, marker='s', color='tab:orange', label='Twiss')
     ax2.plot(hor_off_list, poly_qy(hor_off_list), linestyle='--', color='k', label='Quadratic fit')
@@ -603,40 +650,138 @@ def plot_case(data, place_label, model_label):
     ax2.plot(hor_off_list, deltaqy_formula_pert_list, marker='v', linestyle='none',
               color='tab:red', label=r'$\frac{1}{4\pi}\oint(-\delta K_1)\beta_y\,ds$')
     ax2.set_xlabel('Horizontal offset [m]')
-    ax2.set_ylabel('Delta Qy')
+    ax2.set_ylabel(r'$\Delta Q_y$')
     ax2.grid(True, alpha=0.3)
-    ax2.legend()
-    ax2.text(0.02, 0.95,
-              f'$\\frac{{1}}{{2}}\\frac{{d^2\\Delta Q_y}}{{dx^2}}$ = {coef_qy[0]:.4e}\n'
-              f'$\\frac{{d\\Delta Q_y}}{{dx}}$ = {coef_qy[1]:.4e}\n'
-              f'$\\Delta Q_y(0)$ = {coef_qy[2]:.4e}',
-              transform=ax2.transAxes, **text_box_kwargs)
+    legend_outside(ax2)
+    ax2_boxes.append((
+        f'$\\frac{{1}}{{2}}\\frac{{d^2\\Delta Q_y}}{{dx^2}}$ = {coef_qy[0]:.4e}\n'
+        f'$\\frac{{d\\Delta Q_y}}{{dx}}$ = {coef_qy[1]:.4e}\n'
+        f'$\\Delta Q_y(0)$ = {coef_qy[2]:.4e}',
+        text_box_kwargs))
 
     measured = load_measured_tune_shift()
+    fig_tune_shift_measured = None
     if measured is not None:
-        ax1.plot(measured['bump_amplitude_m'], measured['dtune_x_measured'],
-                  marker='d', linestyle='none', markersize=4,
-                  color='tab:purple', label='X11MA, gap=11.5mm (measured)')
-        ax1.legend()
+        meas_x = np.asarray(measured['bump_amplitude_m'], dtype=float)
+        meas_dqx = np.asarray(measured['dtune_x_measured'], dtype=float)
+        meas_dqy = np.asarray(measured['dtune_y_measured'], dtype=float)
 
-        ax2.plot(measured['bump_amplitude_m'], measured['dtune_y_measured'],
+        # Quadratic fit through the digitized measurement, same Taylor-
+        # coefficient convention as coef_qx/coef_qy above
+        # (coef[0]/[1]/[2] = (1/2) d²ΔQ/dx², dΔQ/dx, ΔQ(0)).
+        coef_qx_measured = np.polyfit(meas_x, meas_dqx, 2)
+        coef_qy_measured = np.polyfit(meas_x, meas_dqy, 2)
+        poly_qx_measured = np.poly1d(coef_qx_measured)
+        poly_qy_measured = np.poly1d(coef_qy_measured)
+
+        print(f"[measured] (1/2) d²(ΔQx)/dx² = {coef_qx_measured[0]}")
+        print(f"[measured] d(ΔQx)/dx         = {coef_qx_measured[1]}")
+        print(f"[measured] ΔQx(0)            = {coef_qx_measured[2]}")
+        print(f"[measured] (1/2) d²(ΔQy)/dx² = {coef_qy_measured[0]}")
+        print(f"[measured] d(ΔQy)/dx         = {coef_qy_measured[1]}")
+        print(f"[measured] ΔQy(0)            = {coef_qy_measured[2]}")
+
+        # The measured fit gets its own box, styled identically to the
+        # simulated one (text_box_kwargs) and stacked underneath it in the
+        # right margin -- its leading "measured fit:" line is what tells the
+        # two apart.
+
+        # --- overlay measured points + their quadratic fit on the main plot ---
+        ax1.plot(meas_x, meas_dqx,
                   marker='d', linestyle='none', markersize=4,
-                  color='tab:purple', label='X11MA, gap=11.5mm (measured)')
-        ax2.legend()
+                  color='tab:purple', label='Measurements')
+        ax1.plot(hor_off_list, poly_qx_measured(hor_off_list),
+                  linestyle='--', color='tab:red', label='Quadratic fit (measured)')
+        ax1_boxes.append((
+            f'measured fit:\n'
+            f'$\\frac{{1}}{{2}}\\frac{{d^2\\Delta Q_x}}{{dx^2}}$ = {coef_qx_measured[0]:.4e}\n'
+            f'$\\frac{{d\\Delta Q_x}}{{dx}}$ = {coef_qx_measured[1]:.4e}\n'
+            f'$\\Delta Q_x(0)$ = {coef_qx_measured[2]:.4e}',
+            text_box_kwargs))
+        legend_outside(ax1)
+
+        ax2.plot(meas_x, meas_dqy,
+                  marker='d', linestyle='none', markersize=4,
+                  color='tab:purple', label='Measurements')
+        ax2.plot(hor_off_list, poly_qy_measured(hor_off_list),
+                  linestyle='--', color='tab:red', label='Quadratic fit (measured)')
+        ax2_boxes.append((
+            f'measured fit:\n'
+            f'$\\frac{{1}}{{2}}\\frac{{d^2\\Delta Q_y}}{{dx^2}}$ = {coef_qy_measured[0]:.4e}\n'
+            f'$\\frac{{d\\Delta Q_y}}{{dx}}$ = {coef_qy_measured[1]:.4e}\n'
+            f'$\\Delta Q_y(0)$ = {coef_qy_measured[2]:.4e}',
+            text_box_kwargs))
+        legend_outside(ax2)
 
     fig_tune_shift.suptitle(case_label)
     fig_tune_shift.tight_layout()
+    fig_tune_shift.subplots_adjust(right=0.62)
+    # Only now that the axes geometry is final can the boxes be stacked
+    # under the legend (their placement depends on its rendered height).
+    stack_boxes_under_legend(ax1, ax1_boxes)
+    stack_boxes_under_legend(ax2, ax2_boxes)
 
-    # Save the 3 figures for this case, named
+    # --- standalone figure: measured tune data only + quadratic fit, on the
+    #     same vertical axis as the main tune-shift plot above ---
+    if measured is not None:
+        ylim_qx = ax1.get_ylim()
+        ylim_qy = ax2.get_ylim()
+
+        meas_x_dense = np.linspace(meas_x.min(), meas_x.max(), 200)
+
+        fig_tune_shift_measured, (ax1_m, ax2_m) = plt.subplots(
+            2, 1, figsize=(9, 9), sharex=True)
+
+        ax1_m.plot(meas_x, meas_dqx, marker='d', linestyle='none', markersize=5,
+                    color='tab:purple', label='Measurements')
+        ax1_m.plot(meas_x_dense, poly_qx_measured(meas_x_dense),
+                    linestyle='--', color='tab:red', label='Quadratic fit')
+        ax1_m.set_ylabel(r'$\Delta Q_x$')
+        ax1_m.set_ylim(ylim_qx)
+        ax1_m.set_title('Measured tune shift vs undulator horizontal offset')
+        ax1_m.grid(True, alpha=0.3)
+        legend_outside(ax1_m)
+        ax1_m_boxes = [(
+            f'$\\frac{{1}}{{2}}\\frac{{d^2\\Delta Q_x}}{{dx^2}}$ = {coef_qx_measured[0]:.4e}\n'
+            f'$\\frac{{d\\Delta Q_x}}{{dx}}$ = {coef_qx_measured[1]:.4e}\n'
+            f'$\\Delta Q_x(0)$ = {coef_qx_measured[2]:.4e}',
+            text_box_kwargs)]
+
+        ax2_m.plot(meas_x, meas_dqy, marker='d', linestyle='none', markersize=5,
+                    color='tab:purple', label='Measurements')
+        ax2_m.plot(meas_x_dense, poly_qy_measured(meas_x_dense),
+                    linestyle='--', color='tab:red', label='Quadratic fit')
+        ax2_m.set_xlabel('Horizontal offset [m]')
+        ax2_m.set_ylabel(r'$\Delta Q_y$')
+        ax2_m.set_ylim(ylim_qy)
+        ax2_m.grid(True, alpha=0.3)
+        legend_outside(ax2_m)
+        ax2_m_boxes = [(
+            f'$\\frac{{1}}{{2}}\\frac{{d^2\\Delta Q_y}}{{dx^2}}$ = {coef_qy_measured[0]:.4e}\n'
+            f'$\\frac{{d\\Delta Q_y}}{{dx}}$ = {coef_qy_measured[1]:.4e}\n'
+            f'$\\Delta Q_y(0)$ = {coef_qy_measured[2]:.4e}',
+            text_box_kwargs)]
+
+        fig_tune_shift_measured.suptitle(case_label)
+        fig_tune_shift_measured.tight_layout()
+        fig_tune_shift_measured.subplots_adjust(right=0.62)
+        stack_boxes_under_legend(ax1_m, ax1_m_boxes)
+        stack_boxes_under_legend(ax2_m, ax2_m_boxes)
+
+    # Save the figures for this case (3, or 4 when measured data is
+    # available), named
     # "<place_label>_<model_label>_<what the figure shows>.pdf".
     figures = [
         (fig_beta_diff, 'beta_beat'),
         (fig_beta_diff_coupled, 'beta_beat_coupled'),
         (fig_tune_shift, 'tune_shift'),
         ]
+    if fig_tune_shift_measured is not None:
+        figures.append((fig_tune_shift_measured, 'tune_shift_measured'))
     for fig, suffix in figures:
         out_path = OUT_DIR / f'{place_label}_{model_label}_{suffix}.pdf'
-        fig.savefig(out_path)
+        # bbox_inches='tight' so the out-of-axes legends aren't clipped.
+        fig.savefig(out_path, bbox_inches='tight')
         print(f"Saved {out_path}")
 
 
@@ -645,8 +790,8 @@ for place_label, wiggler_places in WIGGLER_CASES:
         case_data = get_case_data(place_label, wiggler_places, model_label)
         plot_case(case_data, place_label, model_label)
 
-# All 3*2*3 = 18 figures across every case (3 figures x 2 models x 3
-# placements) are kept open (not closed inside plot_case()) so they can all
-# be reviewed interactively here, in addition to having been saved as PDFs
-# above.
+# All figures across every case (3 or 4 figures -- the 4th only when
+# measured data is available -- x 2 models x 3 placements) are kept open
+# (not closed inside plot_case()) so they can all be reviewed interactively
+# here, in addition to having been saved as PDFs above.
 plt.show()
