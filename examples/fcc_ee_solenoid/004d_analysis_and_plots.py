@@ -4,6 +4,7 @@ import argparse
 import matplotlib.pyplot as plt
 import numpy as np
 import xtrack as xt
+from matplotlib.patches import Patch
 
 from solenoid_params import (
     COMP_SOLENOID_LENGTH,
@@ -420,8 +421,176 @@ axs4[-1].set_xlabel('s [m]')
 axs4[-1].set_xlim(-1400, 1400)
 fig4.subplots_adjust(hspace=0.3, top=0.92, bottom=0.1, left=0.14)
 
+##############################################################
+# beta_x/beta_y with and without solenoids, and the beta-beat #
+##############################################################
+
+# Extra elements highlighted with a green shaded span on the beta-comparison
+# figures below: two back-to-back pairs from the sdm1 family either side of
+# ipa, each sextupole 0.3 m long.
+#   sdm1l.6/.7  at s - s_ipa ~= -210.7 m
+#   sdm1r.0/.1  at s - s_ipa ~= +105.3 m -- these sit right at the exit of
+#               qd4r.0, where the vertical beta-beat peaks (see the max-beat
+#               print at the end of this script).
+# Both pairs are inside ipa's straight section but well outside the +-20 m IR
+# window the other figures use, which is why this figure is drawn at both
+# ranges (see BETA_COMPARISON_RANGES).
+SEXTUPOLES_TO_MARK = ['sdm1l.6', 'sdm1l.7', 'sdm1r.0', 'sdm1r.1']
+SEXTUPOLE_LEGEND_LABEL = 'sdm1l.6/7, sdm1r.0/1'
+
+
+def _element_s_spans(table, s_ip_ref, names):
+    """[(s_start, s_end), ...] for the named elements, shifted into the frame
+    zeroed at s_ip_ref -- same frame convention as _compute_marker_positions."""
+    return [
+        (float(table['s_start', nn]) - s_ip_ref,
+         float(table['s_end', nn]) - s_ip_ref)
+        for nn in names
+    ]
+
+
+SEXTUPOLE_S_SPANS = _element_s_spans(
+    table_before_cuts, table_before_cuts['s', IP_PLOT], SEXTUPOLES_TO_MARK)
+
+
+def _autoscale_y_to_xlim(ax, xlim, margin=0.1):
+    """Rescale ax's ylim to the data actually visible within xlim.
+
+    Must be called BEFORE the axvspan/axvline decoration: an axvline is a
+    Line2D with y-data [0, 1], which would otherwise be folded into the
+    min/max and flatten the panel (same helper, and the same gotcha, as
+    004f/004j -- see claude_notes/07_main_b_scale_scans.md).
+    """
+    log_scale = ax.get_yscale() == 'log'
+    y_min, y_max = np.inf, -np.inf
+    for line_obj in ax.get_lines():
+        xd = np.asarray(line_obj.get_xdata(), dtype=float)
+        yd = np.asarray(line_obj.get_ydata(), dtype=float)
+        if xd.size != yd.size:
+            continue
+        mask = (xd >= xlim[0]) & (xd <= xlim[1]) & np.isfinite(yd)
+        if log_scale:
+            mask &= yd > 0
+        if mask.any():
+            y_min = min(y_min, float(np.min(yd[mask])))
+            y_max = max(y_max, float(np.max(yd[mask])))
+    if not (np.isfinite(y_min) and np.isfinite(y_max)):
+        return
+    if log_scale:
+        # Generous factors rather than a fractional margin -- this is a
+        # decade-spanning axis, and the extra room keeps the legend clear.
+        ax.set_ylim(y_min / 5.0, y_max * 5.0)
+    else:
+        span = y_max - y_min
+        pad = margin * span if span > 0 else max(abs(y_max), 1.0) * margin
+        ax.set_ylim(y_min - pad, y_max + pad)
+
+
+def _mark_sextupoles(ax, spans):
+    """Shade the marked sextupoles green. Each is only 0.3 m long, i.e. well
+    under one pixel on the full-straight-section x-range, so a thin centre
+    line is drawn too -- without it the span is invisible when zoomed out."""
+    for s_start, s_end in spans:
+        ax.axvspan(s_start, s_end, color='green', alpha=0.25, linewidth=0)
+        ax.axvline(0.5 * (s_start + s_end), color='green', linewidth=0.8,
+                   alpha=0.6)
+
+
+# tw_off and tw are twissed on the same already-cut line (only knob *values*
+# change between them), so they share an element grid and tw_off.betx can be
+# subtracted from tw.betx directly. Guard anyway, and interpolate onto tw.s
+# if that ever stops holding.
+if np.array_equal(np.asarray(tw.name), np.asarray(tw_off.name)):
+    BETX_OFF, BETY_OFF = tw_off.betx, tw_off.bety
+else:
+    print('NOTE: solenoid-on/off twiss grids differ; interpolating for the '
+          'beta-beat.')
+    BETX_OFF = np.interp(tw.s, tw_off.s, tw_off.betx)
+    BETY_OFF = np.interp(tw.s, tw_off.s, tw_off.bety)
+
+# Relative beta-beat (the standard definition). For the raw difference in
+# metres instead, drop the division and the 100 and relabel the y-axis --
+# note a raw difference is dominated by wherever beta is largest, which over
+# a full straight section spans several orders of magnitude.
+BEAT_X = (tw.betx - BETX_OFF) / BETX_OFF * 100.0
+BEAT_Y = (tw.bety - BETY_OFF) / BETY_OFF * 100.0
+
+# (xlim, title suffix, mark the IR solenoid/quad annotations?)
+BETA_COMPARISON_RANGES = [
+    ((-20, 20), 'IR', True),
+    ((-1400, 1400), 'full straight section', False),
+]
+
+
+def _beta_comparison_fig(xlim, title_suffix, mark_ir_regions):
+    fig, axs = plt.subplots(2, 1, sharex=True, figsize=(7.0, 5.6))
+
+    # beta is the Edwards-Teng mode-1/mode-2 beta once the solenoids couple
+    # the planes, so "beta_x with solenoids" is really beta_{x1}.
+    axs[0].plot(tw.s, tw.betx, color='C0', label=r'$\beta_x$ (solenoids on)')
+    axs[0].plot(tw.s, tw.bety, color='C1', label=r'$\beta_y$ (solenoids on)')
+    axs[0].plot(tw.s, BETX_OFF, color='C0', linestyle='--',
+                label=r'$\beta_x$ (solenoids off)')
+    axs[0].plot(tw.s, BETY_OFF, color='C1', linestyle='--',
+                label=r'$\beta_y$ (solenoids off)')
+    axs[0].set_ylabel(r'$\beta_{x,y}$ [m]')
+    # beta spans ~1e-3 m at the IP to ~1e3 m in the straight -- log or the
+    # vertical beta is a flat line on the floor of the plot.
+    axs[0].set_yscale('log')
+    axs[0].set_title(
+        f'{IP_PLOT}: beta functions with/without solenoids '
+        f'({_args.b0:g} T) -- {title_suffix}')
+
+    axs[1].axhline(0.0, color='0.6', linewidth=0.8)
+    axs[1].plot(tw.s, BEAT_X, color='C0', label=r'$\Delta\beta_x/\beta_x$')
+    axs[1].plot(tw.s, BEAT_Y, color='C1', label=r'$\Delta\beta_y/\beta_y$')
+    axs[1].set_ylabel(r'$\Delta\beta/\beta$ [%]')
+    axs[1].set_xlabel('s [m]')
+
+    # xlim and the y-autoscale both have to happen before the decoration --
+    # see _autoscale_y_to_xlim. Without the autoscale the IR panel inherits
+    # the whole ring's beat range (the ~100 % beta_y spike ~100 m from the
+    # IP) and the IR structure is squashed to a flat line.
+    axs[1].set_xlim(*xlim)
+    for ax in axs:
+        _autoscale_y_to_xlim(ax, xlim)
+
+    for ax in axs:
+        ax.grid(True)
+        if mark_ir_regions:
+            _mark_solenoid_regions(
+                ax, MAIN_SOLENOID_S_RANGE, COMP_SOLENOID_S_RANGES,
+                CORRECTOR_QUAD_S_POSITIONS, DOUBLET_QUAD_S_POSITIONS)
+        else:
+            for s_pos in STRAIGHT_SECTION_S_RANGE:
+                ax.axvline(s_pos, color='black', linewidth=0.8, linestyle=':')
+        _mark_sextupoles(ax, SEXTUPOLE_S_SPANS)
+
+    sextupole_handle = Patch(
+        facecolor='green', alpha=0.25, label=SEXTUPOLE_LEGEND_LABEL)
+    axs[0].legend(
+        handles=axs[0].get_legend_handles_labels()[0] + [sextupole_handle],
+        loc='lower left', fontsize=8, ncol=2, framealpha=0.9)
+    axs[1].legend(loc='upper right', fontsize=8, framealpha=0.9)
+
+    fig.subplots_adjust(hspace=0.12, top=0.93, bottom=0.1, left=0.12)
+    return fig
+
+
+BETA_COMPARISON_FIGS = [
+    _beta_comparison_fig(*spec) for spec in BETA_COMPARISON_RANGES
+]
+
 print(f'Loaded {INPUT_LATTICE_JSON}')
 print(f'tw4d qx = {tw4d.qx:.12g}, qy = {tw4d.qy:.12g}')
 print(f'tw6d qx = {tw.qx:.12g}, qy = {tw.qy:.12g}, qs = {tw.qs:.12g}')
+
+_in_straight = (
+    (tw.s >= STRAIGHT_SECTION_S_RANGE[0])
+    & (tw.s <= STRAIGHT_SECTION_S_RANGE[1])
+)
+print(f'max |dbetx/betx| = {np.nanmax(np.abs(BEAT_X[_in_straight])):.4g} %, '
+      f'max |dbety/bety| = {np.nanmax(np.abs(BEAT_Y[_in_straight])):.4g} % '
+      f'(over {IP_PLOT}\'s straight section)')
 
 plt.show()
