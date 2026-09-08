@@ -219,13 +219,23 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   `004j_main_b_scale_suite.py` (combined 2 T + 3 T suite: emittance / tune
   / chromaticity / `C^-` vs `main_b_scale`, plus IR/straight β /
   coupled-β / dispersion / beam-size profiles + skew-corrector strengths;
-  plain skew-only unit-weight coupling re-solve).
+  plain skew-only unit-weight coupling re-solve). Also documents **which
+  knobs 004c/004f/004h/004j each vary** (the same ~84 skew + 24 orbit
+  knobs per IP in all four; only the solver settings and frozen-vs-raw
+  knob handling differ) and **what every line/shading on the 004j plots
+  means** — the grey dashed verticals on the IR figures mark the *orbit*
+  correctors, not the coupling skews, which is the easiest thing in this
+  study to misread.
 - `06_coupling_matching_convergence.md` — why `004f_comp_b_scale_scan.py`'s
   per-scan-point coupling re-solve (84 skew-quad vary knobs vs. 12 targets)
   is slow/sometimes fails to converge (ill-conditioned Jacobian, SVD
   diagnosis), the `004g_coupling_svd_diagnostic.py` tool built to inspect
   it, the `broyden=True` fix applied, and a ranked list of further options
-  for outright non-convergence (not yet applied). `004f`/`004g` themselves
+  for outright non-convergence (not yet applied). Note the `max_step` fix
+  recorded there as applied on 2026-09-03 was **backed out of 004j on
+  2026-09-05** in favour of a smaller finite-difference `step` + much
+  tighter tolerances — read that section's "Superseded 2026-09-05" note
+  before trusting the surrounding text. `004f`/`004g` themselves
   are not otherwise documented in this pipeline overview yet.
 
 Removed 2026-07-15: the `kill_higher_order_{upstream,downstream}_{ip}` knob
