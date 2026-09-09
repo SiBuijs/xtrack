@@ -36,6 +36,7 @@ import xtrack as xt
 
 from lattice_knobs import set_lattice_knobs
 from solenoid_params import (
+    BEND_MID_QUAD_PREFIX,
     MAIN_SOLENOID_B0,
     add_b0_argument,
     add_max_order_argument,
@@ -128,7 +129,10 @@ def _k1s_coupling_knobs_for_ip(table, ip_name):
             table.rows[name_start:ip_name], table.rows[ip_name:name_end]):
         for element_type, env_name in zip(
                 table_part.element_type, table_part.env_name):
-            if element_type == 'Quadrupole' and env_name not in quad_names:
+            if (element_type == 'Quadrupole'
+                    # skip the mid-bend trim quads -- see BEND_MID_QUAD_PREFIX
+                    and not env_name.startswith(BEND_MID_QUAD_PREFIX)
+                    and env_name not in quad_names):
                 quad_names.append(env_name)
     knob_names = [f'k1s_{nn}_sol_coupling_corr' for nn in quad_names]
     missing = [nn for nn in knob_names if nn not in line.vars]

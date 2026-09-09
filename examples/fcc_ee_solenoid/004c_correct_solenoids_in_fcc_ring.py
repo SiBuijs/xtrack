@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import xtrack as xt
 
 from solenoid_params import (
+    BEND_MID_QUAD_PREFIX,
     MAIN_SOLENOID_B0,
     add_b0_argument,
     add_max_order_argument,
@@ -235,9 +236,6 @@ config['ipj'] = {
 # survives those cycles.                                                     #
 ###############################################################################
 
-BEND_MID_QUAD_PREFIX = 'qbmid_'
-
-
 def bend_mid_quad_name(bend_name):
     """Element name of the trim quadrupole at the centre of `bend_name`."""
     return BEND_MID_QUAD_PREFIX + bend_name
@@ -301,7 +299,8 @@ for ip_name in IP_NAMES:
         # For the same reason the correctors get no skew (ksl[1]) handle: 004f-j
         # could not discover it, and would re-solve coupling with a smaller knob
         # set than the one used to build the lattice.
-        env.elements[mid_quad_name] = xt.Multipole(knl=[0.0, 0.0], length=0.0)
+        env.elements[mid_quad_name] = xt.Quadrupole(
+            length=0.0, knl=[0.0, 0.0])
         _mid_quad_places.append(env.place(
             mid_quad_name, at=0, from_=downstream_half,
             anchor='start', from_anchor='start'))
@@ -484,6 +483,8 @@ for ip_name in IP_NAMES:
                 table_part.element_type, table_part.env_name):
             if (
                     element_type == 'Quadrupole'
+                    # skip the mid-bend trim quads -- see BEND_MID_QUAD_PREFIX
+                    and not env_name.startswith(BEND_MID_QUAD_PREFIX)
                     and env_name not in k1s_quads_for_coupling_correction):
                 k1s_quads_for_coupling_correction.append(env_name)
 

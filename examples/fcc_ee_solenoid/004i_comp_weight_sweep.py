@@ -39,6 +39,7 @@ import xtrack as xt
 from aperture_study_io import PLOT_DIR as _BASE_PLOT_DIR
 from lattice_knobs import set_lattice_knobs
 from solenoid_params import (
+    BEND_MID_QUAD_PREFIX,
     COMP_SOLENOID_DISTANCE_FROM_IP,
     COMP_SOLENOID_LENGTH,
     MAIN_SOLENOID_B0,
@@ -146,7 +147,10 @@ _table = line.get_table()
 _quad_hosts = []
 for _tp in (_table.rows[NAME_START:IP_NAME], _table.rows[IP_NAME:NAME_END]):
     for _et, _en in zip(_tp.element_type, _tp.env_name):
-        if _et == 'Quadrupole' and _en not in _quad_hosts:
+        # skip the mid-bend trim quads -- see BEND_MID_QUAD_PREFIX
+        if (_et == 'Quadrupole'
+                and not _en.startswith(BEND_MID_QUAD_PREFIX)
+                and _en not in _quad_hosts):
             _quad_hosts.append(_en)
 
 K1S_KNOBS = [f'k1s_{nn}_sol_coupling_corr' for nn in _quad_hosts]
