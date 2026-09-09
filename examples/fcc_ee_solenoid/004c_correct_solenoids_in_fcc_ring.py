@@ -116,7 +116,9 @@ config['ipa'] = {
         'b0cl.3', 'b0bl.3', 'b0al.3',   # upstream, beam order
         'b1ra.0', 'b1rb.0', 'b1rc.0',   # downstream, beam order
     ],
-    'sext_for_optics_correction': ['sdm1l.6', 'sdm1r.0'],
+    # Downstream only -- the upstream partner (sdm1l.6) is not
+    # targeted; see the opt_optics targets below.
+    'sext_for_optics_correction': 'sdm1r.0',
 }
 config['ipd'] = {
     'quad_for_optics_correction': [
@@ -146,7 +148,9 @@ config['ipd'] = {
         'b0cl.0', 'b0bl.0', 'b0al.0',   # upstream, beam order
         'b1ra.1', 'b1rb.1', 'b1rc.1',   # downstream, beam order
     ],
-    'sext_for_optics_correction': ['sdm1l.0', 'sdm1r.2'],
+    # Downstream only -- the upstream partner (sdm1l.0) is not
+    # targeted; see the opt_optics targets below.
+    'sext_for_optics_correction': 'sdm1r.2',
 }
 config['ipg'] = {
     'quad_for_optics_correction': [
@@ -176,7 +180,9 @@ config['ipg'] = {
         'b0cl.1', 'b0bl.1', 'b0al.1',   # upstream, beam order
         'b1ra.2', 'b1rb.2', 'b1rc.2',   # downstream, beam order
     ],
-    'sext_for_optics_correction': ['sdm1l.2', 'sdm1r.4'],
+    # Downstream only -- the upstream partner (sdm1l.2) is not
+    # targeted; see the opt_optics targets below.
+    'sext_for_optics_correction': 'sdm1r.4',
 }
 config['ipj'] = {
     'quad_for_optics_correction': [
@@ -206,7 +212,9 @@ config['ipj'] = {
         'b0cl.2', 'b0bl.2', 'b0al.2',   # upstream, beam order
         'b1ra.3', 'b1rb.3', 'b1rc.3',   # downstream, beam order
     ],
-    'sext_for_optics_correction': ['sdm1l.4', 'sdm1r.6'],
+    # Downstream only -- the upstream partner (sdm1l.4) is not
+    # targeted; see the opt_optics targets below.
+    'sext_for_optics_correction': 'sdm1r.6',
 }
 
 
@@ -287,20 +295,19 @@ for ip_name in IP_NAMES:
                 '-- the requested cut probably coincided with an existing slice '
                 'boundary.')
         mid_quad_name = bend_mid_quad_name(bend_name)
-        # xt.Multipole, NOT xt.Quadrupole, deliberately: 004f/004g/004h/004i/004j
-        # all re-derive their coupling-corrector host list from the saved lattice
-        # by selecting element_type == 'Quadrupole' between the straight-section
-        # boundaries and then SystemExit if the matching k1s_*_sol_coupling_corr
-        # var is missing. A new Quadrupole here would be picked up as a skew host
-        # -- and a zero-length Quadrupole keeps k1s but yields ksl = 0, i.e. six
-        # exactly-null columns per IP injected into the already rank-deficient
-        # 84-knob coupling solve, plus a silent ordering dependency. A Multipole
-        # is invisible to all of those loops and matches this lattice's own thin
-        # corrector convention (hcor_*, vcor_*, oct1r.*, dec1r.* are zero-length
-        # Multipoles a couple of metres from sdm1r.0). Do not "fix" this back.
-        # For the same reason the correctors get no skew (ksl[1]) handle: 004f-j
-        # could not discover it, and would re-solve coupling with a smaller knob
-        # set than the one used to build the lattice.
+        # A real xt.Quadrupole, so that it shows up as a quadrupole (and not as
+        # a thin multipole with vertical/horizontal kick handles) in every
+        # get_table / plot of the saved lattice. The catch is that
+        # 004f/004g/004h/004i/004j all re-derive their coupling-corrector host
+        # list from the saved lattice by selecting element_type == 'Quadrupole'
+        # between the straight-section boundaries, then SystemExit if the
+        # matching k1s_*_sol_coupling_corr var is missing -- so these would be
+        # picked up as skew hosts. All five therefore skip names starting with
+        # BEND_MID_QUAD_PREFIX; if you add another such scan, skip them there
+        # too. Zero length also means k1/k1s are dead, so the strength goes on
+        # the integrated knl[1] and no skew handle is offered at all: 004f-j
+        # could not discover one, and would re-solve coupling with a smaller
+        # knob set than the one used to build the lattice.
         env.elements[mid_quad_name] = xt.Multipole(knl=[0.0, 0.0], length=0.0)
         _mid_quad_places.append(env.place(
             mid_quad_name, at=0, from_=downstream_half,
@@ -494,7 +501,7 @@ for ip_name in IP_NAMES:
         env[nn].k1s += env.ref[nn_knob]
         k1s_knobs.append(nn_knob)
 
-    sext_left, sext_right = config[ip_name]['sext_for_optics_correction']
+    sext_corr = config[ip_name]['sext_for_optics_correction']
 
     opt_optics = line.match_knob(
         knob_name=f'on_sol_optics_corr_{ip_name}',
@@ -510,10 +517,12 @@ for ip_name in IP_NAMES:
         # (bisection alpha=0 on 59 of 60 steps, no max_step clipping) and the
         # Jacobian is already converged -- sweeping the finite-difference step
         # below over 1e-6..1e-3 gives byte-identical results. What is left is
-        # conditioning: the Jacobian is full rank 20 but cond ~5.9e6, so after
-        # a fast phase (penalty 19.9 -> 0.33 in six steps) the remaining stiff
+        # conditioning: the Jacobian is full rank but ill-conditioned (cond
+        # ~5.9e6 measured while both sextupoles were still targeted, 1.23e6 at
+        # the start point now that only the downstream one is), so after a fast
+        # phase (penalty 19.9 -> 0.33 in six steps) the remaining stiff
         # direction only decays ~8 % per step. That direction is the boundary
-        # START_betx, not the sextupoles: bety at sext_right is converged to
+        # START_betx, not the sextupole: bety at sext_corr is converged to
         # six digits by step ~10 and does not move thereafter, while
         # START_betx keeps improving (1.0e-3 relative at 10 steps, 1.9e-4 at
         # 30, 1.8e-5 at 60). 30 halves the cost of the three opt_optics solves
@@ -557,18 +566,49 @@ for ip_name in IP_NAMES:
                 dpx=tw0['dpx', name_end],
                 tol=1e-8,
                 at=xt.END),
-            # Restore the full Twiss vector at the two sdm1 sextupoles. The
-            # boundary targets above leave a purely local beta-beat unpenalised;
-            # these pin the two places where it actually hurts. alfx/alfy are
-            # targeted as well as betx/bety because qd4r -- the measured peak of
-            # the bump -- sits only ~1.75 m upstream of sext_right, and the six
-            # mid-bend correctors are strongly non-local: pinning beta alone at
-            # one point does not forbid a large bump that happens to cross the
-            # right value there with the wrong slope, whereas pinning
-            # (beta, alfa) forces the whole span from the sextupole to the
-            # boundary to nominal. Only the first member of each contiguous
-            # sextupole pair is targeted -- the .0/.1 optics differ by ~4 %, so
-            # the second adds targets without adding information.
+            # Restore the full Twiss vector at the sdm1 sextupole downstream
+            # of the IP. The boundary targets above leave a purely local
+            # beta-beat unpenalised; this pins the one place where it actually
+            # hurts. alfx/alfy are targeted as well as betx/bety because qd4r
+            # -- the measured peak of the bump -- sits only ~1.75 m upstream of
+            # sext_corr, and the six mid-bend correctors are strongly
+            # non-local: pinning beta alone at one point does not forbid a
+            # large bump that happens to cross the right value there with the
+            # wrong slope, whereas pinning (beta, alfa) forces the whole span
+            # from the sextupole to the boundary to nominal. Only the first
+            # member of the contiguous sextupole pair is targeted -- the .0/.1
+            # optics differ by ~4 %, so the second adds targets without adding
+            # information.
+            #
+            # DOWNSTREAM ONLY, deliberately. The upstream partner (sdm1l.*) was
+            # targeted too at first, and it made things worse: the solenoid
+            # barely disturbs it (bety 6.485 -> 6.447, 0.6 %), so those four
+            # near-trivial constraints bought nothing while crowding the bottom
+            # of the Jacobian spectrum -- measured at the start point on ipa,
+            # dropping them takes the directions with sigma < 4 from four to
+            # two at unchanged condition number (1.23e6). A/B at 2 T on ipa,
+            # one opt_optics.solve(), bety at sdm1r.0 against a 1.471115 m
+            # nominal:
+            #
+            #   both sides targeted, 6 quads   1.505363
+            #   downstream only,     6 quads   1.472736   <- this file
+            #   both sides,          3 quads   1.480550
+            #   downstream only,     3 quads   1.486639
+            #
+            # The last two rows are why all six mid-bend quads are kept even
+            # though only the downstream sextupole is targeted: removing the
+            # three upstream ones costs an order of magnitude on the result.
+            # Note this is NOT because they do work at the optimum -- they
+            # converge to ~1e-6 against ~1e-3 for the downstream three, i.e.
+            # essentially unused -- nor because of start-point conditioning,
+            # which is identical with and without them (cond 1.23e6, same
+            # spectrum to four digits). The effect is on the descent path:
+            # dropping three columns changes the pseudo-inverse step direction
+            # at every iteration, and this solve does not reach a true optimum
+            # in its step budget (the stiff START_betx direction is still
+            # decaying ~8 %/step when it stops), so a different path ends at a
+            # different point. Keep them; they cost three knobs and no
+            # conditioning.
             #
             # tol is absolute in xtrack: 1e-5 at the boundaries is 2e-8 relative
             # on bety=514 m, while the same 1e-5 at sdm1r.0 (bety=1.47 m) is
@@ -580,30 +620,18 @@ for ip_name in IP_NAMES:
             # to three significant figures, so the solve is not sitting at a
             # weighted optimum -- it stops at a structural convergence limit of
             # this knob set. Adding the local targets costs some boundary
-            # precision either way (START_betx goes from ~1e-9 absolute in the
-            # unmodified script to ~2.8e-3, i.e. 1.8e-5 relative), which buys
-            # bety at sdm1r.0 going 2.865 m -> 1.471 m against a 1.471 m
-            # nominal. Measured at 2 T on ipa.
+            # precision (START_betx goes from ~1e-9 absolute in the unmodified
+            # script to ~2.8e-3, i.e. 1.8e-5 relative).
             xt.TargetSet(
-                betx=tw0['betx', sext_left],
-                bety=tw0['bety', sext_left],
+                betx=tw0['betx', sext_corr],
+                bety=tw0['bety', sext_corr],
                 tol=1e-5,
-                at=sext_left),
+                at=sext_corr),
             xt.TargetSet(
-                alfx=tw0['alfx', sext_left],
-                alfy=tw0['alfy', sext_left],
+                alfx=tw0['alfx', sext_corr],
+                alfy=tw0['alfy', sext_corr],
                 tol=1e-6,
-                at=sext_left),
-            xt.TargetSet(
-                betx=tw0['betx', sext_right],
-                bety=tw0['bety', sext_right],
-                tol=1e-5,
-                at=sext_right),
-            xt.TargetSet(
-                alfx=tw0['alfx', sext_right],
-                alfy=tw0['alfy', sext_right],
-                tol=1e-6,
-                at=sext_right),
+                at=sext_corr),
         ])
     # If the WARNING further down fires, escalate in this order before
     # restructuring anything: opt_optics.solve(rcond=1e-4) -> solve(rcond=1e-3,
