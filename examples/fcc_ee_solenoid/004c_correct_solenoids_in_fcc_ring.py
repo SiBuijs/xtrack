@@ -534,7 +534,7 @@ for ip_name in IP_NAMES:
         # target marginally outside tol before the iterate pass further down
         # gets to run, and solve()'s take_best keeps the best point either way.
         assert_within_tol=False,
-        vary=xt.VaryList(k1_knobs, step=1e-8),
+        vary=xt.VaryList(k1_knobs, step=1e-7),
         targets=[
             xt.TargetSet(
                 betx=tw0['betx', name_start],
