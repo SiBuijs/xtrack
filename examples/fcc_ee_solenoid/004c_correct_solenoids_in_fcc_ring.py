@@ -112,6 +112,11 @@ config['ipa'] = {
     'corr_2_left_on_quad': 'qd0bl.3',
     'corr_3_left_on_quad': 'qf1al.3',
     'corr_4_left_on_quad': 'qf1bl.3',
+    'bend_for_mid_quad_correction': [
+        'b0cl.3', 'b0bl.3', 'b0al.3',   # upstream, beam order
+        'b1ra.0', 'b1rb.0', 'b1rc.0',   # downstream, beam order
+    ],
+    'sext_for_optics_correction': ['sdm1l.6', 'sdm1r.0'],
 }
 config['ipd'] = {
     'quad_for_optics_correction': [
@@ -137,6 +142,11 @@ config['ipd'] = {
     'corr_2_left_on_quad': 'qd0bl.0',
     'corr_3_left_on_quad': 'qf1al.0',
     'corr_4_left_on_quad': 'qf1bl.0',
+    'bend_for_mid_quad_correction': [
+        'b0cl.0', 'b0bl.0', 'b0al.0',   # upstream, beam order
+        'b1ra.1', 'b1rb.1', 'b1rc.1',   # downstream, beam order
+    ],
+    'sext_for_optics_correction': ['sdm1l.0', 'sdm1r.2'],
 }
 config['ipg'] = {
     'quad_for_optics_correction': [
@@ -162,6 +172,11 @@ config['ipg'] = {
     'corr_2_left_on_quad': 'qd0bl.1',
     'corr_3_left_on_quad': 'qf1al.1',
     'corr_4_left_on_quad': 'qf1bl.1',
+    'bend_for_mid_quad_correction': [
+        'b0cl.1', 'b0bl.1', 'b0al.1',   # upstream, beam order
+        'b1ra.2', 'b1rb.2', 'b1rc.2',   # downstream, beam order
+    ],
+    'sext_for_optics_correction': ['sdm1l.2', 'sdm1r.4'],
 }
 config['ipj'] = {
     'quad_for_optics_correction': [
@@ -187,8 +202,114 @@ config['ipj'] = {
     'corr_2_left_on_quad': 'qd0bl.2',
     'corr_3_left_on_quad': 'qf1al.2',
     'corr_4_left_on_quad': 'qf1bl.2',
+    'bend_for_mid_quad_correction': [
+        'b0cl.2', 'b0bl.2', 'b0al.2',   # upstream, beam order
+        'b1ra.3', 'b1rb.3', 'b1rc.3',   # downstream, beam order
+    ],
+    'sext_for_optics_correction': ['sdm1l.4', 'sdm1r.6'],
 }
 
+
+###############################################################################
+# Mid-bend trim quadrupoles                                                   #
+#                                                                             #
+# opt_optics below constrains the optics only at the two straight-section     #
+# boundary markers, ~1360 m either side of the IP, so a purely local          #
+# beta-beat in between is unpenalised. With the detector solenoid on exactly  #
+# such a bump appears downstream of every IP: bety at sdm1r.0 goes 1.47 m     #
+# (bare) -> 2.87 m (2 T) -> 310 m (3 T), peaking at the b1rc exit / qd4r and  #
+# recovering by qd6r, while the upstream side (sdm1l.6) is untouched. That    #
+# ~200x vertical beta sits on a chromatic sextupole and is the suspected      #
+# driver of the second-order chromaticity.                                    #
+#                                                                             #
+# To give the optics match local handles inside that region, each of the six  #
+# bends framing the IP (config[ip]['bend_for_mid_quad_correction']) is cut in #
+# half here and a zero-length trim quadrupole is placed at the cut. The       #
+# correctors are wired into opt_optics' vary list further down, so they are   #
+# driven by on_sol_optics_corr_{ip} and are exactly zero whenever the         #
+# corrections are switched off.                                              #
+#                                                                             #
+# Done ONCE, up front: cut_at_s() and the s_center lookups work in the        #
+# current s frame, and the per-IP loop below re-cycles the line (which        #
+# re-bases s) on every pass. Everything after this section is name-based and  #
+# survives those cycles.                                                     #
+###############################################################################
+
+BEND_MID_QUAD_PREFIX = 'qbmid_'
+
+
+def bend_mid_quad_name(bend_name):
+    """Element name of the trim quadrupole at the centre of `bend_name`."""
+    return BEND_MID_QUAD_PREFIX + bend_name
+
+
+_table_before_mid_quad_cuts = line.get_table()
+_s_mid_bend_cuts = []
+for ip_name in IP_NAMES:
+    for bend_name in config[ip_name]['bend_for_mid_quad_correction']:
+        if bend_name not in _table_before_mid_quad_cuts.name:
+            raise SystemExit(
+                f'{INPUT_LATTICE_JSON.name} has no element {bend_name!r} -- the '
+                'near-IP bend naming changed; update '
+                "config[...]['bend_for_mid_quad_correction'].")
+        element_type = _table_before_mid_quad_cuts['element_type', bend_name]
+        if element_type != 'RBend':
+            raise SystemExit(
+                f'{bend_name!r} is a {element_type!r}, not an unsliced RBend -- '
+                'the mid-bend trim quads assume the bends arrive thick and '
+                'unsliced from 004b_install_solenoids_in_fcc_ring.py.')
+        s_start = _table_before_mid_quad_cuts['s_start', bend_name]
+        s_end = _table_before_mid_quad_cuts['s_end', bend_name]
+        if not s_end > s_start:
+            raise SystemExit(
+                f'{bend_name!r} spans the line start (s_start={s_start}, '
+                f's_end={s_end}) -- cycle the line away from it before cutting.')
+        # s_center is exactly (s_start + s_end) / 2. For an RBend the table s is
+        # the arc length, so this is the true geometric midpoint, i.e. half the
+        # bend angle either side.
+        _s_mid_bend_cuts.append(
+            _table_before_mid_quad_cuts['s_center', bend_name])
+
+# cut_at_s advances a single iterator over `s` in lockstep with the elements
+# (see Line._elements_intersecting_s), so `s` has to be ascending or cuts are
+# silently dropped.
+line.cut_at_s(sorted(_s_mid_bend_cuts))
+
+# One batched insert: line.insert() rebuilds the whole ~30k-element line on
+# every call (~2.3 s), so 24 separate calls would cost ~55 s instead of ~2.3 s.
+_mid_quad_places = []
+for ip_name in IP_NAMES:
+    for bend_name in config[ip_name]['bend_for_mid_quad_correction']:
+        downstream_half = f'{bend_name}..1'
+        if downstream_half not in line.element_names:
+            raise SystemExit(
+                f'cut_at_s did not split {bend_name!r} (no {downstream_half!r}) '
+                '-- the requested cut probably coincided with an existing slice '
+                'boundary.')
+        mid_quad_name = bend_mid_quad_name(bend_name)
+        # xt.Multipole, NOT xt.Quadrupole, deliberately: 004f/004g/004h/004i/004j
+        # all re-derive their coupling-corrector host list from the saved lattice
+        # by selecting element_type == 'Quadrupole' between the straight-section
+        # boundaries and then SystemExit if the matching k1s_*_sol_coupling_corr
+        # var is missing. A new Quadrupole here would be picked up as a skew host
+        # -- and a zero-length Quadrupole keeps k1s but yields ksl = 0, i.e. six
+        # exactly-null columns per IP injected into the already rank-deficient
+        # 84-knob coupling solve, plus a silent ordering dependency. A Multipole
+        # is invisible to all of those loops and matches this lattice's own thin
+        # corrector convention (hcor_*, vcor_*, oct1r.*, dec1r.* are zero-length
+        # Multipoles a couple of metres from sdm1r.0). Do not "fix" this back.
+        # For the same reason the correctors get no skew (ksl[1]) handle: 004f-j
+        # could not discover it, and would re-solve coupling with a smaller knob
+        # set than the one used to build the lattice.
+        env.elements[mid_quad_name] = xt.Multipole(knl=[0.0, 0.0], length=0.0)
+        _mid_quad_places.append(env.place(
+            mid_quad_name, at=0, from_=downstream_half,
+            anchor='start', from_anchor='start'))
+
+line.insert(_mid_quad_places)
+print(f'Installed {len(_mid_quad_places)} mid-bend trim quadrupoles '
+      f'({len(IP_NAMES)} IPs x '
+      f'{len(config[IP_NAMES[0]]["bend_for_mid_quad_correction"])} bends)')
 
 ################################
 # Build one correction per IP  #
@@ -333,6 +454,21 @@ for ip_name in IP_NAMES:
         env[nn].k1 += env.ref[nn_knob]
         k1_knobs.append(nn_knob)
 
+    # Mid-bend trim quads (installed above the per-IP loop). These are
+    # zero-length, so the strength has to go on the integrated knl[1]; k1 is
+    # dead at zero length -- same reasoning as
+    # lattice_knobs.install_extra_sextupole. Units therefore differ from the
+    # trims above (k1l [1/m] rather than k1 [1/m^2]), but over a 25-60 m bend a
+    # k1l of 1e-6 is a distributed k1 of ~2-4e-8, so the shared step=1e-6 in the
+    # VaryList below is a comparable perturbation for both families. Each bend
+    # belongs to exactly one IP, so there is no cross-IP double-attachment.
+    for bend_name in config[ip_name]['bend_for_mid_quad_correction']:
+        nn = bend_mid_quad_name(bend_name)
+        nn_knob = f'k1_{nn}_sol_corr'
+        env[nn_knob] = 0
+        env[nn].knl[1] += env.ref[nn_knob]
+        k1_knobs.append(nn_knob)
+
     name_start = f'end_ds_start_straight_{ip_name}'
     name_end = f'end_straight_start_ds_{ip_name}'
 
@@ -358,6 +494,8 @@ for ip_name in IP_NAMES:
         env[nn].k1s += env.ref[nn_knob]
         k1s_knobs.append(nn_knob)
 
+    sext_left, sext_right = config[ip_name]['sext_for_optics_correction']
+
     opt_optics = line.match_knob(
         knob_name=f'on_sol_optics_corr_{ip_name}',
         run=False,
@@ -366,6 +504,14 @@ for ip_name in IP_NAMES:
         init_at=ip_name,
         start=name_start,
         end=name_end,
+        # 30 vary knobs (24 quad trims + 6 mid-bend trims) against 20 targets,
+        # and at 3 T the match has to unwind a ~200x vertical beta error at
+        # sext_right, so give it more Newton steps than the default 20.
+        n_steps_max=60,
+        # Same reasoning as opt_coupling below: the first solve() can leave a
+        # target marginally outside tol before the iterate pass further down
+        # gets to run, and solve()'s take_best keeps the best point either way.
+        assert_within_tol=False,
         vary=xt.VaryList(k1_knobs, step=1e-6),
         targets=[
             xt.TargetSet(
@@ -398,7 +544,59 @@ for ip_name in IP_NAMES:
                 dpx=tw0['dpx', name_end],
                 tol=1e-8,
                 at=xt.END),
+            # Restore the full Twiss vector at the two sdm1 sextupoles. The
+            # boundary targets above leave a purely local beta-beat unpenalised;
+            # these pin the two places where it actually hurts. alfx/alfy are
+            # targeted as well as betx/bety because qd4r -- the measured peak of
+            # the bump -- sits only ~1.75 m upstream of sext_right, and the six
+            # mid-bend correctors are strongly non-local: pinning beta alone at
+            # one point does not forbid a large bump that happens to cross the
+            # right value there with the wrong slope, whereas pinning
+            # (beta, alfa) forces the whole span from the sextupole to the
+            # boundary to nominal. Only the first member of each contiguous
+            # sextupole pair is targeted -- the .0/.1 optics differ by ~4 %, so
+            # the second adds targets without adding information.
+            #
+            # tol is absolute in xtrack: 1e-5 at the boundaries is 2e-8 relative
+            # on bety=514 m, while the same 1e-5 at sdm1r.0 (bety=1.47 m) is
+            # 7e-6 relative, i.e. the new targets are deliberately looser in
+            # relative terms than the ones that already converge.
+            #
+            # No explicit weights: a weight on the sextupole beta targets was
+            # tried at 1, 10 and 100 and the converged residues were identical
+            # to three significant figures, so the solve is not sitting at a
+            # weighted optimum -- it stops at a structural convergence limit of
+            # this knob set. Adding the local targets costs some boundary
+            # precision either way (START_betx goes from ~1e-9 absolute in the
+            # unmodified script to ~2.8e-3, i.e. 1.8e-5 relative), which buys
+            # bety at sdm1r.0 going 2.865 m -> 1.471 m against a 1.471 m
+            # nominal. Measured at 2 T on ipa.
+            xt.TargetSet(
+                betx=tw0['betx', sext_left],
+                bety=tw0['bety', sext_left],
+                tol=1e-5,
+                at=sext_left),
+            xt.TargetSet(
+                alfx=tw0['alfx', sext_left],
+                alfy=tw0['alfy', sext_left],
+                tol=1e-6,
+                at=sext_left),
+            xt.TargetSet(
+                betx=tw0['betx', sext_right],
+                bety=tw0['bety', sext_right],
+                tol=1e-5,
+                at=sext_right),
+            xt.TargetSet(
+                alfx=tw0['alfx', sext_right],
+                alfy=tw0['alfy', sext_right],
+                tol=1e-6,
+                at=sext_right),
         ])
+    # If the WARNING further down fires, escalate in this order before
+    # restructuring anything: opt_optics.solve(rcond=1e-4) -> solve(rcond=1e-3,
+    # broyden=True) (what 004h already uses for its coupling re-fit) -> relax
+    # the two sextupole tolerances above to 1e-4 (beta) / 1e-5 (alfa) -> only
+    # then a separate knob or a two-stage match.
     opt_optics.solve()
 
 
@@ -448,6 +646,12 @@ for ip_name in IP_NAMES:
     opt_coupling.solve(rcond=3e-3)
     opt_orbit.solve()
     opt_optics.solve()
+
+    _optics_status = opt_optics.target_status(ret=True)
+    if not all(_optics_status.tol_met):
+        print(f'WARNING: on_sol_optics_corr_{ip_name} did not fully '
+              f'converge to tolerance; using best point found.')
+        opt_optics.target_mismatch()
 
     _coupling_status = opt_coupling.target_status(ret=True)
     if not all(_coupling_status.tol_met):
