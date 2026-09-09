@@ -92,6 +92,18 @@ MAIN_SOLENOID_HALF_LENGTH = half_length_for_b0()
 MAIN_SOLENOID_CORRECTOR_DS_START = corrector_ds_start_for_b0()
 
 
+# Name prefix of the zero-length trim quadrupoles that
+# 004c_correct_solenoids_in_fcc_ring.py installs at the centre of each of the
+# six bends framing an IP (see its "Mid-bend trim quadrupoles" section). They
+# are xt.Quadrupole, so the element_type == 'Quadrupole' scans that 004c and
+# 004f-004j use to discover coupling-corrector host quads would otherwise pick
+# them up. A zero-length Quadrupole keeps k1s but yields ksl = 0, so each one
+# would be an exactly-dead skew knob padding the ~84-knob coupling solve and
+# adding a spurious exact zero to 004g's singular-value spectrum. Every one of
+# those scans therefore filters this prefix out.
+BEND_MID_QUAD_PREFIX = 'qbmid_'
+
+
 def field_tag(b0: float = MAIN_SOLENOID_B0) -> str:
     """Filename-safe tag for a main-solenoid field strength, e.g. 3.0 -> '3T'."""
     text = f"{b0:g}".replace(".", "p").replace("-", "m")
