@@ -504,10 +504,23 @@ for ip_name in IP_NAMES:
         init_at=ip_name,
         start=name_start,
         end=name_end,
-        # 30 vary knobs (24 quad trims + 6 mid-bend trims) against 20 targets,
-        # and at 3 T the match has to unwind a ~200x vertical beta error at
-        # sext_right, so give it more Newton steps than the default 20.
-        n_steps_max=60,
+        # 30 vary knobs (24 quad trims + 6 mid-bend trims) against 20 targets.
+        # Slightly above the default 20, chosen from a measured convergence
+        # trace (2 T, ipa): the solve takes full Newton steps throughout
+        # (bisection alpha=0 on 59 of 60 steps, no max_step clipping) and the
+        # Jacobian is already converged -- sweeping the finite-difference step
+        # below over 1e-6..1e-3 gives byte-identical results. What is left is
+        # conditioning: the Jacobian is full rank 20 but cond ~5.9e6, so after
+        # a fast phase (penalty 19.9 -> 0.33 in six steps) the remaining stiff
+        # direction only decays ~8 % per step. That direction is the boundary
+        # START_betx, not the sextupoles: bety at sext_right is converged to
+        # six digits by step ~10 and does not move thereafter, while
+        # START_betx keeps improving (1.0e-3 relative at 10 steps, 1.9e-4 at
+        # 30, 1.8e-5 at 60). 30 halves the cost of the three opt_optics solves
+        # per IP versus 60 with no change to the quantity this correction
+        # exists to fix. Raise it again if the 3 T case (a 310 m bump rather
+        # than 2.9 m) needs a longer fast phase -- that has not been measured.
+        n_steps_max=30,
         # Same reasoning as opt_coupling below: the first solve() can leave a
         # target marginally outside tol before the iterate pass further down
         # gets to run, and solve()'s take_best keeps the best point either way.
