@@ -1,5 +1,6 @@
 from pathlib import Path
 import argparse
+import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -33,6 +34,15 @@ parser.add_argument(
          'the output corrected lattice filenames (e.g. "mainscale"). Must '
          'match the --output-tag passed to 004b_install_solenoids_in_fcc_'
          'ring.py. Empty (default) keeps the standard filenames.')
+parser.add_argument(
+    '--no-chromaticity', action='store_true',
+    help='Skip the second-order chromaticity report before/after correction. '
+         'Each report costs npoints+1 full-ring 4D twisses, so three reports '
+         'are ~66 extra twisses.')
+parser.add_argument(
+    '--chromaticity-points', type=int, default=21, metavar='N',
+    help='Number of off-momentum points in the chromaticity fit '
+         '(default: 21, matching 004j).')
 args = parser.parse_args()
 
 FIELD_TAG = field_tag(args.b0)
@@ -56,6 +66,41 @@ INPUT_LATTICE_JSON = HERE / _MODEL_LATTICE_PATHS[args.model][0]
 OUTPUT_LATTICE_JSON = HERE / _MODEL_LATTICE_PATHS[args.model][1]
 
 IP_NAMES = ['ipa', 'ipd', 'ipg', 'ipj']
+
+# get_nonlinear_chromaticity lives in the sibling nonlinear_tunes example, not
+# in xtrack proper. Same import idiom and same function as 004j, so the d2qx /
+# d2qy printed here are directly comparable with 004j's scan columns.
+sys.path.insert(0, str(HERE.parent / 'nonlinear_tunes'))
+from detuning import get_nonlinear_chromaticity  # noqa: E402
+
+
+def report_nonlinear_chromaticity(line, label):
+    """Print Q', Q'' for the ring in its current knob state.
+
+    The suspected payoff of the whole local-optics correction is the
+    second-order chromaticity, so it is measured directly rather than inferred
+    from the beta bump. Uses the order=2 fit from detuning.py, whose
+    q{x,y}_derivatives[n] is already divided by n! -- so index 1 is Q' and
+    index 2 is Q''/2, exactly what 004j records as d2qx/d2qy.
+
+    Off-momentum twisses need a closed orbit, which the solenoid-on /
+    correction-off state does not have, so a failure is reported rather than
+    raised.
+    """
+    if args.no_chromaticity:
+        return None
+    try:
+        chrom = get_nonlinear_chromaticity(
+            line, npoints=args.chromaticity_points, order=2)
+    except Exception as exc:  # noqa: BLE001 -- off-momentum twiss can fail
+        print(f'  {label:38s} chromaticity unavailable ({type(exc).__name__}: '
+              f'{exc})')
+        return None
+    dqx, dqy = float(chrom.qx_derivatives[1]), float(chrom.qy_derivatives[1])
+    d2qx, d2qy = float(chrom.qx_derivatives[2]), float(chrom.qy_derivatives[2])
+    print(f"  {label:38s} Q'x={dqx:11.4f}  Q'y={dqy:11.4f}   "
+          f"d2qx={d2qx:13.4f}  d2qy={d2qy:13.4f}")
+    return dict(dqx=dqx, dqy=dqy, d2qx=d2qx, d2qy=d2qy)
 
 
 def measure_ksol_l_main_solenoid(line, env, ip_name):
@@ -796,11 +841,41 @@ for ip_name in IP_NAMES:
 
 tw_off = line.twiss4d(strengths=True, zero_at='ipg')
 
+# Second-order chromaticity before/after the correction. Ring-level rather
+# than per-IP: the intermediate states inside the loop (one IP's solenoid on,
+# its correction not yet generated) have no closed orbit, so an off-momentum
+# twiss sweep cannot be run there.
+if not args.no_chromaticity:
+    print()
+    print(f'--- Non-linear chromaticity '
+          f'({args.chromaticity_points}-point delta sweep, order 2) ---')
+chrom_off = report_nonlinear_chromaticity(
+    line, 'BEFORE: all solenoids off')
+
+# Solenoids on, corrections off. Expected to have no closed orbit at 3 T; the
+# report says so rather than raising, and it is the reference that shows how
+# much of the chromaticity change is the solenoid and how much is the
+# correction.
+for ip_name in IP_NAMES:
+    line[f'on_sol_{ip_name}'] = 1
+    line[f'on_sol_corr_{ip_name}'] = 0
+
+chrom_on_uncorr = report_nonlinear_chromaticity(
+    line, 'solenoids on, corrections OFF')
+
 for ip_name in IP_NAMES:
     line[f'on_sol_{ip_name}'] = 1
     line[f'on_sol_corr_{ip_name}'] = 1
 
 tw_on_corr = line.twiss4d(strengths=True, zero_at='ipg')
+
+chrom_on_corr = report_nonlinear_chromaticity(
+    line, 'AFTER:  solenoids on, corrections on')
+
+if chrom_off is not None and chrom_on_corr is not None:
+    print(f'  {"change (AFTER - BEFORE)":38s} '
+          f'd(d2qx)={chrom_on_corr["d2qx"] - chrom_off["d2qx"]:+13.4f}  '
+          f'd(d2qy)={chrom_on_corr["d2qy"] - chrom_off["d2qy"]:+13.4f}')
 
 env.to_json(OUTPUT_LATTICE_JSON)
 print(f'Wrote {OUTPUT_LATTICE_JSON}')
