@@ -2,6 +2,7 @@ from pathlib import Path
 import argparse
 
 import matplotlib.pyplot as plt
+import numpy as np
 import xtrack as xt
 
 from solenoid_params import (
@@ -326,6 +327,45 @@ for ip_name in IP_NAMES:
     line[f'on_sol_{ip_name}'] = 0
     line[f'on_comp_sol_{ip_name}'] = 0
 
+def solve_and_report(opt, label, **solve_kwargs):
+    """Run ``opt.solve(**solve_kwargs)`` with a banner saying what is matched.
+
+    xdeps only prints ``Optimize - start/end penalty``, which makes a log with
+    eight solves per IP impossible to attribute. This wraps each solve in a
+    header naming the knob, the matching range and the pass number, and
+    follows it with an explicit OK/INCOMPLETE verdict plus the mismatching
+    targets, so a stalled solve is identifiable from the log alone.
+    """
+    print()
+    print('=' * 78)
+    print(f'MATCHING: {label}')
+    print(f'    knob    : {opt.knob_name}')
+    print(f'    vary    : {len(opt.vary)} knobs, {len(opt.targets)} targets')
+    if solve_kwargs:
+        print(f'    solve   : {solve_kwargs}')
+    print('=' * 78)
+
+    try:
+        opt.solve(**solve_kwargs)
+    except Exception:
+        print(f'MATCH FAILED (exception raised): {label}')
+        print('    target state below is the restored start point '
+              '(restore_if_fail=True):')
+        opt.target_mismatch()
+        raise
+
+    tt = opt.target_status(ret=True)
+    tol_met = np.asarray(tt.tol_met, dtype=bool)
+    n_bad = int((~tol_met).sum())
+    if n_bad:
+        print(f'MATCH INCOMPLETE: {label} -- {n_bad}/{len(tol_met)} targets '
+              'outside tolerance:')
+        opt.target_mismatch()
+    else:
+        print(f'MATCH OK: {label} -- all {len(tol_met)} targets within '
+              'tolerance.')
+
+
 optimizers = {}
 for ip_name in IP_NAMES:
 
@@ -418,8 +458,12 @@ for ip_name in IP_NAMES:
         env.ref[f'acbv6_sol_left_{ip_name}'])
 
     # Match orbit and vertical dispersion across the solenoid region.
+    label_orbit = (f'{ip_name} ORBIT + vertical dispersion '
+                   f'(x/px/y/py/dy/dpy=0 at both ends of '
+                   f'dy_match_l/r_{ip_name}, 24 orbit correctors)')
     opt_orbit = line.match_knob(
         knob_name=f'on_sol_orbit_corr_{ip_name}',
+        name=f'{ip_name}/orbit',
         run=False,
         betx=tw0['betx', ip_name],
         bety=tw0['bety', ip_name],
@@ -444,7 +488,7 @@ for ip_name in IP_NAMES:
             xt.TargetSet(x=0, px=0, y=0, py=0, dy=0, dpy=0, at=xt.END),
             xt.TargetSet(x=0, px=0, y=0, py=0, dy=0, dpy=0, at=xt.START),
         ])
-    opt_orbit.solve()
+    solve_and_report(opt_orbit, label_orbit + ' [pass 1/3]')
 
     two = line.twiss(
         strengths=True,
@@ -503,8 +547,13 @@ for ip_name in IP_NAMES:
 
     sext_corr = config[ip_name]['sext_for_optics_correction']
 
+    label_optics = (f'{ip_name} OPTICS + horizontal dispersion '
+                    f'(betx/bety/alfx/alfy/dx/dpx at {name_start} and '
+                    f'{name_end}, plus betx/bety/alfx/alfy at the '
+                    f'sextupole {sext_corr}; normal-quad + mid-bend trims)')
     opt_optics = line.match_knob(
         knob_name=f'on_sol_optics_corr_{ip_name}',
+        name=f'{ip_name}/optics',
         run=False,
         betx=tw0['betx', ip_name],
         bety=tw0['bety', ip_name],
@@ -638,14 +687,18 @@ for ip_name in IP_NAMES:
     # broyden=True) (what 004h already uses for its coupling re-fit) -> relax
     # the two sextupole tolerances above to 1e-4 (beta) / 1e-5 (alfa) -> only
     # then a separate knob or a two-stage match.
-    opt_optics.solve()
+    solve_and_report(opt_optics, label_optics + ' [pass 1/3]')
 
 
 
     # Try an additional correction of linear coupling and vertical dispersion
     # at the straight-section edges using the skew quadrupole knobs.
+    label_coupling = (f'{ip_name} COUPLING + vertical dispersion '
+                      f'(betx2/bety1/alfx2/alfy1/dy/dpy=0 at {name_start} '
+                      f'and {name_end}; skew-quad trims)')
     opt_coupling = line.match_knob(
         knob_name=f'on_sol_coupling_corr_{ip_name}',
+        name=f'{ip_name}/coupling',
         run=False,
         betx=tw0['betx', ip_name],
         bety=tw0['bety', ip_name],
@@ -679,26 +732,35 @@ for ip_name in IP_NAMES:
     # pseudo-inverse chases numerically-noisy near-null directions and the
     # solve stalls/oscillates instead of converging (seen after the main
     # solenoid was raised to 3 T). Truncating small singular values fixes it.
-    opt_coupling.solve(rcond=3e-3)
+    solve_and_report(opt_coupling, label_coupling + ' [pass 1/2]', rcond=3e-3)
 
     # Iterate to improve consistency of orbit and optics corrections.
-    opt_orbit.solve()
-    opt_optics.solve()
-    opt_coupling.solve(rcond=3e-3)
-    opt_orbit.solve()
-    opt_optics.solve()
+    solve_and_report(opt_orbit, label_orbit + ' [pass 2/3]')
+    solve_and_report(opt_optics, label_optics + ' [pass 2/3]')
+    solve_and_report(opt_coupling, label_coupling + ' [pass 2/2]', rcond=3e-3)
+    solve_and_report(opt_orbit, label_orbit + ' [pass 3/3]')
+    solve_and_report(opt_optics, label_optics + ' [pass 3/3]')
 
-    _optics_status = opt_optics.target_status(ret=True)
-    if not all(_optics_status.tol_met):
-        print(f'WARNING: on_sol_optics_corr_{ip_name} did not fully '
-              f'converge to tolerance; using best point found.')
-        opt_optics.target_mismatch()
-
-    _coupling_status = opt_coupling.target_status(ret=True)
-    if not all(_coupling_status.tol_met):
-        print(f'WARNING: on_sol_coupling_corr_{ip_name} did not fully '
-              f'converge to tolerance; using best point found.')
-        opt_coupling.target_mismatch()
+    # Final state of every knob after the iterate pass. The per-solve verdicts
+    # printed by solve_and_report are the state at the end of *that* solve;
+    # this is the state the knobs are actually generated from, which for
+    # coupling is two optics/orbit solves later than its own last solve.
+    print()
+    print(f'--- IP {ip_name}: summary of generated correction knobs ---')
+    for _knob_label, _opt in (('orbit', opt_orbit),
+                              ('optics', opt_optics),
+                              ('coupling', opt_coupling)):
+        _status = _opt.target_status(ret=True)
+        _tol_met = np.asarray(_status.tol_met, dtype=bool)
+        _n_bad = int((~_tol_met).sum())
+        _penalty = _opt.log()['penalty'][-1]
+        print(f'    {_knob_label:9s} {_opt.knob_name:32s} '
+              f'penalty={_penalty:.4g}  '
+              f'{len(_tol_met) - _n_bad}/{len(_tol_met)} targets in tol')
+        if _n_bad:
+            print(f'WARNING: {_opt.knob_name} did not fully converge to '
+                  f'tolerance; using best point found.')
+            _opt.target_mismatch()
 
     opt_orbit.generate_knob()
     opt_optics.generate_knob()
