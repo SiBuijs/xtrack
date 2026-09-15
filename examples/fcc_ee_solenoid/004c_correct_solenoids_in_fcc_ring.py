@@ -162,9 +162,10 @@ config['ipa'] = {
         'b0cl.3', 'b0bl.3', 'b0al.3',   # upstream, beam order
         'b1ra.0', 'b1rb.0', 'b1rc.0',   # downstream, beam order
     ],
-    # Downstream only -- the upstream partner (sdm1l.6) is not
-    # targeted; see the opt_optics targets below.
-    'sext_for_optics_correction': 'sdm1r.0',
+    # Chromatic sextupole nearest to the IP on each side of the straight;
+    # targeted by the half-straight optics matches below.
+    'sext_left': 'sdm1l.7',
+    'sext_right': 'sdm1r.0',
 }
 config['ipd'] = {
     'quad_for_optics_correction': [
@@ -194,9 +195,8 @@ config['ipd'] = {
         'b0cl.0', 'b0bl.0', 'b0al.0',   # upstream, beam order
         'b1ra.1', 'b1rb.1', 'b1rc.1',   # downstream, beam order
     ],
-    # Downstream only -- the upstream partner (sdm1l.0) is not
-    # targeted; see the opt_optics targets below.
-    'sext_for_optics_correction': 'sdm1r.2',
+    'sext_left': 'sdm1l.1',
+    'sext_right': 'sdm1r.2',
 }
 config['ipg'] = {
     'quad_for_optics_correction': [
@@ -226,9 +226,8 @@ config['ipg'] = {
         'b0cl.1', 'b0bl.1', 'b0al.1',   # upstream, beam order
         'b1ra.2', 'b1rb.2', 'b1rc.2',   # downstream, beam order
     ],
-    # Downstream only -- the upstream partner (sdm1l.2) is not
-    # targeted; see the opt_optics targets below.
-    'sext_for_optics_correction': 'sdm1r.4',
+    'sext_left': 'sdm1l.3',
+    'sext_right': 'sdm1r.4',
 }
 config['ipj'] = {
     'quad_for_optics_correction': [
@@ -258,35 +257,28 @@ config['ipj'] = {
         'b0cl.2', 'b0bl.2', 'b0al.2',   # upstream, beam order
         'b1ra.3', 'b1rb.3', 'b1rc.3',   # downstream, beam order
     ],
-    # Downstream only -- the upstream partner (sdm1l.4) is not
-    # targeted; see the opt_optics targets below.
-    'sext_for_optics_correction': 'sdm1r.6',
+    'sext_left': 'sdm1l.5',
+    'sext_right': 'sdm1r.6',
 }
 
 
 ###############################################################################
 # Mid-bend trim quadrupoles                                                   #
 #                                                                             #
-# opt_optics below constrains the optics only at the two straight-section     #
-# boundary markers, ~1360 m either side of the IP, so a purely local          #
-# beta-beat in between is unpenalised. With the detector solenoid on exactly  #
-# such a bump appears downstream of every IP: bety at sdm1r.0 goes 1.47 m     #
-# (bare) -> 2.87 m (2 T) -> 310 m (3 T), peaking at the b1rc exit / qd4r and  #
-# recovering by qd6r, while the upstream side (sdm1l.6) is untouched. That    #
-# ~200x vertical beta sits on a chromatic sextupole and is the suspected      #
+# Matching the optics only at the straight-section boundaries, ~1360 m either #
+# side of the IP, leaves a purely local beta-beat in between unpenalised.     #
+# With the detector solenoid on exactly such a bump appears downstream of     #
+# every IP: bety at sdm1r.0 goes 1.47 m (bare) -> 2.87 m (2 T) -> 310 m (3 T).#
+# That vertical beta sits on a chromatic sextupole and is the suspected       #
 # driver of the second-order chromaticity.                                    #
 #                                                                             #
-# To give the optics match local handles inside that region, each of the six  #
-# bends framing the IP (config[ip]['bend_for_mid_quad_correction']) is cut in #
-# half here and a zero-length trim quadrupole is placed at the cut. The       #
-# correctors are wired into opt_optics' vary list further down, so they are   #
-# driven by on_sol_optics_corr_{ip} and are exactly zero whenever the         #
-# corrections are switched off.                                              #
-#                                                                             #
-# Done ONCE, up front: cut_at_s() and the s_center lookups work in the        #
-# current s frame, and the per-IP loop below re-cycles the line (which        #
-# re-bases s) on every pass. Everything after this section is name-based and  #
-# survives those cycles.                                                     #
+# To give the half-straight optics matches local handles between the IP and  #
+# the nearest sextupole, each of the six bends framing the IP                 #
+# (config[ip]['bend_for_mid_quad_correction']: three upstream, three          #
+# downstream) is cut in half here and a zero-length trim quadrupole is placed #
+# at the cut. They are cut in the full ring, so the chromaticity measured at  #
+# the end includes them. All of this is done once, up front, before any       #
+# optics is computed; everything after this section is name-based.           #
 ###############################################################################
 
 BEND_MID_QUAD_PREFIX = 'qbmid_'
@@ -411,20 +403,45 @@ def solve_and_report(opt, label, **solve_kwargs):
               'tolerance.')
 
 
+###############################################
+# Bare reference optics, all solenoids off  #
+###############################################
+
+# Every correction below is a pair of half-straight matches that start from
+# the bare-ring optics at the IP: the downstream half is twissed forward from
+# the IP to the end of the straight, the upstream half backward from the IP to
+# the start of the straight. Both halves are pinned to the same bare Twiss
+# vector at the IP, so they are independent of each other, and together they
+# map the bare optics at the start of the straight onto the bare optics at the
+# end. The corrections of IPs already done are gated by on_sol_corr_{ip} = 0,
+# so this single bare twiss is the reference for all four IPs.
+tw0 = line.twiss4d(strengths=True)
+init_ip = {ip_name: tw0.get_twiss_init(ip_name) for ip_name in IP_NAMES}
+
+SIDES = ('left', 'right')
+
+
+def unique_quadrupoles(table_part):
+    """Env names of the Quadrupoles in a table slice, in order, without
+    duplicates. The mid-bend trims are zero-length Multipoles and are therefore
+    not picked up as skew hosts."""
+    names = []
+    for element_type, env_name in zip(
+            table_part.element_type, table_part.env_name):
+        if element_type == 'Quadrupole' and env_name not in names:
+            names.append(env_name)
+    return names
+
+
 optimizers = {}
 for ip_name in IP_NAMES:
 
     print(f'IP {ip_name}:')
-    line.cycle(f'end_ds_start_straight_{ip_name}')
-
-    # Reference optics with all solenoids off at this IP.
-    tw0 = line.twiss4d(strengths=True)
 
     # Turn on only the solenoid system being corrected.
     line[f'on_sol_{ip_name}'] = 1
     line[f'on_comp_sol_{ip_name}'] = 1
 
-    quad_for_optics_correction = config[ip_name]['quad_for_optics_correction']
     doublet_quad_left = config[ip_name]['doublet_quad_left']
     doublet_quad_right = config[ip_name]['doublet_quad_right']
     corr_1_right_on_quad = config[ip_name]['corr_1_right_on_quad']
@@ -435,6 +452,24 @@ for ip_name in IP_NAMES:
     corr_2_left_on_quad = config[ip_name]['corr_2_left_on_quad']
     corr_3_left_on_quad = config[ip_name]['corr_3_left_on_quad']
     corr_4_left_on_quad = config[ip_name]['corr_4_left_on_quad']
+
+    # The config lists are ordered right side first for the quads and left
+    # side (beam order) first for the bends.
+    quad_for_optics_correction = config[ip_name]['quad_for_optics_correction']
+    n_quad_half = len(quad_for_optics_correction) // 2
+    bend_for_mid_quad = config[ip_name]['bend_for_mid_quad_correction']
+    n_bend_half = len(bend_for_mid_quad) // 2
+    quads_per_side = {
+        'right': quad_for_optics_correction[:n_quad_half],
+        'left': quad_for_optics_correction[n_quad_half:],
+    }
+    bends_per_side = {
+        'left': bend_for_mid_quad[:n_bend_half],
+        'right': bend_for_mid_quad[n_bend_half:],
+    }
+
+    name_start = f'end_ds_start_straight_{ip_name}'
+    name_end = f'end_straight_start_ds_{ip_name}'
 
     # Rotate the final doublets by half of the main-solenoid rotation.
     ksol_l_main_solenoid = measure_ksol_l_main_solenoid(line, env, ip_name)
@@ -502,328 +537,209 @@ for ip_name in IP_NAMES:
     env[f'corr_sol_left_{ip_name}'].ksl[0] += (
         env.ref[f'acbv6_sol_left_{ip_name}'])
 
-    # Match orbit and vertical dispersion across the solenoid region.
-    label_orbit = (f'{ip_name} ORBIT + vertical dispersion '
-                   f'(x/px/y/py/dy/dpy=0 at both ends of '
-                   f'dy_match_l/r_{ip_name}, 24 orbit correctors)')
-    opt_orbit = line.match_knob(
-        knob_name=f'on_sol_orbit_corr_{ip_name}',
-        name=f'{ip_name}/orbit',
-        run=False,
-        betx=tw0['betx', ip_name],
-        bety=tw0['bety', ip_name],
-        start=f'dy_match_l_{ip_name}',
-        end=f'dy_match_r_{ip_name}',
-        init_at=ip_name,
-        vary=xt.VaryList([
-            f'acbh1_sol_right_{ip_name}', f'acbv1_sol_right_{ip_name}',
-            f'acbh2_sol_right_{ip_name}', f'acbh3_sol_right_{ip_name}',
-            f'acbh4_sol_right_{ip_name}', f'acbh5_sol_right_{ip_name}',
-            f'acbh6_sol_right_{ip_name}', f'acbv2_sol_right_{ip_name}',
-            f'acbv3_sol_right_{ip_name}', f'acbv4_sol_right_{ip_name}',
-            f'acbv5_sol_right_{ip_name}', f'acbv6_sol_right_{ip_name}',
-            f'acbh1_sol_left_{ip_name}', f'acbv1_sol_left_{ip_name}',
-            f'acbh2_sol_left_{ip_name}', f'acbh3_sol_left_{ip_name}',
-            f'acbh4_sol_left_{ip_name}', f'acbh5_sol_left_{ip_name}',
-            f'acbh6_sol_left_{ip_name}', f'acbv2_sol_left_{ip_name}',
-            f'acbv3_sol_left_{ip_name}', f'acbv4_sol_left_{ip_name}',
-            f'acbv5_sol_left_{ip_name}', f'acbv6_sol_left_{ip_name}',
-        ], step=1e-6),
-        targets=[
-            xt.TargetSet(x=0, px=0, y=0, py=0, dy=0, dpy=0, at=xt.END),
-            xt.TargetSet(x=0, px=0, y=0, py=0, dy=0, dpy=0, at=xt.START),
-        ])
-    solve_and_report(opt_orbit, label_orbit + ' [pass 1/3]')
-
-    two = line.twiss(
-        strengths=True,
-        init_at=ip_name,
-        betx=tw0['betx', ip_name],
-        bety=tw0['bety', ip_name],
-    )
-
-    # Match optics and horizontal dispersion with normal quadrupole trims.
-    k1_knobs = []
-    for nn in quad_for_optics_correction:
-        nn_knob = f'k1_{nn}_sol_corr'
-        env[nn_knob] = 0
-        env[nn].k1 += env.ref[nn_knob]
-        k1_knobs.append(nn_knob)
-
-    # Mid-bend trim quads (installed above the per-IP loop). These are
-    # zero-length, so the strength has to go on the integrated knl[1]; k1 is
-    # dead at zero length -- same reasoning as
-    # lattice_knobs.install_extra_sextupole. Units therefore differ from the
-    # trims above (k1l [1/m] rather than k1 [1/m^2]), but over a 25-60 m bend a
-    # k1l of 1e-6 is a distributed k1 of ~2-4e-8, so the shared step=1e-6 in the
-    # VaryList below is a comparable perturbation for both families. Each bend
-    # belongs to exactly one IP, so there is no cross-IP double-attachment.
-    for bend_name in config[ip_name]['bend_for_mid_quad_correction']:
-        nn = bend_mid_quad_name(bend_name)
-        nn_knob = f'k1_{nn}_sol_corr'
-        env[nn_knob] = 0
-        env[nn].knl[1] += env.ref[nn_knob]
-        k1_knobs.append(nn_knob)
-
-    name_start = f'end_ds_start_straight_{ip_name}'
-    name_end = f'end_straight_start_ds_{ip_name}'
-
-    # Skew quadrupole knobs for the additional linear-coupling/vertical-
-    # dispersion correction. Use all quadrupoles from the IP to the right edge
-    # and from the left edge to the IP.
     table_for_skew = line.get_table()
-    k1s_quads_for_coupling_correction = []
-    for table_part in (
-            table_for_skew.rows[name_start:ip_name],
-            table_for_skew.rows[ip_name:name_end]):
-        for element_type, env_name in zip(
-                table_part.element_type, table_part.env_name):
-            if (
-                    element_type == 'Quadrupole'
-                    and env_name not in k1s_quads_for_coupling_correction):
-                k1s_quads_for_coupling_correction.append(env_name)
 
-    k1s_knobs = []
-    for nn in k1s_quads_for_coupling_correction:
-        nn_knob = f'k1s_{nn}_sol_coupling_corr'
-        env[nn_knob] = 0
-        env[nn].k1s += env.ref[nn_knob]
-        k1s_knobs.append(nn_knob)
+    opt_orbit = {}
+    opt_optics = {}
+    opt_coupling = {}
+    labels = {}
+    for side in SIDES:
 
-    sext_corr = config[ip_name]['sext_for_optics_correction']
+        # Geometry of this half-straight. Both halves start from the bare
+        # optics at the IP (init_ip); for the left half the IP is the END of
+        # the range, so the twiss runs backward and the targets sit at START.
+        if side == 'right':
+            orbit_range = dict(start=ip_name, end=f'dy_match_r_{ip_name}')
+            optics_range = dict(start=ip_name, end=name_end)
+            at_boundary = xt.END
+            name_boundary = name_end
+            table_half = table_for_skew.rows[ip_name:name_end]
+        else:
+            orbit_range = dict(start=f'dy_match_l_{ip_name}', end=ip_name)
+            optics_range = dict(start=name_start, end=ip_name)
+            at_boundary = xt.START
+            name_boundary = name_start
+            table_half = table_for_skew.rows[name_start:ip_name]
+        sext_corr = config[ip_name][f'sext_{side}']
 
-    label_optics = (f'{ip_name} OPTICS + horizontal dispersion '
-                    f'(betx/bety/alfx/alfy/dx/dpx at {name_start} and '
-                    f'{name_end}, plus betx/bety/alfx/alfy at the '
-                    f'sextupole {sext_corr}; normal-quad + mid-bend trims)')
-    opt_optics = line.match_knob(
-        knob_name=f'on_sol_optics_corr_{ip_name}',
-        name=f'{ip_name}/optics',
-        run=False,
-        betx=tw0['betx', ip_name],
-        bety=tw0['bety', ip_name],
-        init_at=ip_name,
-        start=name_start,
-        end=name_end,
-        # 30 vary knobs (24 quad trims + 6 mid-bend trims) against 20 targets.
-        # Slightly above the default 20, chosen from a measured convergence
-        # trace (2 T, ipa): the solve takes full Newton steps throughout
-        # (bisection alpha=0 on 59 of 60 steps, no max_step clipping) and the
-        # Jacobian is already converged -- sweeping the finite-difference step
-        # below over 1e-6..1e-3 gives byte-identical results. What is left is
-        # conditioning: the Jacobian is full rank but ill-conditioned (cond
-        # ~5.9e6 measured while both sextupoles were still targeted, 1.23e6 at
-        # the start point now that only the downstream one is), so after a fast
-        # phase (penalty 19.9 -> 0.33 in six steps) the remaining stiff
-        # direction only decays ~8 % per step. That direction is the boundary
-        # START_betx, not the sextupole: bety at sext_corr is converged to
-        # six digits by step ~10 and does not move thereafter, while
-        # START_betx keeps improving (1.0e-3 relative at 10 steps, 1.9e-4 at
-        # 30, 1.8e-5 at 60). 30 halves the cost of the three opt_optics solves
-        # per IP versus 60 with no change to the quantity this correction
-        # exists to fix. Raise it again if the 3 T case (a 310 m bump rather
-        # than 2.9 m) needs a longer fast phase -- that has not been measured.
-        n_steps_max=30,
-        # Same reasoning as opt_coupling below: the first solve() can leave a
-        # target marginally outside tol before the iterate pass further down
-        # gets to run, and solve()'s take_best keeps the best point either way.
-        assert_within_tol=False,
-        vary=xt.VaryList(k1_knobs, step=1e-7),
-        targets=[
-            xt.TargetSet(
-                betx=tw0['betx', name_start],
-                bety=tw0['bety', name_start],
-                tol=1e-5,
-                at=xt.START),
-            xt.TargetSet(
-                alfx=tw0['alfx', name_start],
-                alfy=tw0['alfy', name_start],
-                tol=1e-8,
-                at=xt.START),
-            xt.TargetSet(
-                dx=tw0['dx', name_start],
-                dpx=tw0['dpx', name_start],
-                tol=1e-8,
-                at=xt.START),
-            xt.TargetSet(
-                betx=tw0['betx', name_end],
-                bety=tw0['bety', name_end],
-                tol=1e-5,
-                at=xt.END),
-            xt.TargetSet(
-                alfx=tw0['alfx', name_end],
-                alfy=tw0['alfy', name_end],
-                tol=1e-8,
-                at=xt.END),
-            xt.TargetSet(
-                dx=tw0['dx', name_end],
-                dpx=tw0['dpx', name_end],
-                tol=1e-8,
-                at=xt.END),
-            # Restore the full Twiss vector at the sdm1 sextupole downstream
-            # of the IP. The boundary targets above leave a purely local
-            # beta-beat unpenalised; this pins the one place where it actually
-            # hurts. alfx/alfy are targeted as well as betx/bety because qd4r
-            # -- the measured peak of the bump -- sits only ~1.75 m upstream of
-            # sext_corr, and the six mid-bend correctors are strongly
-            # non-local: pinning beta alone at one point does not forbid a
-            # large bump that happens to cross the right value there with the
-            # wrong slope, whereas pinning (beta, alfa) forces the whole span
-            # from the sextupole to the boundary to nominal. Only the first
-            # member of the contiguous sextupole pair is targeted -- the .0/.1
-            # optics differ by ~4 %, so the second adds targets without adding
-            # information.
-            #
-            # DOWNSTREAM ONLY, deliberately. The upstream partner (sdm1l.*) was
-            # targeted too at first, and it made things worse: the solenoid
-            # barely disturbs it (bety 6.485 -> 6.447, 0.6 %), so those four
-            # near-trivial constraints bought nothing while crowding the bottom
-            # of the Jacobian spectrum -- measured at the start point on ipa,
-            # dropping them takes the directions with sigma < 4 from four to
-            # two at unchanged condition number (1.23e6). A/B at 2 T on ipa,
-            # one opt_optics.solve(), bety at sdm1r.0 against a 1.471115 m
-            # nominal:
-            #
-            #   both sides targeted, 6 quads   1.505363
-            #   downstream only,     6 quads   1.472736   <- this file
-            #   both sides,          3 quads   1.480550
-            #   downstream only,     3 quads   1.486639
-            #
-            # The last two rows are why all six mid-bend quads are kept even
-            # though only the downstream sextupole is targeted: removing the
-            # three upstream ones costs an order of magnitude on the result.
-            # Note this is NOT because they do work at the optimum -- they
-            # converge to ~1e-6 against ~1e-3 for the downstream three, i.e.
-            # essentially unused -- nor because of start-point conditioning,
-            # which is identical with and without them (cond 1.23e6, same
-            # spectrum to four digits). The effect is on the descent path:
-            # dropping three columns changes the pseudo-inverse step direction
-            # at every iteration, and this solve does not reach a true optimum
-            # in its step budget (the stiff START_betx direction is still
-            # decaying ~8 %/step when it stops), so a different path ends at a
-            # different point. Keep them; they cost three knobs and no
-            # conditioning.
-            #
-            # tol is absolute in xtrack: 1e-5 at the boundaries is 2e-8 relative
-            # on bety=514 m, while the same 1e-5 at sdm1r.0 (bety=1.47 m) is
-            # 7e-6 relative, i.e. the new targets are deliberately looser in
-            # relative terms than the ones that already converge.
-            #
-            # No explicit weights: a weight on the sextupole beta targets was
-            # tried at 1, 10 and 100 and the converged residues were identical
-            # to three significant figures, so the solve is not sitting at a
-            # weighted optimum -- it stops at a structural convergence limit of
-            # this knob set. Adding the local targets costs some boundary
-            # precision (START_betx goes from ~1e-9 absolute in the unmodified
-            # script to ~2.8e-3, i.e. 1.8e-5 relative).
-            xt.TargetSet(
-                betx=tw0['betx', sext_corr],
-                bety=tw0['bety', sext_corr],
-                tol=1e-5,
-                at=sext_corr),
-            xt.TargetSet(
-                alfx=tw0['alfx', sext_corr],
-                alfy=tw0['alfy', sext_corr],
-                tol=1e-6,
-                at=sext_corr),
-        ])
-    # If the WARNING further down fires, escalate in this order before
-    # restructuring anything: opt_optics.solve(rcond=1e-4) -> solve(rcond=1e-3,
-    # broyden=True) (what 004h already uses for its coupling re-fit) -> relax
-    # the two sextupole tolerances above to 1e-4 (beta) / 1e-5 (alfa) -> only
-    # then a separate knob or a two-stage match.
-    solve_and_report(opt_optics, label_optics + ' [pass 1/3]')
+        # Match orbit and vertical dispersion at the edge of the solenoid
+        # region on this side.
+        labels['orbit', side] = (
+            f'{ip_name} {side.upper()} ORBIT + vertical dispersion '
+            f'(x/px/y/py/dy/dpy=0 at dy_match_{side[0]}_{ip_name}, '
+            f'12 orbit correctors)')
+        opt_orbit[side] = line.match_knob(
+            knob_name=f'on_sol_orbit_corr_{side}_{ip_name}',
+            name=f'{ip_name}/orbit_{side}',
+            run=False,
+            assert_within_tol=False,
+            init=init_ip[ip_name],
+            **orbit_range,
+            vary=xt.VaryList([
+                f'acbh1_sol_{side}_{ip_name}', f'acbv1_sol_{side}_{ip_name}',
+                f'acbh2_sol_{side}_{ip_name}', f'acbh3_sol_{side}_{ip_name}',
+                f'acbh4_sol_{side}_{ip_name}', f'acbh5_sol_{side}_{ip_name}',
+                f'acbh6_sol_{side}_{ip_name}', f'acbv2_sol_{side}_{ip_name}',
+                f'acbv3_sol_{side}_{ip_name}', f'acbv4_sol_{side}_{ip_name}',
+                f'acbv5_sol_{side}_{ip_name}', f'acbv6_sol_{side}_{ip_name}',
+            ], step=1e-6),
+            targets=[
+                xt.TargetSet(x=0, px=0, y=0, py=0, dy=0, dpy=0,
+                             at=at_boundary),
+            ])
 
+        # Normal quadrupole trims on this side of the straight.
+        k1_knobs = []
+        for nn in quads_per_side[side]:
+            nn_knob = f'k1_{nn}_sol_corr'
+            env[nn_knob] = 0
+            env[nn].k1 += env.ref[nn_knob]
+            k1_knobs.append(nn_knob)
 
+        # Mid-bend trim quads between the IP and the sextupole on this side.
+        # These are zero-length, so the strength has to go on the integrated
+        # knl[1]; k1 is dead at zero length -- same reasoning as
+        # lattice_knobs.install_extra_sextupole. Units therefore differ from
+        # the trims above (k1l [1/m] rather than k1 [1/m^2]), but over a
+        # 25-60 m bend a k1l of 1e-6 is a distributed k1 of ~2-4e-8, so the
+        # shared step=1e-6 in the VaryList below is a comparable perturbation
+        # for both families.
+        for bend_name in bends_per_side[side]:
+            nn = bend_mid_quad_name(bend_name)
+            nn_knob = f'k1_{nn}_sol_corr'
+            env[nn_knob] = 0
+            env[nn].knl[1] += env.ref[nn_knob]
+            k1_knobs.append(nn_knob)
 
-    # Try an additional correction of linear coupling and vertical dispersion
-    # at the straight-section edges using the skew quadrupole knobs.
-    label_coupling = (f'{ip_name} COUPLING + vertical dispersion '
-                      f'(betx2/bety1/alfx2/alfy1/dy/dpy=0 at {name_start} '
-                      f'and {name_end}; skew-quad trims)')
-    opt_coupling = line.match_knob(
-        knob_name=f'on_sol_coupling_corr_{ip_name}',
-        name=f'{ip_name}/coupling',
-        run=False,
-        betx=tw0['betx', ip_name],
-        bety=tw0['bety', ip_name],
-        init_at=ip_name,
-        start=name_start,
-        end=name_end,
-        n_steps_max=100,
-        # The first solve() below (before the orbit/optics/coupling iterate
-        # loop has a chance to run again) can leave 1-2 of the 12 targets
-        # just outside tol (seen at 3 T for the VariableSolenoid model, e.g.
-        # ipa's END_betx2 at ~5e-4 vs tol 5e-5) even though the knob is
-        # otherwise well-behaved and the *next* iterate pass below brings
-        # every target within tol. Without this, the strict single-pass
-        # assertion raises before that second pass ever runs. take_best
-        # (solve()'s default) already keeps the best point found either way.
-        assert_within_tol=False,
-        vary=xt.VaryList(k1s_knobs, step=1e-7),
-        targets=[
-            xt.TargetSet(betx2=0, bety1=0, at=xt.START, tol=5e-5),
-            xt.TargetSet(betx2=0, bety1=0, at=xt.END, tol=5e-5),
-            xt.TargetSet(alfx2=0, alfy1=0, at=xt.START, tol=1e-6),
-            xt.TargetSet(alfx2=0, alfy1=0, at=xt.END, tol=1e-6),
-            xt.TargetSet(dy=0, at=xt.START, tol=5e-5),
-            xt.TargetSet(dy=0, at=xt.END, tol=5e-5),
-            xt.TargetSet(dpy=0, at=xt.START, tol=1e-7),
-            xt.TargetSet(dpy=0, at=xt.END, tol=1e-7),
-        ])
+        # Match optics and horizontal dispersion at the straight-section
+        # boundary, plus betx/bety at the chromatic sextupole nearest to the
+        # IP. The boundary targets alone leave a local beta-beat between the
+        # IP and the boundary unpenalised; the sextupole targets pin it where
+        # it drives the second-order chromaticity.
+        labels['optics', side] = (
+            f'{ip_name} {side.upper()} OPTICS + horizontal dispersion '
+            f'(betx/bety/alfx/alfy/dx/dpx at {name_boundary}, betx/bety at '
+            f'{sext_corr}; normal-quad + mid-bend trims)')
+        opt_optics[side] = line.match_knob(
+            knob_name=f'on_sol_optics_corr_{side}_{ip_name}',
+            name=f'{ip_name}/optics_{side}',
+            run=False,
+            assert_within_tol=False,
+            init=init_ip[ip_name],
+            **optics_range,
+            n_steps_max=30,
+            vary=xt.VaryList(k1_knobs, step=1e-6),
+            targets=[
+                xt.TargetSet(
+                    betx=tw0['betx', name_boundary],
+                    bety=tw0['bety', name_boundary],
+                    tol=1e-5,
+                    at=at_boundary),
+                xt.TargetSet(
+                    alfx=tw0['alfx', name_boundary],
+                    alfy=tw0['alfy', name_boundary],
+                    tol=1e-8,
+                    at=at_boundary),
+                xt.TargetSet(
+                    dx=tw0['dx', name_boundary],
+                    dpx=tw0['dpx', name_boundary],
+                    tol=1e-8,
+                    at=at_boundary),
+                xt.TargetSet(
+                    betx=tw0['betx', sext_corr],
+                    bety=tw0['bety', sext_corr],
+                    tol=1e-5,
+                    at=sext_corr),
+            ])
 
-    # The coupling knob has ~80 skew-quad vary knobs but only 8 targets, so
-    # the Jacobian is heavily rank-deficient; with the default rcond the
-    # pseudo-inverse chases numerically-noisy near-null directions and the
-    # solve stalls/oscillates instead of converging (seen after the main
-    # solenoid was raised to 3 T). Truncating small singular values fixes it.
-    solve_and_report(opt_coupling, label_coupling + ' [pass 1/2]', rcond=3e-3)
+        # Skew quadrupole knobs for the linear-coupling/vertical-dispersion
+        # correction: all quadrupoles on this side, IP to boundary.
+        k1s_knobs = []
+        for nn in unique_quadrupoles(table_half):
+            nn_knob = f'k1s_{nn}_sol_coupling_corr'
+            env[nn_knob] = 0
+            env[nn].k1s += env.ref[nn_knob]
+            k1s_knobs.append(nn_knob)
 
-    # Iterate to improve consistency of orbit and optics corrections.
-    solve_and_report(opt_orbit, label_orbit + ' [pass 2/3]')
-    solve_and_report(opt_optics, label_optics + ' [pass 2/3]')
-    solve_and_report(opt_coupling, label_coupling + ' [pass 2/2]', rcond=3e-3)
-    solve_and_report(opt_orbit, label_orbit + ' [pass 3/3]')
-    solve_and_report(opt_optics, label_optics + ' [pass 3/3]')
+        labels['coupling', side] = (
+            f'{ip_name} {side.upper()} COUPLING + vertical dispersion '
+            f'(betx2/bety1/alfx2/alfy1/dy/dpy=0 at {name_boundary}; '
+            f'skew-quad trims)')
+        opt_coupling[side] = line.match_knob(
+            knob_name=f'on_sol_coupling_corr_{side}_{ip_name}',
+            name=f'{ip_name}/coupling_{side}',
+            run=False,
+            assert_within_tol=False,
+            init=init_ip[ip_name],
+            **optics_range,
+            n_steps_max=100,
+            vary=xt.VaryList(k1s_knobs, step=1e-7),
+            targets=[
+                xt.TargetSet(betx2=0, bety1=0, at=at_boundary, tol=5e-5),
+                xt.TargetSet(alfx2=0, alfy1=0, at=at_boundary, tol=1e-6),
+                xt.TargetSet(dy=0, at=at_boundary, tol=5e-5),
+                xt.TargetSet(dpy=0, at=at_boundary, tol=1e-7),
+            ])
 
-    # Final state of every knob after the iterate pass. The per-solve verdicts
-    # printed by solve_and_report are the state at the end of *that* solve;
-    # this is the state the knobs are actually generated from, which for
-    # coupling is two optics/orbit solves later than its own last solve.
+    # The two halves share no knobs and are pinned to the same bare optics at
+    # the IP, so each side is iterated on its own. The coupling knobs have
+    # ~40 skew-quad vary knobs against 6 targets, so the Jacobian is heavily
+    # rank-deficient; truncating small singular values (rcond) keeps the
+    # pseudo-inverse from chasing numerically-noisy near-null directions.
+    for side in SIDES:
+        solve_and_report(opt_orbit[side], labels['orbit', side] + ' [pass 1/3]')
+        solve_and_report(opt_optics[side], labels['optics', side] + ' [pass 1/3]')
+        solve_and_report(opt_coupling[side],
+                         labels['coupling', side] + ' [pass 1/2]', rcond=3e-3)
+        solve_and_report(opt_orbit[side], labels['orbit', side] + ' [pass 2/3]')
+        solve_and_report(opt_optics[side], labels['optics', side] + ' [pass 2/3]')
+        solve_and_report(opt_coupling[side],
+                         labels['coupling', side] + ' [pass 2/2]', rcond=3e-3)
+        solve_and_report(opt_orbit[side], labels['orbit', side] + ' [pass 3/3]')
+        solve_and_report(opt_optics[side], labels['optics', side] + ' [pass 3/3]')
+
+    # Final state of every knob after the iterate pass. Must run before
+    # generate_knob(): target_status() afterwards evaluates the optimizer on
+    # the already-generated knob state and corrupts it.
     print()
     print(f'--- IP {ip_name}: summary of generated correction knobs ---')
-    for _knob_label, _opt in (('orbit', opt_orbit),
-                              ('optics', opt_optics),
-                              ('coupling', opt_coupling)):
-        _status = _opt.target_status(ret=True)
-        _tol_met = np.asarray(_status.tol_met, dtype=bool)
-        _n_bad = int((~_tol_met).sum())
-        _penalty = _opt.log()['penalty'][-1]
-        print(f'    {_knob_label:9s} {_opt.knob_name:32s} '
-              f'penalty={_penalty:.4g}  '
-              f'{len(_tol_met) - _n_bad}/{len(_tol_met)} targets in tol')
-        if _n_bad:
-            print(f'WARNING: {_opt.knob_name} did not fully converge to '
-                  f'tolerance; using best point found.')
-            _opt.target_mismatch()
+    for side in SIDES:
+        for _knob_label, _opt in (('orbit', opt_orbit[side]),
+                                  ('optics', opt_optics[side]),
+                                  ('coupling', opt_coupling[side])):
+            _status = _opt.target_status(ret=True)
+            _tol_met = np.asarray(_status.tol_met, dtype=bool)
+            _n_bad = int((~_tol_met).sum())
+            _penalty = _opt.log()['penalty'][-1]
+            print(f'    {_knob_label:9s} {_opt.knob_name:38s} '
+                  f'penalty={_penalty:.4g}  '
+                  f'{len(_tol_met) - _n_bad}/{len(_tol_met)} targets in tol')
+            if _n_bad:
+                print(f'WARNING: {_opt.knob_name} did not fully converge to '
+                      f'tolerance; using best point found.')
+                _opt.target_mismatch()
 
-    opt_orbit.generate_knob()
-    opt_optics.generate_knob()
-    opt_coupling.generate_knob()
-
-    optimizers[f'{ip_name}_orbit'] = opt_orbit
-    optimizers[f'{ip_name}_optics'] = opt_optics
-    optimizers[f'{ip_name}_coupling'] = opt_coupling
+    for side in SIDES:
+        opt_orbit[side].generate_knob()
+        opt_optics[side].generate_knob()
+        opt_coupling[side].generate_knob()
+        optimizers[f'{ip_name}_orbit_{side}'] = opt_orbit[side]
+        optimizers[f'{ip_name}_optics_{side}'] = opt_optics[side]
+        optimizers[f'{ip_name}_coupling_{side}'] = opt_coupling[side]
 
     # One user knob turns on compensation solenoid, doublet rotations, and all
-    # generated correction knobs for this IP.
+    # generated correction knobs for this IP. The per-side knobs hang off the
+    # per-IP on_sol_{orbit,optics,coupling}_corr_{ip} knobs, which keeps the
+    # knob names used by the downstream scripts.
     line[f'on_sol_corr_{ip_name}'] = 0
     line[f'on_comp_sol_{ip_name}'] = f'on_sol_corr_{ip_name}'
     line[f'on_rot_doublet_right_{ip_name}'] = f'on_sol_corr_{ip_name}'
     line[f'on_rot_doublet_left_{ip_name}'] = f'on_sol_corr_{ip_name}'
-    line[f'on_sol_orbit_corr_{ip_name}'] = f'on_sol_corr_{ip_name}'
-    line[f'on_sol_optics_corr_{ip_name}'] = f'on_sol_corr_{ip_name}'
-    line[f'on_sol_coupling_corr_{ip_name}'] = f'on_sol_corr_{ip_name}'
+    for kind in ('orbit', 'optics', 'coupling'):
+        line[f'on_sol_{kind}_corr_{ip_name}'] = f'on_sol_corr_{ip_name}'
+        for side in SIDES:
+            line[f'on_sol_{kind}_corr_{side}_{ip_name}'] = (
+                f'on_sol_{kind}_corr_{ip_name}')
 
     # Leave the main solenoid off while preparing the next IP.
     line[f'on_sol_{ip_name}'] = 0
@@ -868,6 +784,22 @@ for ip_name in IP_NAMES:
     line[f'on_sol_corr_{ip_name}'] = 1
 
 tw_on_corr = line.twiss4d(strengths=True, zero_at='ipg')
+
+# Local check of what the half-straight optics matches target: the optics at
+# the chromatic sextupoles either side of each IP, and the orbit at the IP
+# (which both halves pin to the bare closed orbit).
+print()
+print('--- Optics at the targeted sextupoles: bare -> solenoids on, corrected ---')
+for ip_name in IP_NAMES:
+    for side in SIDES:
+        sext_corr = config[ip_name][f'sext_{side}']
+        print(f'  {ip_name} {side:5s} {sext_corr:8s} '
+              f'betx {tw0["betx", sext_corr]:9.5f} -> '
+              f'{tw_on_corr["betx", sext_corr]:9.5f}   '
+              f'bety {tw0["bety", sext_corr]:9.5f} -> '
+              f'{tw_on_corr["bety", sext_corr]:9.5f}')
+    print(f'  {ip_name} orbit at IP: x={tw_on_corr["x", ip_name]: .3e}  '
+          f'y={tw_on_corr["y", ip_name]: .3e}')
 
 chrom_on_corr = report_nonlinear_chromaticity(
     line, 'AFTER:  solenoids on, corrections on')

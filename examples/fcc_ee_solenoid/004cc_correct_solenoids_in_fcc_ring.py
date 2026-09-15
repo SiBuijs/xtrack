@@ -64,6 +64,34 @@ plt.suptitle(f'Bare optics IPa to EoS (3T)')
 plt.show(block=False)
 
 
+#####################################################
+# Mid-bend quadrupoles for chromaticity correction  #
+#####################################################
+
+# Cut the first three bends downstream of ipa in half and put a thin
+# quadrupole at each cut. Only line_ds is modified, the ring keeps whole bends.
+bends_for_mid_quad = ['b1ra.0', 'b1rb.0', 'b1rc.0']
+
+table_ds = line_ds.get_table()
+line_ds.cut_at_s([table_ds['s_center', nn] for nn in bends_for_mid_quad])
+
+#The knob is k1l [1/m].
+quad_for_chromaticity_correction = []
+mid_quad_names = []
+mid_quad_places = []
+for bend_name in bends_for_mid_quad:
+    quad_name = f'qbmid_{bend_name}'
+    knob_name = f'k1l_{quad_name}_chrom_corr'
+    env.elements[quad_name] = xt.Multipole(knl=[0.0, 0.0], length=0.0)
+    env[knob_name] = 0
+    env[quad_name].knl[1] = env.ref[knob_name]
+    quad_for_chromaticity_correction.append(knob_name)
+    mid_quad_names.append(quad_name)
+    mid_quad_places.append(env.place(
+        quad_name, at=0, from_=f'{bend_name}..1',
+        anchor='start', from_anchor='start'))
+
+line_ds.insert(mid_quad_places)
 
 ####################################################
 # Correction configuration copied from 005g setup #
@@ -141,6 +169,7 @@ env['corr_sol_right_ipa'].ksl[0] += env.ref['acbv6_sol_right_ipa']
 opt_orbit = line_ds.match_knob(
     knob_name='on_sol_orbit_corr_ipa',
     run=False,
+    assert_within_tol=False,
     init=init_ipa,
     start='ipa',
     end='dy_match_r_ipa',
@@ -155,6 +184,8 @@ opt_orbit = line_ds.match_knob(
     targets=[
         xt.TargetSet(x=0, px=0, y=0, py=0, dy=0, dpy=0, at=xt.END),
     ])
+
+print("\nOrbit correction:")
 opt_orbit.solve()
 
 two = line_ds.twiss(strengths=True, init=init_ipa)
@@ -184,13 +215,17 @@ for nn in k1s_quads_for_coupling_correction:
     env[nn].k1s += env.ref[nn_knob]
     k1s_knobs.append(nn_knob)
 
+sext_for_chromaticity_correction = 'sdm1r.0'
+
 opt_optics = line_ds.match_knob(
     knob_name='on_sol_optics_corr_ipa',
     run=False,
+    assert_within_tol=False,
     init=init_ipa,
     start='ipa',
     end=name_end,
-    vary=xt.VaryList(k1_knobs, step=1e-6),
+    vary=[xt.VaryList(k1_knobs, tag='main', step=1e-6),
+          xt.VaryList(quad_for_chromaticity_correction, tag='added', step=1e-6)],
     targets=[
         xt.TargetSet(
             betx=tw0['betx', name_end],
@@ -207,7 +242,15 @@ opt_optics = line_ds.match_knob(
             dpx=tw0['dpx', name_end],
             tol=1e-8,
             at=xt.END),
+        xt.TargetSet(
+            betx=tw0['betx', sext_for_chromaticity_correction],
+            bety=tw0['bety', sext_for_chromaticity_correction],
+            tol=1e-5,
+            tag='sext',
+            at=sext_for_chromaticity_correction),
+
     ])
+print("\nOptics correction:")
 opt_optics.solve()
 
 
@@ -217,6 +260,7 @@ opt_optics.solve()
 opt_coupling = line_ds.match_knob(
     knob_name='on_sol_coupling_corr_ipa',
     run=False,
+    assert_within_tol=False,
     init=init_ipa,
     start='ipa',
     end=name_end,
@@ -228,15 +272,19 @@ opt_coupling = line_ds.match_knob(
         xt.TargetSet(dpy=0, at=xt.END, tol=1e-7),
     ])
 
-# Many skew-quad knobs against 6 targets: the Jacobian is heavily
-# rank-deficient, so truncate small singular values or the solve stalls.
+print("\nCoupling correction:")
 opt_coupling.solve(rcond=3e-3)
 
 # Iterate to improve consistency of orbit and optics corrections.
+print("\nOrbit correction:")
 opt_orbit.solve()
+print("\nOptics correction:")
 opt_optics.solve()
+print("\nCoupling correction:")
 opt_coupling.solve(rcond=3e-3)
+print("\nOrbit correction:")
 opt_orbit.solve()
+print("\nOptics correction:")
 opt_optics.solve()
 
 opt_orbit.generate_knob()
@@ -251,6 +299,7 @@ line['on_rot_doublet_right_ipa'] = 'on_sol_corr_ipa'
 line['on_sol_orbit_corr_ipa'] = 'on_sol_corr_ipa'
 line['on_sol_optics_corr_ipa'] = 'on_sol_corr_ipa'
 line['on_sol_coupling_corr_ipa'] = 'on_sol_corr_ipa'
+line['on_sol_chrom_corr_ipa'] = 'on_sol_corr_ipa'
 
 
 #####################
@@ -263,12 +312,14 @@ line['on_sol_corr_ipa'] = 1
 tw_corrected = line_ds.twiss4d(init=init_ipa, strengths=True)
 
 tw_corrected.plot()
-plt.axvline(x=tw_corrected.rows['sdm1r.0']['s'][0], color='k', ls='--', lw=1.5, alpha=0.5)
+plt.axvline(x=tw_corrected.rows['sdm1r.0']['s'][0], color='k', lw=1.5)
 for optics_quad in quad_for_optics_correction:
     plt.axvline(x=tw_corrected.rows[optics_quad]['s'][0], color='b', ls='-.', lw=1.5, alpha=0.5)
 for coupling_quad in k1s_quads_for_coupling_correction:
     plt.axvline(x=tw_corrected.rows[coupling_quad]['s'][0], color='r', ls=':', lw=1.5, alpha=0.5)
 for corr_quad in [corr_1_right_on_quad, corr_2_right_on_quad, corr_3_right_on_quad, corr_4_right_on_quad]:
     plt.axvline(x=tw_corrected.rows[corr_quad]['s'][0], color='g', ls='--', lw=1.5, alpha=0.5)
+for mid_quad in mid_quad_names:
+    plt.axvline(x=tw_corrected.rows[mid_quad]['s'][0], color='m', ls='--', lw=1.5, alpha=0.5)
 plt.suptitle(f'Corrected optics IPa to EoS (3T)')
 plt.show(block=False)
