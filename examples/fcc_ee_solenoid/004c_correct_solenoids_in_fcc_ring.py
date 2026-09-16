@@ -37,12 +37,28 @@ parser.add_argument(
 parser.add_argument(
     '--no-chromaticity', action='store_true',
     help='Skip the second-order chromaticity report before/after correction. '
-         'Each report costs npoints+1 full-ring 4D twisses, so three reports '
-         'are ~66 extra twisses.')
+         'Each report costs npoints+1 full-ring 4D twisses, so the two reports '
+         'are ~44 extra twisses.')
 parser.add_argument(
     '--chromaticity-points', type=int, default=21, metavar='N',
     help='Number of off-momentum points in the chromaticity fit '
          '(default: 21, matching 004j).')
+parser.add_argument(
+    '--optics-step', type=float, default=None, metavar='H',
+    help='Override OPTICS_STEP, the finite-difference step of the optics '
+         'vary knobs. For tuning the matching setup.')
+parser.add_argument(
+    '--optics-rcond', type=float, default=None, metavar='R',
+    help='Override OPTICS_RCOND, the singular-value cutoff of the half-'
+         'straight optics solves. 0 disables truncation (xdeps default). For '
+         'tuning the matching setup.')
+parser.add_argument(
+    '--ips', default=None, metavar='LIST',
+    help='Comma-separated subset of IPs to correct, e.g. "ipg" or "ipd,ipg". '
+         'For tuning the matching setup: the other IPs keep their solenoids '
+         'off, so the resulting lattice is NOT a valid corrected ring and the '
+         'chromaticity numbers are not comparable with a full run. Default: '
+         'all four.')
 args = parser.parse_args()
 
 FIELD_TAG = field_tag(args.b0)
@@ -66,6 +82,15 @@ INPUT_LATTICE_JSON = HERE / _MODEL_LATTICE_PATHS[args.model][0]
 OUTPUT_LATTICE_JSON = HERE / _MODEL_LATTICE_PATHS[args.model][1]
 
 IP_NAMES = ['ipa', 'ipd', 'ipg', 'ipj']
+ALL_IP_NAMES = list(IP_NAMES)
+if args.ips is not None:
+    IP_NAMES = [nn.strip() for nn in args.ips.split(',') if nn.strip()]
+    unknown = [nn for nn in IP_NAMES if nn not in ALL_IP_NAMES]
+    if unknown:
+        raise SystemExit(f'Unknown IP(s) {unknown}; choose from {ALL_IP_NAMES}.')
+# A partial run leaves the other IPs uncorrected, so it must not overwrite the
+# corrected lattice that the downstream scripts read.
+WRITE_OUTPUT_LATTICE = IP_NAMES == ALL_IP_NAMES
 
 # get_nonlinear_chromaticity lives in the sibling nonlinear_tunes example, not
 # in xtrack proper. Same import idiom and same function as 004j, so the d2qx /
@@ -269,8 +294,11 @@ config['ipj'] = {
 # side of the IP, leaves a purely local beta-beat in between unpenalised.     #
 # With the detector solenoid on exactly such a bump appears downstream of     #
 # every IP: bety at sdm1r.0 goes 1.47 m (bare) -> 2.87 m (2 T) -> 310 m (3 T).#
-# That vertical beta sits on a chromatic sextupole and is the suspected       #
-# driver of the second-order chromaticity.                                    #
+# That vertical beta sits on a chromatic sextupole and was the suspected      #
+# driver of the second-order chromaticity. It turned out not to be: sdm1 sits #
+# at beta of a few metres; the driver is the QD0 -> sdy1 phase advance, which #
+# the optics matches below leave free (measured, not targeted -- see the note #
+# at the optics match and claude_notes/09).                                   #
 #                                                                             #
 # To give the half-straight optics matches local handles between the IP and  #
 # the nearest sextupole, each of the six bends framing the IP                 #
@@ -420,6 +448,74 @@ init_ip = {ip_name: tw0.get_twiss_init(ip_name) for ip_name in IP_NAMES}
 
 SIDES = ('left', 'right')
 
+# Broyden setting of the optics solves. False: a full finite-difference
+# Jacobian at every step, the slowest but most robust option. An integer n
+# takes a full Jacobian at the first step of every solve() and every n + 1
+# steps, with rank-1 updates in between (see the solve loop); True must not be
+# used. False was needed by the phase targets that have since been removed, so
+# a small integer may now be worth trying for speed.
+OPTICS_BROYDEN = False
+
+# Regularisation of the half-straight optics solves.
+#
+# The optics match has 15 vary knobs against 9 targets, so 6 directions in knob
+# space are unconstrained, and the constrained ones are very unevenly weighted:
+# the singular values of the 9x15 Jacobian span [1.4e6 ... 3.9e-2], a condition
+# number of 3.7e7, with a clean gap of ~200 between the 7th (9.6) and the 8th
+# (4.9e-2). Solving with the xdeps default rcond=1e-14 inverts those two
+# near-null directions and multiplies the residual by 1/sigma, so once the
+# residual is small the Newton step is enormous: in the run of 2026-09-16 the
+# ipd-left pass-3 solve went penalty 0.546 -> 80.0, backtracked only as far as
+# 0.722 (still uphill), accepted it, and then jumped to 7.2e3. Over three
+# passes the trims drifted to 26x their proper size (max |k1| 7.7e-2 against
+# 2.9e-3 for a good solution), which moved the ring tune by 24 units and left
+# the lattice unstable at delta = 1e-3.
+#
+# rcond=1e-6 cuts exactly the two directions below the gap and keeps the other
+# seven; it is the same remedy already applied to the coupling solves below,
+# whose Jacobian is rank-deficient for the same reason.
+OPTICS_RCOND = 1e-6
+
+# Hard bounds on the trims were tried as a second, solver-independent guard
+# (a converged correction needs only |k1| ~ 3e-4 to 3e-3) and made things
+# worse, so they are off by default. Measured on ipg, 3 T, end penalty of the
+# three optics passes:
+#
+#     limits          rcond      left                      right
+#     none            1e-6       9.8e-6  7.0e-6  5.6e-6    9.8e-5  3.4e-5  3.0e-5
+#     +-1e-2/2e-3     none       5.3e-5  8.8e-3  2.2e-2    28.5    28.6    28.6
+#     +-1e-2/2e-3     1e-6       9.8e-6  7.0e-6  5.6e-6    28.0    28.1    28.1
+#
+# i.e. the truncation alone is what fixes the solve, and the bounds by
+# themselves break ipg right completely: the first unregularised Newton step
+# slams several knobs into their limits, and the clipped point is one the
+# solver never recovers from. Set them to a tuple to re-enable.
+OPTICS_K1_LIMIT_QUAD = None
+OPTICS_K1_LIMIT_MIDBEND = None
+
+# Finite-difference step of the optics vary knobs.
+OPTICS_STEP = 1e-7
+
+# Also pin bety at the sdm1 sextupole in the half-straight optics match.
+SEXT_BETY_TARGET = True
+
+if args.optics_rcond is not None:
+    OPTICS_RCOND = args.optics_rcond or None
+if args.optics_step is not None:
+    OPTICS_STEP = args.optics_step
+
+# Omitted entirely rather than passed as None, so that rcond=0 reproduces the
+# xdeps default path exactly.
+OPTICS_SOLVE_KWARGS = (
+    {'rcond': OPTICS_RCOND} if OPTICS_RCOND is not None else {})
+
+# Tolerance on alfx/alfy at the straight-section boundary. alf is O(1.5) there,
+# so this is a relative tolerance of ~1e-7; the previous 1e-8 was below what
+# the solve can deliver once the weak Jacobian directions are truncated, and
+# reported matches as INCOMPLETE at residues of 2-5e-8 that are physically
+# irrelevant (a beta-beat of the same 1e-8 relative size).
+OPTICS_ALF_TOL = 1e-7
+
 
 def unique_quadrupoles(table_part):
     """Env names of the Quadrupoles in a table slice, in order, without
@@ -433,7 +529,25 @@ def unique_quadrupoles(table_part):
     return names
 
 
+def doublet_to_sdy1_range(table_half, ip_name, side):
+    """(start, end) element names, in beam order, of the phase advance between
+    the QD0 end facing the IP and the first slice of the sdy1 sextupole on this
+    side of the IP: QD0R entrance -> sdy1r, or sdy1l -> QD0L exit."""
+    names = np.asarray(table_half.name)
+    sdy1 = [nn for nn, element_type in zip(names, table_half.element_type)
+            if element_type == 'Sextupole' and nn.startswith('sdy1')]
+    if not sdy1:
+        raise SystemExit(f'No sdy1 sextupole found on the {side} side of '
+                         f'{ip_name} -- the IR sextupole naming changed.')
+    if side == 'right':
+        return str(config[ip_name]['doublet_quad_right'][0]), str(sdy1[0])
+    qd0_left = config[ip_name]['doublet_quad_left'][0]
+    ii_qd0 = np.flatnonzero(names == qd0_left)[-1]
+    return str(sdy1[0]), str(names[ii_qd0 + 1])
+
+
 optimizers = {}
+phase_ranges = {}
 for ip_name in IP_NAMES:
 
     print(f'IP {ip_name}:')
@@ -595,14 +709,15 @@ for ip_name in IP_NAMES:
             env[nn_knob] = 0
             env[nn].k1 += env.ref[nn_knob]
             k1_knobs.append(nn_knob)
+        k1_knobs_quad = list(k1_knobs)
 
         # Mid-bend trim quads between the IP and the sextupole on this side.
         # These are zero-length, so the strength has to go on the integrated
         # knl[1]; k1 is dead at zero length -- same reasoning as
         # lattice_knobs.install_extra_sextupole. Units therefore differ from
         # the trims above (k1l [1/m] rather than k1 [1/m^2]), but over a
-        # 25-60 m bend a k1l of 1e-6 is a distributed k1 of ~2-4e-8, so the
-        # shared step=1e-6 in the VaryList below is a comparable perturbation
+        # 25-60 m bend a k1l of 1e-7 is a distributed k1 of ~2-4e-9, so the
+        # shared step=1e-7 in the VaryList below is a comparable perturbation
         # for both families.
         for bend_name in bends_per_side[side]:
             nn = bend_mid_quad_name(bend_name)
@@ -610,16 +725,33 @@ for ip_name in IP_NAMES:
             env[nn_knob] = 0
             env[nn].knl[1] += env.ref[nn_knob]
             k1_knobs.append(nn_knob)
+        k1_knobs_midbend = [nn for nn in k1_knobs if nn not in k1_knobs_quad]
 
         # Match optics and horizontal dispersion at the straight-section
-        # boundary, plus betx/bety at the chromatic sextupole nearest to the
-        # IP. The boundary targets alone leave a local beta-beat between the
-        # IP and the boundary unpenalised; the sextupole targets pin it where
-        # it drives the second-order chromaticity.
+        # boundary and betx/dy/dpy at the sdm1 sextupole nearest to the IP.
+        #
+        # NOTE: this leaves the QD0 -> sdy1 phase advance free, and that is
+        # the known source of the huge second-order chromaticity. sdy1/sdy2
+        # are a -I sextupole pair at bety ~ 1e4 m that cancels the vertical
+        # chromatic kick of the final doublet only if that phase advance is
+        # exactly pi; the boundary targets restore beta/alpha but say nothing
+        # about it. The match leaves errors up to 7e-4 (ipj left) and Q''y ~
+        # +1.8e4 (bare -149), at ~2.4e7 in Q''y per unit phase error per side.
+        # The phase is measured (not targeted) in the report below.
+        #
+        # Adding mux/muy TargetRelPhaseAdvance here was tried and FAILED: mux
+        # is essentially uncontrollable with these knobs, and the direction
+        # that corrects muy drifts bety/dx at the sdy sextupoles, which breaks
+        # the strength half of the -I cancellation and makes the chromatic
+        # leak ~4x worse. Do not put it back as it was. See
+        # claude_notes/09_correcting_the_q2y_source.md.
+        ph_start, ph_end = doublet_to_sdy1_range(table_half, ip_name, side)
+        phase_ranges[ip_name, side] = (ph_start, ph_end)
         labels['optics', side] = (
             f'{ip_name} {side.upper()} OPTICS + horizontal dispersion '
-            f'(betx/bety/alfx/alfy/dx/dpx at {name_boundary}, betx/bety at '
-            f'{sext_corr}; normal-quad + mid-bend trims)')
+            f'(betx/bety/alfx/alfy/dx/dpx at {name_boundary}, betx/dy/dpy at '
+            f'{sext_corr}{" +bety" if SEXT_BETY_TARGET else ""}; '
+            f'normal-quad + mid-bend trims)')
         opt_optics[side] = line.match_knob(
             knob_name=f'on_sol_optics_corr_{side}_{ip_name}',
             name=f'{ip_name}/optics_{side}',
@@ -627,8 +759,13 @@ for ip_name in IP_NAMES:
             assert_within_tol=False,
             init=init_ip[ip_name],
             **optics_range,
-            n_steps_max=30,
-            vary=xt.VaryList(k1_knobs, step=1e-6),
+            n_steps_max=100,
+            vary=[
+                xt.VaryList(k1_knobs_quad, step=OPTICS_STEP,
+                            limits=OPTICS_K1_LIMIT_QUAD),
+                xt.VaryList(k1_knobs_midbend, step=OPTICS_STEP,
+                            limits=OPTICS_K1_LIMIT_MIDBEND),
+            ],
             targets=[
                 xt.TargetSet(
                     betx=tw0['betx', name_boundary],
@@ -638,7 +775,7 @@ for ip_name in IP_NAMES:
                 xt.TargetSet(
                     alfx=tw0['alfx', name_boundary],
                     alfy=tw0['alfy', name_boundary],
-                    tol=1e-8,
+                    tol=OPTICS_ALF_TOL,
                     at=at_boundary),
                 xt.TargetSet(
                     dx=tw0['dx', name_boundary],
@@ -648,8 +785,15 @@ for ip_name in IP_NAMES:
                 xt.TargetSet(
                     betx=tw0['betx', sext_corr],
                     bety=tw0['bety', sext_corr],
+                    #dy=tw0['dy', sext_corr],
                     tol=1e-5,
                     at=sext_corr),
+                # bety at sdm1 is left free by the targets above and drifts
+                # hard: 1.47 -> 23-25 m in the 3 T run of 2026-09-16. Pinning
+                # it spends one of the 6 null-space directions; whether that
+                # buys anything in ring Q''y is what SEXT_BETY_TARGET tests.
+                *([xt.Target('bety', tw0['bety', sext_corr], tol=1e-5,
+                             at=sext_corr)] if SEXT_BETY_TARGET else []),
             ])
 
         # Skew quadrupole knobs for the linear-coupling/vertical-dispersion
@@ -686,17 +830,29 @@ for ip_name in IP_NAMES:
     # ~40 skew-quad vary knobs against 6 targets, so the Jacobian is heavily
     # rank-deficient; truncating small singular values (rcond) keeps the
     # pseudo-inverse from chasing numerically-noisy near-null directions.
+    # The optics matches use Broyden rank-1 Jacobian updates between full
+    # finite-difference Jacobians (one twiss per vary knob, 15 per half).
+    # broyden=True is not usable here: xdeps then builds a single Jacobian at
+    # the first step and keeps updating it, also across solve() calls, so
+    # later passes start from a Jacobian that predates the orbit and coupling
+    # solves. That stalled at penalty ~1e-3 when the phase targets were in, and
+    # a pass starting at the knob point of the last Jacobian divides by
+    # |dx|^2 = 0 (NaN Jacobian, "SVD did not converge"). An integer n takes a
+    # full Jacobian at step 0 of every solve() and every n+1 steps after.
     for side in SIDES:
         solve_and_report(opt_orbit[side], labels['orbit', side] + ' [pass 1/3]')
-        solve_and_report(opt_optics[side], labels['optics', side] + ' [pass 1/3]')
+        solve_and_report(opt_optics[side], labels['optics', side] + ' [pass 1/3]',
+                         broyden=OPTICS_BROYDEN, **OPTICS_SOLVE_KWARGS)
         solve_and_report(opt_coupling[side],
                          labels['coupling', side] + ' [pass 1/2]', rcond=3e-3)
         solve_and_report(opt_orbit[side], labels['orbit', side] + ' [pass 2/3]')
-        solve_and_report(opt_optics[side], labels['optics', side] + ' [pass 2/3]')
+        solve_and_report(opt_optics[side], labels['optics', side] + ' [pass 2/3]',
+                         broyden=OPTICS_BROYDEN, **OPTICS_SOLVE_KWARGS)
         solve_and_report(opt_coupling[side],
                          labels['coupling', side] + ' [pass 2/2]', rcond=3e-3)
         solve_and_report(opt_orbit[side], labels['orbit', side] + ' [pass 3/3]')
-        solve_and_report(opt_optics[side], labels['optics', side] + ' [pass 3/3]')
+        solve_and_report(opt_optics[side], labels['optics', side] + ' [pass 3/3]',
+                         broyden=OPTICS_BROYDEN, **OPTICS_SOLVE_KWARGS)
 
     # Final state of every knob after the iterate pass. Must run before
     # generate_knob(): target_status() afterwards evaluates the optimizer on
@@ -711,8 +867,14 @@ for ip_name in IP_NAMES:
             _tol_met = np.asarray(_status.tol_met, dtype=bool)
             _n_bad = int((~_tol_met).sum())
             _penalty = _opt.log()['penalty'][-1]
+            # Largest trim the solve ended on. A converged half-straight needs
+            # |k1| of a few 1e-4 to 3e-3; anything far above that means the
+            # solve wandered off in a weak Jacobian direction rather than
+            # correcting anything (see OPTICS_RCOND).
+            _kmax = max((abs(line.vars[_vv.name]._value) for _vv in _opt.vary),
+                        default=0.0)
             print(f'    {_knob_label:9s} {_opt.knob_name:38s} '
-                  f'penalty={_penalty:.4g}  '
+                  f'penalty={_penalty:.4g}  max|knob|={_kmax:.2e}  '
                   f'{len(_tol_met) - _n_bad}/{len(_tol_met)} targets in tol')
             if _n_bad:
                 print(f'WARNING: {_opt.knob_name} did not fully converge to '
@@ -768,17 +930,6 @@ if not args.no_chromaticity:
 chrom_off = report_nonlinear_chromaticity(
     line, 'BEFORE: all solenoids off')
 
-# Solenoids on, corrections off. Expected to have no closed orbit at 3 T; the
-# report says so rather than raising, and it is the reference that shows how
-# much of the chromaticity change is the solenoid and how much is the
-# correction.
-for ip_name in IP_NAMES:
-    line[f'on_sol_{ip_name}'] = 1
-    line[f'on_sol_corr_{ip_name}'] = 0
-
-chrom_on_uncorr = report_nonlinear_chromaticity(
-    line, 'solenoids on, corrections OFF')
-
 for ip_name in IP_NAMES:
     line[f'on_sol_{ip_name}'] = 1
     line[f'on_sol_corr_{ip_name}'] = 1
@@ -801,6 +952,20 @@ for ip_name in IP_NAMES:
     print(f'  {ip_name} orbit at IP: x={tw_on_corr["x", ip_name]: .3e}  '
           f'y={tw_on_corr["y", ip_name]: .3e}')
 
+# The phase advance the optics matches pin, measured on the closed ring. An
+# error of 1e-6 in muy is worth ~25 in Q''y.
+print()
+print('--- Phase advance QD0 <-> sdy1: bare -> solenoids on, corrected ---')
+for (ip_name, side), (ph_start, ph_end) in phase_ranges.items():
+    parts = []
+    for mu, q0, q1 in (('mux', tw0.qx, tw_on_corr.qx),
+                       ('muy', tw0.qy, tw_on_corr.qy)):
+        mu_bare = np.mod(tw0[mu, ph_end] - tw0[mu, ph_start], q0)
+        mu_corr = np.mod(tw_on_corr[mu, ph_end] - tw_on_corr[mu, ph_start], q1)
+        parts.append(f'{mu} {mu_bare:.6f} -> {mu_corr:.6f} '
+                     f'({mu_corr - mu_bare:+.1e})')
+    print(f'  {ip_name} {side:5s} {ph_start} -> {ph_end}: ' + '   '.join(parts))
+
 chrom_on_corr = report_nonlinear_chromaticity(
     line, 'AFTER:  solenoids on, corrections on')
 
@@ -809,8 +974,12 @@ if chrom_off is not None and chrom_on_corr is not None:
           f'd(d2qx)={chrom_on_corr["d2qx"] - chrom_off["d2qx"]:+13.4f}  '
           f'd(d2qy)={chrom_on_corr["d2qy"] - chrom_off["d2qy"]:+13.4f}')
 
-env.to_json(OUTPUT_LATTICE_JSON)
-print(f'Wrote {OUTPUT_LATTICE_JSON}')
+if WRITE_OUTPUT_LATTICE:
+    env.to_json(OUTPUT_LATTICE_JSON)
+    print(f'Wrote {OUTPUT_LATTICE_JSON}')
+else:
+    print(f'Partial run (--ips {",".join(IP_NAMES)}): '
+          f'NOT writing {OUTPUT_LATTICE_JSON.name}')
 
 
 ################
