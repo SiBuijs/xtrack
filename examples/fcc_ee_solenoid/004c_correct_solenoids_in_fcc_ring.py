@@ -1,5 +1,6 @@
 from pathlib import Path
 import argparse
+import math
 import sys
 
 import matplotlib.pyplot as plt
@@ -125,7 +126,18 @@ def report_nonlinear_chromaticity(line, label):
     d2qx, d2qy = float(chrom.qx_derivatives[2]), float(chrom.qy_derivatives[2])
     print(f"  {label:38s} Q'x={dqx:11.4f}  Q'y={dqy:11.4f}   "
           f"d2qx={d2qx:13.4f}  d2qy={d2qy:13.4f}")
-    return dict(dqx=dqx, dqy=dqy, d2qx=d2qx, d2qy=d2qy)
+    # The Chromaticity object keeps the sweep it fitted, so the plot below
+    # costs no extra twiss. Undo detuning.py's division by n! to get back the
+    # plain polynomial coefficients c_n with Q(delta) = sum_n c_n delta**n;
+    # plotting from these guarantees the drawn curve is the same fit that
+    # produced the d2q printed above.
+    factorials = np.array([math.factorial(ii) for ii in range(chrom.order + 1)])
+    return dict(dqx=dqx, dqy=dqy, d2qx=d2qx, d2qy=d2qy,
+                label=label,
+                deltas=np.asarray(chrom.deltas),
+                qx=np.asarray(chrom.qx), qy=np.asarray(chrom.qy),
+                qx_coef=np.asarray(chrom.qx_derivatives) * factorials,
+                qy_coef=np.asarray(chrom.qy_derivatives) * factorials)
 
 
 def measure_ksol_l_main_solenoid(line, env, ip_name):
@@ -420,7 +432,12 @@ def solve_and_report(opt, label, **solve_kwargs):
         raise
 
     tt = opt.target_status(ret=True)
-    tol_met = np.asarray(tt.tol_met, dtype=bool)
+    # Disabled targets ('state' == 'OFF', see solve_optics) are still listed by
+    # target_status and report tol_met=False, so count only the active ones or
+    # every staged solve reports itself INCOMPLETE on the targets it was
+    # deliberately not solving.
+    active = np.asarray(tt.state, dtype=object) != 'OFF'
+    tol_met = np.asarray(tt.tol_met, dtype=bool)[active]
     n_bad = int((~tol_met).sum())
     if n_bad:
         print(f'MATCH INCOMPLETE: {label} -- {n_bad}/{len(tol_met)} targets '
@@ -429,6 +446,31 @@ def solve_and_report(opt, label, **solve_kwargs):
     else:
         print(f'MATCH OK: {label} -- all {len(tol_met)} targets within '
               'tolerance.')
+
+
+def solve_optics(opt, label, staged, **solve_kwargs):
+    """Solve an optics knob, optionally in two stages (see OPTICS_STAGE_SEXT).
+
+    Stage 1 runs with the 'sext' targets disabled, i.e. only the six targets at
+    the straight-section boundary; stage 2 re-enables them and solves the full
+    set from that point. ``staged=False`` is a single solve of everything.
+
+    The targets are re-enabled in a ``finally`` so that an exception in stage 1
+    cannot leave the optimizer permanently missing its sextupole targets -- it
+    is reused by the later passes and then frozen by generate_knob().
+    """
+    if not staged:
+        solve_and_report(opt, label, **solve_kwargs)
+        return
+
+    opt.disable(target='sext')
+    try:
+        solve_and_report(opt, label + ' [stage 1/2: boundary only]',
+                         **solve_kwargs)
+    finally:
+        opt.enable(target='sext')
+    solve_and_report(opt, label + ' [stage 2/2: boundary + sextupole]',
+                     **solve_kwargs)
 
 
 ###############################################
@@ -496,8 +538,20 @@ OPTICS_K1_LIMIT_MIDBEND = None
 # Finite-difference step of the optics vary knobs.
 OPTICS_STEP = 1e-7
 
-# Also pin bety at the sdm1 sextupole in the half-straight optics match.
-SEXT_BETY_TARGET = True
+# Solve the half-straight optics in two stages: first with the 'sext' targets
+# (betx/bety at sdm1) disabled, so only the six straight-boundary targets are
+# active, then again with all of them. The boundary-only stage is even more
+# underdetermined (6 targets, 15 knobs), but combined with OPTICS_RCOND it
+# takes the minimum-norm step, so it lands on a small-trim point near the bare
+# lattice; stage 2 then starts from there instead of from the unconverged
+# solenoid optics. The point is to stop the solve reaching the sextupole
+# targets along some large-amplitude excursion, which is what makes the sign of
+# the ring Q''y flip between runs.
+#
+# Only pass 1 is staged. Passes 2 and 3 start already near a solution, so
+# disabling 'sext' there would pull betx/bety at sdm1 back off target for no
+# reason, and cost an extra Jacobian per side to undo it.
+OPTICS_STAGE_SEXT = True
 
 if args.optics_rcond is not None:
     OPTICS_RCOND = args.optics_rcond or None
@@ -749,9 +803,8 @@ for ip_name in IP_NAMES:
         phase_ranges[ip_name, side] = (ph_start, ph_end)
         labels['optics', side] = (
             f'{ip_name} {side.upper()} OPTICS + horizontal dispersion '
-            f'(betx/bety/alfx/alfy/dx/dpx at {name_boundary}, betx/dy/dpy at '
-            f'{sext_corr}{" +bety" if SEXT_BETY_TARGET else ""}; '
-            f'normal-quad + mid-bend trims)')
+            f'(betx/bety/alfx/alfy/dx/dpx at {name_boundary}, betx/bety at '
+            f'{sext_corr}; normal-quad + mid-bend trims)')
         opt_optics[side] = line.match_knob(
             knob_name=f'on_sol_optics_corr_{side}_{ip_name}',
             name=f'{ip_name}/optics_{side}',
@@ -785,15 +838,10 @@ for ip_name in IP_NAMES:
                 xt.TargetSet(
                     betx=tw0['betx', sext_corr],
                     bety=tw0['bety', sext_corr],
-                    #dy=tw0['dy', sext_corr],
+                    dy=tw0['dy', sext_corr],
                     tol=1e-5,
+                    tag='sext',
                     at=sext_corr),
-                # bety at sdm1 is left free by the targets above and drifts
-                # hard: 1.47 -> 23-25 m in the 3 T run of 2026-09-16. Pinning
-                # it spends one of the 6 null-space directions; whether that
-                # buys anything in ring Q''y is what SEXT_BETY_TARGET tests.
-                *([xt.Target('bety', tw0['bety', sext_corr], tol=1e-5,
-                             at=sext_corr)] if SEXT_BETY_TARGET else []),
             ])
 
         # Skew quadrupole knobs for the linear-coupling/vertical-dispersion
@@ -841,8 +889,9 @@ for ip_name in IP_NAMES:
     # full Jacobian at step 0 of every solve() and every n+1 steps after.
     for side in SIDES:
         solve_and_report(opt_orbit[side], labels['orbit', side] + ' [pass 1/3]')
-        solve_and_report(opt_optics[side], labels['optics', side] + ' [pass 1/3]',
-                         broyden=OPTICS_BROYDEN, **OPTICS_SOLVE_KWARGS)
+        solve_optics(opt_optics[side], labels['optics', side] + ' [pass 1/3]',
+                     staged=OPTICS_STAGE_SEXT,
+                     broyden=OPTICS_BROYDEN, **OPTICS_SOLVE_KWARGS)
         solve_and_report(opt_coupling[side],
                          labels['coupling', side] + ' [pass 1/2]', rcond=3e-3)
         solve_and_report(opt_orbit[side], labels['orbit', side] + ' [pass 2/3]')
@@ -1006,5 +1055,61 @@ ax3 = fig3.add_subplot(3, 1, 3, sharex=ax)
 ax3.plot(tw_off.s, tw_off.muy)
 ax3.plot(tw_on_corr.s, tw_on_corr.muy, label='muy with solenoid')
 ax3.legend(loc='best')
+
+# Q(delta) sweeps behind the printed chromaticity numbers, with their fits.
+#
+# Top row is Q(delta) itself, which is what the fit is done on. Over
+# delta = +-1e-3 the quadratic term is ~1e-4 of the linear one (Q' ~ 5 gives
+# 5e-3 across the sweep, d2q ~ 300 gives 3e-4), so the curvature is invisible
+# there and the points look like a straight line no matter how large Q'' is.
+# The bottom row therefore subtracts each curve's own constant and linear part,
+# which is the only view in which d2q can actually be read off. Both cases have
+# their own Q' removed, so bare and corrected stay comparable.
+_chrom_cases = [(cc, st) for cc, st in ((chrom_off, '--'),
+                                        (chrom_on_corr, '-'))
+                if cc is not None]
+if _chrom_cases:
+    fig4, axs4 = plt.subplots(2, 2, sharex=True, num=4, figsize=(11, 7))
+    # detuning.py sweeps its own max_delta (1e-3 by default, not exposed by
+    # 004c), so take the range from the points it actually returned.
+    _d_lim = max(abs(cc['deltas']).max() for cc, _ in _chrom_cases)
+    _delta_fine = np.linspace(-_d_lim, _d_lim, 401)
+    for _col, _plane in enumerate(('x', 'y')):
+        _ax_abs, _ax_res = axs4[0, _col], axs4[1, _col]
+        for _chrom, _style in _chrom_cases:
+            _q = _chrom[f'q{_plane}']
+            _coef = _chrom[f'q{_plane}_coef']
+            _d2q = _chrom[f'd2q{_plane}']
+            _tag = _chrom['label'].split(':')[0]
+            _fit = np.polynomial.polynomial.polyval(_delta_fine, _coef)
+            _line, = _ax_abs.plot(_delta_fine, _fit, _style,
+                                  label=f'{_tag} fit')
+            _ax_abs.plot(_chrom['deltas'], _q, 'o', ms=4,
+                         color=_line.get_color())
+            # Constant and linear part of this same fit, removed from both the
+            # sampled points and the curve.
+            _lin_fine = _coef[0] + _coef[1] * _delta_fine
+            _lin_pts = _coef[0] + _coef[1] * _chrom['deltas']
+            _ax_res.plot(_delta_fine, _fit - _lin_fine, _style,
+                         color=_line.get_color(),
+                         label=f'{_tag}: d2q{_plane}={_d2q:.4g} '
+                               f"(Q''={4 * _d2q:.4g})")
+            _ax_res.plot(_chrom['deltas'], _q - _lin_pts, 'o', ms=4,
+                         color=_line.get_color())
+        _ax_abs.set_ylabel(f'Q{_plane}')
+        _ax_abs.set_title(f'Q{_plane} vs delta')
+        _ax_res.set_ylabel(f'Q{_plane} - (Q{_plane}0 + Q\'{_plane} delta)')
+        _ax_res.set_xlabel('delta')
+        _ax_res.set_title('quadratic part only')
+        for _a in (_ax_abs, _ax_res):
+            _a.grid(alpha=0.3)
+            _a.legend(loc='best', fontsize=8)
+            # delta is O(1e-3); without this the five tick labels run together.
+            _a.ticklabel_format(axis='x', style='sci', scilimits=(0, 0))
+    # d2q is detuning.py's convention, Q''/4; the legend spells out both so the
+    # plot cannot be misread against the notes.
+    fig4.suptitle(f'Non-linear chromaticity, {FIELD_TAG} '
+                  f'({args.chromaticity_points} points)')
+    fig4.tight_layout()
 
 plt.show()
