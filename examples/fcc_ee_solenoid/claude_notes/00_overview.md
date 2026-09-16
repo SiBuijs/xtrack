@@ -238,6 +238,24 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   before trusting the surrounding text. `004f`/`004g` themselves
   are not otherwise documented in this pipeline overview yet.
 
+- `08_second_order_chromaticity_source.md` — (2026-09-15) why the 004c
+  corrected rings have Q''y ~ +1.5e4..1.8e4 (bare -149): the half-straight
+  optics match leaves the vertical phase advance QD0 -> sdy1 (vertical LCC
+  -I sextupole pair) free, and Q''y ~ 2.4e7 * (phase error) per side
+  (ipj left dominates). Includes the phase-trombone recipe, the IP-marker
+  phase pitfall, and how to read 004dd's mu''(s) (realised in the arcs, not
+  sourced there). sdm1 sextupoles are chromatically irrelevant.
+  **Its "Fix" section is superseded — see note 09.**
+
+- `09_correcting_the_q2y_source.md` — (2026-09-16) the attempts to *correct*
+  the note-08 source, all of which failed, and the response-matrix/null-space
+  measurement of why: the −I pair needs both a phase and a strength condition,
+  the half-straight optics match constrains neither, and within the null space
+  of its existing targets the two trade against each other. Also: what 004cc
+  is now (IP_NAME selector, per-knob decomposition, W and QD0->sdy1 phase
+  printouts), how to target `wy_chrom` in a match and why it must be staged,
+  and a reference section on what the Montague W functions are.
+
 Removed 2026-07-15: the `kill_higher_order_{upstream,downstream}_{ip}` knob
 (zeroed sextupole-and-above multipole content for one half of one IP's main
 solenoid; was wired into 004b/`lattice_knobs.py`/009/010/013/014/004d) has
