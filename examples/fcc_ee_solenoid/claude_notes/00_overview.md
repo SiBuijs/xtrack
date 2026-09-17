@@ -255,6 +255,23 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   is now (IP_NAME selector, per-knob decomposition, W and QD0->sdy1 phase
   printouts), how to target `wy_chrom` in a match and why it must be staged,
   and a reference section on what the Montague W functions are.
+  **Its "one hypothesis checked and killed" section is wrong — see note 10.**
+
+- `10_conditioning_the_optics_match.md` — (2026-09-16/17) **the fix that
+  worked, and the end of this thread.** The Q''y problem was a *conditioning*
+  problem, not a physics one: the half-straight optics match is rank-deficient
+  (15 knobs, 8-9 targets, condition number 3.7e7) and `xdeps` defaults to
+  `rcond=1e-14`, so it inverted the near-null directions and landed on an
+  arbitrary null-space point each run — which is why Q''y flipped sign between
+  otherwise identical runs. Two solver changes, no new targets:
+  `OPTICS_RCOND = 1e-6` and a staged pass-1 solve (`sext` targets disabled,
+  then re-enabled). Took ipg left from max|k1| 4.5e-3 / phase error 2.6e-3 to
+  4.7e-5 / 5.3e-5, and made ring Q''y **predictable from the eight QD0->sdy1
+  phase errors to 0.2%** via note 08's 2.42e7 calibration. Also records four
+  measured dead ends (knob limits, `step=1e-6`, the `bety`-at-sdm1 target,
+  tighter tolerances), why "penalty is not quality", the diagnostics added to
+  004c (`max|knob|` column, `--ips`, figure 4's Q(δ) plot), and the fact that
+  **004cc still carries a value-shift bug** in its sextupole targets.
 
 Removed 2026-07-15: the `kill_higher_order_{upstream,downstream}_{ip}` knob
 (zeroed sextupole-and-above multipole content for one half of one IP's main
