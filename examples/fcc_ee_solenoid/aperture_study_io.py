@@ -360,6 +360,7 @@ def save_emitt_study(
     variant: str = "",
     sexamp: float = BUILD_DEFAULTS["sexamp"],
     field_tag: str = FIELD_TAG,
+    bunch_emitt_divisor: float | None = None,
 ) -> tuple[Path, Path]:
     stem = make_study_stem(
         "EMIT",
@@ -396,6 +397,10 @@ def save_emitt_study(
         model=model,
         radiation=radiation,
         sexamp=float(sexamp),
+        # Bunch initial emittance as eq/divisor. NaN means "not recorded" --
+        # 014_emittance_evolution.py does not pass it (it always used 3.0).
+        bunch_emitt_divisor=(
+            np.nan if bunch_emitt_divisor is None else float(bunch_emitt_divisor)),
     )
     npz_path = _study_npz_path(stem)
     np.savez(npz_path, **arrays)
@@ -434,6 +439,8 @@ def save_pol_study(
     variant: str = "",
     sexamp: float = BUILD_DEFAULTS["sexamp"],
     field_tag: str = FIELD_TAG,
+    fit_turn_start: int = 0,
+    bunch_emitt_divisor: float | None = None,
 ) -> tuple[Path, Path]:
     stem = make_study_stem(
         "POL",
@@ -474,6 +481,13 @@ def save_pol_study(
         model=model,
         radiation=radiation,
         sexamp=float(sexamp),
+        # First turn included in the fit that produced the fit_* values above.
+        # 0 is literally correct for 015_spin_polarization.py's full-range fit.
+        fit_turn_start=int(fit_turn_start),
+        # Bunch initial emittance as eq/divisor. NaN means "not recorded" --
+        # 015_spin_polarization.py does not pass it (it always used 1.0).
+        bunch_emitt_divisor=(
+            np.nan if bunch_emitt_divisor is None else float(bunch_emitt_divisor)),
     )
     npz_path = _study_npz_path(stem)
     np.savez(npz_path, **arrays)

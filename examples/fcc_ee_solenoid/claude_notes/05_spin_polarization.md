@@ -130,6 +130,118 @@ following the exact same `make_study_stem`/`DATA_DIR`+`PLOT_DIR` pattern as
 `replot_from_npz`/`012_replot_aperture_from_data.py` for POL files — rerun
 the script to regenerate the plot.
 
-Not wired into `013_run_da_and_ma.py` (that orchestrator's scope wasn't
-extended to include this new study — run `015_spin_polarization.py`
-directly).
+~~Not wired into `013_run_da_and_ma.py`~~ — **superseded 2026-09-17, see
+below.** 015 itself is still not wired into 013, but the combined script
+`018_emittance_and_polarization.py` is, and it covers the same study.
+
+---
+
+# 018_emittance_and_polarization.py — the 014+015 merge (2026-09-17)
+
+014 and 015 each ran their own full tracking pass (1000p x 10000t, quantum
+radiation) over the same lattice, and 270 of their 503 lines were
+byte-identical. They differed in exactly three places:
+
+| | 014 | 015 |
+|---|---|---|
+| Twiss | `radiation_analysis=True` | + `polarization_analysis=True` (strict superset) |
+| Bunch | `eq_nemitt/3` | full equilibrium |
+| Spin IC | not set | `spin_y = 1.0` |
+
+018 does **one** twiss, **one** bunch, **one** `line.track()` and **one**
+turn-by-turn monitor, then runs both analyses off that monitor and calls both
+`save_emitt_study` and `save_pol_study` unchanged. 013's tracking stage now
+points at 018 (`EMITT_POL_SCRIPT`), so a default 013 run yields DA + MA +
+EMIT + POL. **014 and 015 are deliberately left byte-untouched** so existing
+results stay reproducible.
+
+## Why spin is free when it is off
+
+`magnet_spin` (`xtrack/beam_elements/elements_src/track_magnet_radiation.h`)
+early-returns when all three spin components are zero, and `spin_flag` is
+hardcoded to `1` in the magnet kernels — so 014 already walked the spin code
+path, it just no-opped. `magnet_spin` also consumes no random numbers and
+never writes back to the orbit. Consequence, verified: **at a fixed `--seed`
+018's emittance arrays are bit-identical to a 014 run.**
+
+## The spin-IC trap (easy to get wrong)
+
+`twiss(spin=True)` writes the invariant spin field onto `tw.particle_on_co`
+(`xtrack/twiss.py`, `_find_spin_fixed_point`) and `build_particles` copies
+`particle_ref`'s spin into every generated particle
+(`xpart/build_particles.py:447-449`). So **after a polarization twiss the
+generated bunch is NOT spin-zero**, and a `--no-pol` mode that merely
+"doesn't set spin" would silently do full spin tracking. 018 therefore zeroes
+spin explicitly in the `--no-pol` branch, and drops
+`polarization_analysis` from the twiss as well.
+
+The same mechanism explains the shape of the P(n) curve: 015's `spin_y=1`
+*overwrites* the matched `n0` direction, so the bunch relaxes back onto it
+in the first turns. That relaxation is ~the entire 1e-5 drop seen over a
+10 000-turn run.
+
+## Bunch IC and the fit window
+
+018 uses **014's eq/3 bunch** (`--bunch-emitt-divisor`, default 3), so the
+damping-rate fit still has a transient to fit (it works: fitted alpha_x
+7.17e-4 vs Twiss 7.73e-4). The polarization fit compensates with
+`--pol-fit-start-turn` (default 2000, matching 016's `--turn-start`), which
+drops both the spin-IC relaxation and the bulk of the damping transient —
+tau_z ~ 600 turns, so by turn 2000 the longitudinal plane, which drives
+dn/ddelta depolarization, is within ~1% of equilibrium.
+
+This is defensible mainly because **the tracked tau_depol is noise-dominated
+anyway.** Measured on `POL_Sol_On_SB_3T_1000p_10000t`: total P drop 1.0e-5
+over the run, nearly all of it in turn 0->1; from turn 1000-9000 P falls
+5.5e-7 against 4.4e-7 turn-to-turn scatter, i.e. SNR ~ 1. Moving the fit
+start from 0 to 6000 swings tau_depol from 8.9e9 to 4.0e10 turns, and the
+fitted 2.7e6 s disagrees with Twiss's analytic 960 s by ~2800x (P_eq derived
+0.68 vs Twiss 0.00104). **Do not treat a non-reproducing `fit_tau_depol_*`
+as a merge bug** — it is the pre-existing noise floor, and it is why 016
+exists.
+
+## Provenance tagging (`__bunchdiv<F>`)
+
+Filenames did not record the bunch IC, so a POL file made from an eq/3 bunch
+would have been indistinguishable on disk from one 015 made from an
+equilibrium bunch. 018 tags each study against *its own parent's* divisor:
+
+| run | EMIT stem | POL stem |
+|---|---|---|
+| default (divisor 3) | untagged = 014's | `…__bunchdiv3p0` |
+| `--bunch-emitt-divisor 1` | `…__bunchdiv1p0` | untagged = 015's |
+
+So an untagged file always means "same physics the legacy script would have
+written". `EMIT_`/`POL_` prefixes are unchanged, so 016's `glob("POL_*.npz")`
+still finds everything and its PDF stem inherits the tag.
+`--bunch-emitt-divisor 1 --no-emitt` reproduces 015 exactly.
+
+`aperture_study_io.py` gained two additive, backward-compatible kwargs:
+`save_pol_study(fit_turn_start=0, bunch_emitt_divisor=None)` and
+`save_emitt_study(bunch_emitt_divisor=None)`, stored in the npz (`np.nan` =
+"not recorded", which is what 014/015 write since they don't pass it).
+`fit_turn_start=0` is literally correct for 015's full-range fit.
+
+## Determinism
+
+Neither parent seeded anything, but the whole chain runs off the global numpy
+RNG: bunch generation uses `np.random.*`, and the per-particle
+quantum-radiation seeds come from `np.random.randint` in
+`particles._init_random_number_generator`, called at the first `track()`
+because `configure_radiation('quantum')` sets `line._needs_rng`. So
+`np.random.seed()` before bunch generation makes the whole run reproducible —
+exposed as `--seed`.
+
+This works **only because radiation is still `'mean'` at twiss time**, so the
+twiss's internal probe tracking draws no `np.random` numbers. Moving
+`configure_radiation('quantum')` above the twiss would silently break it.
+
+## Flags
+
+`--no-emitt` / `--no-pol` (mutually exclusive) select halves; the bunch IC is
+independent of which halves run, so `--no-emitt` stays a strict subset of the
+combined run. Also `--pol-fit-start-turn`, `--bunch-emitt-divisor`, `--seed`.
+A guard rejects `--pol-fit-start-turn >= --n-turns` *before* tracking, which
+short smoke runs will hit (use e.g. `--pol-fit-start-turn 20`).
+013 forwards these as `--emitt-no-pol`, `--emitt-pol-only`,
+`--emitt-pol-fit-start-turn`, `--emitt-bunch-divisor`, `--emitt-seed`.
