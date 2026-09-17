@@ -60,9 +60,15 @@ These two *_coupling_corrected.json files are the ones actually consumed by
        of the JSON above; they rebuild field models from scratch each time).
        See 02_solenoid_model_checks_006_008.md.
 
-   009, 010, 011, 013, 014: aperture/emittance studies reading the two
-       *_coupling_corrected.json lattices. See
-       03_aperture_emittance_studies_009_014.md.
+   009, 010, 011, 013, 014, 015, 018: aperture/emittance/spin studies
+       reading the two *_coupling_corrected.json lattices. See
+       03_aperture_emittance_studies_009_014.md and 05_spin_polarization.md.
+       **2026-09-17: 018_emittance_and_polarization.py merges 014 and 015**
+       into ONE tracking run per case (they differed only in twiss flavour,
+       bunch initial emittance and spin IC), and 013 now drives 018 in place
+       of 014 -- so a default 013 run yields DA + MA + EMIT + POL for the
+       cost of three tracking passes. 014 and 015 are kept untouched and
+       still runnable standalone. See 05_spin_polarization.md.
 ```
 
 ## Shared helper modules (used across many scripts)
@@ -211,6 +217,11 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   `tau_pol` from Twiss `polarization_analysis=True`, `tau_depol` from a
   linear fit of tracked polarization decay), structurally a sibling of
   `014_emittance_evolution.py`. Not part of the 000-014 pipeline numbering.
+  **Also covers `018_emittance_and_polarization.py`** (2026-09-17), the
+  merge of 014+015 into a single tracking run, why spin costs nothing when
+  it is off, the `__bunchdiv<F>` provenance tag, the `--seed` determinism
+  path, and the measurement that the tracked `tau_depol` is noise-dominated
+  (SNR ~ 1).
 - `07_main_b_scale_scans.md` — the `main_b_scale` / per-side
   `comp_b_scale_{side}_{ip}` knobs (new in 004b/004c, `--output-tag
   mainscale` lattices) and the three scan scripts that use them:
