@@ -332,13 +332,8 @@ opt_optics = line_ds.match_knob(
 # all). Converging the linear targets first puts the solver in a region where W
 # is O(10) and well behaved, and it also makes the failure mode safe: the worst
 # take_best can now do is return the linear solution.
-print("\nOptics correction (stage 1: linear targets only):")
-opt_optics.disable(target='wchrom')
-opt_optics.solve()
-print("\nOptics correction (stage 2: with the W targets):")
-opt_optics.enable(target='wchrom')
-opt_optics.solve()
-opt_optics.target_status()
+# The staged solve itself is in solve_correction_chain() below, which is run
+# once per sextupole-target phase (see the two phases after it).
 
 
 # Try an additional correction of linear coupling and vertical dispersion
@@ -358,21 +353,103 @@ opt_coupling = line_ds.match_knob(
         xt.TargetSet(dpy=0, at=xt.END, tol=1e-7),
     ])
 
-print("\nCoupling correction:")
-opt_coupling.solve(rcond=3e-3)
+VARY_KNOB_NAMES = [vv.name for opt in (opt_orbit, opt_optics, opt_coupling)
+                   for vv in opt.vary]
 
-# Iterate to improve consistency of orbit and optics corrections.
-print("\nOrbit correction:")
-opt_orbit.solve()
-print("\nOptics correction:")
-opt_optics.solve()
-print("\nCoupling correction:")
-opt_coupling.solve(rcond=3e-3)
-print("\nOrbit correction:")
-opt_orbit.solve()
-print("\nOptics correction:")
-opt_optics.solve()
-opt_optics.target_status()
+
+def reset_vary_knobs():
+    """Put every correction vary knob back to zero, i.e. back to the
+    uncorrected solenoid optics, so that the next chain starts from the same
+    place the first one did."""
+    for nn in VARY_KNOB_NAMES:
+        line.vars[nn] = 0.0
+
+
+def solve_correction_chain(label, optics_rcond=None):
+    """One full orbit / optics / coupling correction chain, in the order the
+    script has always used.
+
+    The optics solve inside it is itself staged on the 'wchrom' targets, for
+    the reason given at the optics match above: W is unbounded and has to be
+    approached from a converged linear solution.
+
+    `optics_rcond` truncates the small singular values of the optics Jacobian,
+    as 004c's OPTICS_RCOND does. Only used for the sext-targets-off chain,
+    which is the more underdetermined of the two (8 targets against 15 knobs
+    instead of 11) and the one that otherwise drifts off its boundary targets.
+    """
+    optics_solve_kwargs = ({} if optics_rcond is None
+                           else {'rcond': optics_rcond})
+    print(f'\n[{label}] Orbit correction:')
+    opt_orbit.solve()
+    print(f'\n[{label}] Optics correction (stage 1: linear targets only):')
+    opt_optics.disable(target='wchrom')
+    opt_optics.solve(**optics_solve_kwargs)
+    print(f'\n[{label}] Optics correction (stage 2: with the W targets):')
+    opt_optics.enable(target='wchrom')
+    opt_optics.solve(**optics_solve_kwargs)
+    opt_optics.target_status()
+    print(f'\n[{label}] Coupling correction:')
+    opt_coupling.solve(rcond=3e-3)
+    # Iterate to improve consistency of orbit and optics corrections.
+    print(f'\n[{label}] Orbit correction:')
+    opt_orbit.solve()
+    print(f'\n[{label}] Optics correction:')
+    opt_optics.solve(**optics_solve_kwargs)
+    print(f'\n[{label}] Coupling correction:')
+    opt_coupling.solve(rcond=3e-3)
+    print(f'\n[{label}] Orbit correction:')
+    opt_orbit.solve()
+    print(f'\n[{label}] Optics correction:')
+    opt_optics.solve(**optics_solve_kwargs)
+    opt_optics.target_status()
+
+
+##############################################################
+# The correction, solved with and without the sext targets   #
+##############################################################
+
+# Two INDEPENDENT chains, each started from all vary knobs at zero, i.e. from
+# the uncorrected solenoid optics. They differ in exactly one thing: whether
+# the 'sext' targets (betx/bety/dy at sdm1r, the chromatic sextupole nearest
+# the IP) are active. Chain A matches only the straight boundary (plus W);
+# chain B matches the sextupole as well.
+#
+# They must be independent rather than sequential. Running them as two stages
+# of one solve -- boundary-only first, then continuing with the sext targets
+# enabled, the way 004c's OPTICS_STAGE_SEXT does on the ring -- was tried here
+# (2026-09-21) and FAILS badly: the boundary-only solution (bety ~ 537 m at
+# sdm1r) is a trap the solver never gets out of, and the final state ends 72%
+# off on betx at the straight end (276 against 160) with wy_chrom at 127
+# instead of 2, where solving with the sext targets on from the start
+# converges them all. Whatever makes the staging work in 004c, it does not
+# carry over to this match, which also carries the W targets.
+#
+# Chain B is therefore the original code path, and is what the generated knobs
+# and everything downstream come from. Chain A exists only for the comparison
+# plot below.
+
+print('\n' + '=' * 70)
+print('Chain A: optics match WITHOUT the sextupole targets (straight edges '
+      'only)')
+print('=' * 70)
+reset_vary_knobs()
+opt_optics.disable(target='sext')
+# See solve_correction_chain: the boundary-only problem is the more
+# underdetermined of the two, and with the xdeps default rcond it drifts off
+# the very targets it is supposed to be holding (betx at the straight end
+# 1.4% off in the 2026-09-21 run), which would make the comparison at the
+# sextupole impossible to attribute. Truncating as 004c does keeps it on them.
+solve_correction_chain('sext targets off', optics_rcond=1e-6)
+tw_corrected_no_sext = line_ds.twiss4d(init=init_ip, strengths=True)
+
+print('\n' + '=' * 70)
+print('Chain B: the same correction WITH the sextupole targets (the one the '
+      'generated knobs come from)')
+print('=' * 70)
+reset_vary_knobs()
+opt_optics.enable(target='sext')
+solve_correction_chain('sext targets on')
 
 opt_orbit.generate_knob()
 opt_optics.generate_knob()
@@ -410,6 +487,98 @@ for corr_quad in [corr_1_right_on_quad, corr_2_right_on_quad, corr_3_right_on_qu
 for mid_quad in mid_quad_names:
     plt.axvline(x=tw_corrected.rows[mid_quad]['s'][0], color='m', ls='--', lw=1.5, alpha=0.5)
 plt.suptitle(f'Corrected optics {IP_NAME} to EoS (3T)')
+plt.show(block=False)
+
+
+###########################################################
+# Beta functions with and without the sextupole targets   #
+###########################################################
+
+# What the 'sext' targets buy, read at the sextupole they target and along the
+# whole half straight. Log y: beta spans the IP waist (bety* = 0.7 mm) up to
+# ~1.5e4 m in the doublet, so a linear axis collapses everything but the peaks
+# (same reasoning as 004d's BETA_COMPARISON_RANGES, see
+# claude_notes/01_lattice_construction_000_004d.md).
+
+s_sext = tw_corrected.rows[sext_for_chromaticity_correction]['s'][0]
+
+# The bare case is drawn as a thick pale band rather than a thin line, so that
+# the corrected-with-targets curve drawn on top of it sits *inside* it: where
+# the correction works, blue runs down the middle of grey, which is the whole
+# point of the figure and is invisible if both are hairlines.
+BETA_CASES = (
+    ('bare (no solenoid)', tw_no_solenoid, 'C0', '-', 4.0),
+    ('corrected, sext targets off', tw_corrected_no_sext, 'C1', '-', 1.4),
+    ('corrected, sext targets on', tw_corrected, 'C2', '-', 1.4),
+)
+
+print('\nOptics at the targeted sextupole '
+      f'({sext_for_chromaticity_correction}):')
+print(f'  {"case":30s} {"betx [m]":>12s} {"bety [m]":>12s} {"dy [m]":>12s}')
+for case_label, tw_case, _, _, _ in BETA_CASES:
+    print(f'  {case_label:30s} '
+          f'{tw_case["betx", sext_for_chromaticity_correction]:12.5f} '
+          f'{tw_case["bety", sext_for_chromaticity_correction]:12.5f} '
+          f'{tw_case["dy", sext_for_chromaticity_correction]:12.3e}')
+
+# Two s-ranges, same reasoning as 004d's BETA_COMPARISON_RANGES: the IR out to
+# a little past the targeted sextupole is where the correction acts and where
+# the two cases differ, while the full half straight shows that they have
+# re-merged by the time the beam reaches the arcs.
+BETA_PLOT_RANGES = (
+    ((-2.0, 1.35 * s_sext), f'IR ({IP_NAME} to just past '
+                            f'{sext_for_chromaticity_correction})'),
+    (None, f'{IP_NAME} to EoS'),
+)
+
+
+def beta_ylim_for_xlim(plane, xlim, margin=1.6):
+    """Log-friendly y-limits from the data actually inside `xlim` -- on a
+    shared full-straight axis the arc peaks would otherwise set the scale for
+    the IR zoom too."""
+    lo, hi = np.inf, -np.inf
+    for _, tw_case, _, _, _ in BETA_CASES:
+        beta = np.asarray(tw_case[f'bet{plane}'])
+        s_case = np.asarray(tw_case.s)
+        mask = (np.ones_like(s_case, dtype=bool) if xlim is None
+                else (s_case >= xlim[0]) & (s_case <= xlim[1]))
+        beta_in = beta[mask & (beta > 0)]
+        if beta_in.size:
+            lo, hi = min(lo, beta_in.min()), max(hi, beta_in.max())
+    if not np.isfinite(lo) or not np.isfinite(hi):
+        return None
+    return lo / margin, hi * margin
+
+
+def beta_comparison_fig(xlim, title_suffix):
+    fig, axs = plt.subplots(2, 1, sharex=True, figsize=(10, 7.5))
+    for ax, plane in zip(axs, ('x', 'y')):
+        for case_label, tw_case, color, linestyle, linewidth in BETA_CASES:
+            ax.plot(tw_case.s, tw_case[f'bet{plane}'], color=color,
+                    linestyle=linestyle, lw=linewidth, label=case_label)
+        ax.axvline(x=s_sext, color='k', lw=1.5)
+        ax.set_yscale('log')
+        ax.set_ylabel(rf'$\beta_{plane}$ [m]')
+        ax.grid(True, alpha=0.3, which='both')
+        ylim = beta_ylim_for_xlim(plane, xlim)
+        if ylim is not None:
+            ax.set_ylim(*ylim)
+    if xlim is not None:
+        axs[0].set_xlim(*xlim)
+    axs[0].annotate(
+        sext_for_chromaticity_correction, xy=(s_sext, 0.98),
+        xycoords=('data', 'axes fraction'), ha='right', va='top',
+        fontsize=8, rotation=90, xytext=(-3, 0), textcoords='offset points')
+    axs[0].legend(loc='lower right', fontsize=9)
+    axs[-1].set_xlabel(f'$s$ from {IP_NAME} [m]')
+    fig.suptitle(
+        f'Effect of the sextupole optics targets, {title_suffix} (3T)')
+    fig.tight_layout()
+    return fig
+
+
+figs_beta = [beta_comparison_fig(xlim, title_suffix)
+             for xlim, title_suffix in BETA_PLOT_RANGES]
 plt.show(block=False)
 
 

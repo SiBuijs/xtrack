@@ -238,3 +238,39 @@ the final lattice used by 009/010/011/013/014.**
   "current path" analog of 002 — if you want an up-to-date diagnostic plot of
   the corrected lattice, use 004d, not 002.
 - Prints `tw4d`/`tw6d` tunes (`qx, qy, qs`) as a final sanity check.
+- **Reading the beta-comparison figures (2026-09-18).** `BETA_COMPARISON_RANGES`
+  now drives three figures: IR log, IR linear, full straight section (log).
+  The IR window is drawn twice on purpose, because neither axis is complete on
+  its own and the pair has already caused one "these two plots disagree" scare:
+  fig1's top panel is `tw_off.plot()`, which is **linear** (and whose default
+  colours are `betx` black, `bety` red, `dx`/`dy` blue/green on a *twin right*
+  axis — the flat green line is `dy`, not a beta), while the comparison figure
+  was log-only. Same numbers, checked directly against a twiss of the 3T
+  lattice at `ipa`:
+
+  ```
+         s     betx_off     bety_off      betx_on      bety_on
+   -14.000         2844         5217         2845         5228
+    -4.500        386.9    1.517e+04        386.4    1.516e+04
+     0.000         0.09       0.0007      0.08999       0.0007
+     4.500        386.9    1.517e+04          387    1.516e+04
+  ```
+
+  On log the IP waist (`betx* = 0.09 m`, `bety* = 0.7 mm`, 4-7 decades below
+  the peaks) opens into a deep V that dominates the eye, while the `bety`
+  double hump (5.2e3 -> 1.5e4, only half a decade) flattens into a gentle bump
+  and the ~5 % `betx` hump vanishes; on linear you get the familiar twin peaks
+  but the entire waist collapses onto zero. The full straight section stays
+  log-only — beta spans several decades there, so linear is just the arc
+  maxima over a flat line. The linear beta panel pins `bottom=0` and takes
+  1.3x headroom so the legend clears the `bety` peaks (and moves to
+  `upper left`); the beta-beat panel below is linear in both and untouched.
+- **The boxes at the compensation solenoids are real, not an artifact of the
+  plotting.** Between roughly +-12.5 and +-13.6 m, `betx` jumps 2895 -> 7631
+  with `bety` dropping to match, with sharp edges at the slice boundaries
+  (`comp_sol_slice_{left,right}_ipa_*`). That is the Edwards-Teng mode-beta
+  partially swapping mode identity inside the coupled region — `betx` there is
+  beta_x1, not the physical envelope, which needs `betx1`/`betx2` together (the
+  reason fig1's bottom panel plots `betx2`/`bety1`). It is also what the script's
+  final `max |dbetx/betx|` print picks up: ~164 % over ipa's straight section is
+  this box, not a beta-beat the correction failed to fix.

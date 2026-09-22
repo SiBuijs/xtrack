@@ -128,14 +128,16 @@ def cumulative_trapezoid_with_zero(y, s):
     return np.concatenate(([0.0], np.cumsum(increments)))
 
 
-def annotate_totals(ax, label_nominal, total_nominal, label_windowed,
-                     total_windowed):
+def annotate_totals(ax, label_nominal, total_nominal, label_windowed=None,
+                     total_windowed=None):
     """Framed textbox giving the endpoint (total) value of the nominal vs
-    windowed cumulative-integral curve pair, top-left of ax."""
+    windowed cumulative-integral curve pair, top-left of ax. Omit the
+    windowed pair for the nominal-only figure (see build_figure)."""
+    lines = [f'total ({label_nominal})  = {total_nominal:+.4e}']
+    if label_windowed is not None:
+        lines.append(f'total ({label_windowed}) = {total_windowed:+.4e}')
     ax.text(
-        0.03, 0.97,
-        f'total ({label_nominal})  = {total_nominal:+.4e}\n'
-        f'total ({label_windowed}) = {total_windowed:+.4e}',
+        0.03, 0.97, '\n'.join(lines),
         transform=ax.transAxes, fontsize=8, va='top', ha='left',
         bbox=dict(boxstyle='round', facecolor='white', alpha=0.85))
 
@@ -304,12 +306,10 @@ for exponent in BETA_WEIGHT_EXPONENTS:
         betx_on_windowed**exponent * d_bx_windowed, s_windowed)
 
 # ---------------------------- Plot ---------------------------- #
-n_panels = 3 + len(BETA_WEIGHT_EXPONENTS)
-fig, axes = plt.subplots(n_panels, 1, figsize=(8, 3.2 * n_panels),
-                          sharex=True, num=1600)
-
-axes[0].plot(s_from_ip, tw.betx, color='0.3')
-axes[0].set_ylabel(r'$\beta_x$ [m]')
+# The unweighted cumulative integral of d^ORDER Bx/dx^ORDER is still computed
+# (and printed below), but not plotted -- the beta_x-weighted panels are the
+# ones that carry the sextupole-driving-term message.
+n_panels = 2 + len(BETA_WEIGHT_EXPONENTS)
 
 order_label = (
     rf'$\partial_x^{{{ORDER}}} B_x$' if ORDER != 1 else r'$\partial_x B_x$')
@@ -320,43 +320,75 @@ elif ORDER == 1:
 else:
     order_unit = rf'T/m$^{{{ORDER}}}$'
 
-axes[1].plot(s_nominal, d_bx_nominal, '-', label='nominal')
-axes[1].plot(s_windowed, d_bx_windowed, '--', label='windowed')
-axes[1].set_ylabel(f'{order_label} [{order_unit}]')
-axes[1].legend(loc='best')
 
-axes[2].plot(s_nominal, cum_plain_nominal, '-', label='nominal')
-axes[2].plot(s_windowed, cum_plain_windowed, '--', label='windowed')
-axes[2].set_ylabel(rf'$\int${order_label}$\, ds$ [T/m]')
-axes[2].legend(loc='best')
-annotate_totals(
-    axes[2], 'nominal', cum_plain_nominal[-1],
-    'windowed', cum_plain_windowed[-1])
+def build_figure(include_windowed, fig_num):
+    """Build the panel stack, with (include_windowed=True) or without the
+    windowed curves. Two figures are made: the nominal-only one and the full
+    one, identical in every other respect and -- via the y-limit copy below
+    -- sharing y-limits, so that flipping between them in a presentation
+    shows only the effect of zeroing the sextupole content."""
+    fig, axes = plt.subplots(n_panels, 1, figsize=(8, 3.2 * n_panels),
+                             sharex=True, num=fig_num)
 
-for panel_index, exponent in enumerate(BETA_WEIGHT_EXPONENTS, start=3):
-    ax = axes[panel_index]
-    ax.plot(s_nominal, cum_weighted_nominal[exponent], '-', label='nominal')
-    ax.plot(s_windowed, cum_weighted_windowed[exponent], '--',
-            label='windowed')
-    weight_label = (
-        r'\beta_x' if exponent == 1.0 else rf'\beta_x^{{{exponent:g}}}')
-    ax.set_ylabel(rf'$\int {weight_label}\,${order_label}$\, ds$')
-    ax.legend(loc='best')
-    annotate_totals(
-        ax, 'nominal', cum_weighted_nominal[exponent][-1],
-        'windowed', cum_weighted_windowed[exponent][-1])
+    axes[0].plot(s_from_ip, tw.betx, color='0.3')
+    axes[0].set_ylabel(r'$\beta_x$ [m]')
+    # tw spans the whole three-solenoid system, well beyond the plotted s
+    # range, and beta_x grows fast outside it -- autoscaling on the full
+    # curve flattens the visible part to a near-straight line. Scale to the
+    # plotted window only.
+    betx_visible = tw.betx[
+        (s_from_ip >= s_nominal[0]) & (s_from_ip <= s_nominal[-1])]
+    if betx_visible.size:
+        betx_lo, betx_hi = betx_visible.min(), betx_visible.max()
+        betx_pad = 0.08 * max(betx_hi - betx_lo, 1e-12)
+        axes[0].set_ylim(betx_lo - betx_pad, betx_hi + betx_pad)
 
-for ax in axes:
-    ax.grid(True, alpha=0.3)
-    ax.axvspan(covered_s_start, covered_s_end, color='tab:red', alpha=0.08)
-axes[-1].set_xlabel(r'$s - s_{\mathrm{ip}}$ [m]')
-axes[0].set_xlim(s_nominal[0], s_nominal[-1])
-fig.suptitle(
-    rf'Effect of zeroing order-{ORDER} $B_x$/$B_y$ content in '
-    rf'$s\in[{covered_s_start:.3f}, {covered_s_end:.3f}]$ m '
-    rf'(requested $[{S_MIN:g}, {S_MAX:g}]$ m) on '
-    rf'$\beta_x$-weighted {order_label} integrals')
-fig.tight_layout()
+    axes[1].plot(s_nominal, d_bx_nominal, '-', label='nominal')
+    if include_windowed:
+        axes[1].plot(s_windowed, d_bx_windowed, '--', label='windowed')
+    axes[1].set_ylabel(f'{order_label} [{order_unit}]')
+    axes[1].legend(loc='lower left')
+
+    for panel_index, exponent in enumerate(BETA_WEIGHT_EXPONENTS, start=2):
+        ax = axes[panel_index]
+        ax.plot(s_nominal, cum_weighted_nominal[exponent], '-',
+                label='nominal')
+        if include_windowed:
+            ax.plot(s_windowed, cum_weighted_windowed[exponent], '--',
+                    label='windowed')
+        weight_label = (
+            r'\beta_x' if exponent == 1.0 else rf'\beta_x^{{{exponent:g}}}')
+        ax.set_ylabel(rf'$\int {weight_label}\,${order_label}$\, ds$')
+        ax.legend(loc='lower left')
+        if include_windowed:
+            annotate_totals(
+                ax, 'nominal', cum_weighted_nominal[exponent][-1],
+                'windowed', cum_weighted_windowed[exponent][-1])
+        else:
+            annotate_totals(
+                ax, 'nominal', cum_weighted_nominal[exponent][-1])
+
+    for ax in axes:
+        ax.grid(True, alpha=0.3)
+        ax.axvspan(covered_s_start, covered_s_end, color='tab:red',
+                   alpha=0.08)
+    axes[-1].set_xlabel(r'$s - s_{\mathrm{ip}}$ [m]')
+    axes[0].set_xlim(s_nominal[0], s_nominal[-1])
+    fig.suptitle(
+        rf'Zeroing sextupole component '
+        rf'$s\in[{covered_s_start:.3f}, {covered_s_end:.3f}]$ m ')
+    fig.tight_layout()
+    return fig, axes
+
+
+fig_nominal, axes_nominal = build_figure(False, 1601)
+fig, axes = build_figure(True, 1600)
+
+# The full figure's autoscale always covers the nominal-only one (same
+# nominal curves plus the windowed ones), so copying its limits across never
+# clips the nominal-only curves and pins both figures to a common scale.
+for ax_nominal, ax_full in zip(axes_nominal, axes):
+    ax_nominal.set_ylim(ax_full.get_ylim())
 
 print('004e sextupole-window study')
 print(

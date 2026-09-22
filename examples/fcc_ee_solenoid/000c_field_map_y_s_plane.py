@@ -13,7 +13,7 @@ import numpy as np
 from solenoid_params import MAIN_SOLENOID_A, half_length_for_b0
 from xtrack._temp.boris_and_solenoid_map.solenoid_field import SolenoidField
 
-B0 = 2.0
+B0 = 3.0
 a = MAIN_SOLENOID_A
 L = 2 * half_length_for_b0(B0)  # full length [m]
 
