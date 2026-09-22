@@ -838,7 +838,7 @@ for ip_name in IP_NAMES:
                 xt.TargetSet(
                     betx=tw0['betx', sext_corr],
                     bety=tw0['bety', sext_corr],
-                    dy=tw0['dy', sext_corr],
+                    #dy=tw0['dy', sext_corr],
                     tol=1e-5,
                     tag='sext',
                     at=sext_corr),

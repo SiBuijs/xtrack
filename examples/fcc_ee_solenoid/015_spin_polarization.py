@@ -4,7 +4,8 @@ Initializes a bunch fully polarized along y (P(0) = 1) and tracks it under
 quantum synchrotron radiation. Quantum energy-diffusion couples to spin
 precession through dn/ddelta, so the ensemble-averaged polarization
 P(t) = |<spin_vec>| slowly decoheres; over the trackable turn range this
-decay is fit directly to its true functional form P(n) = P0 * exp(-n/tau_depol)
+decay is fit (for n >= --turn-start, default 2000, dropping the initial
+decoherence transient) to its true functional form P(n) = P0 * exp(-n/tau_depol)
 (tau_depol is typically orders of magnitude larger than a feasible number of
 tracked turns, so this is normally deep in that exponential's linear-looking
 onset, but fitting the exponential form itself avoids the systematic bias a
@@ -51,6 +52,12 @@ HERE = Path(__file__).resolve().parent
 GLOBAL_XY_LIMIT = 1.0
 N_TURNS = 10_000
 N_PART = 1000
+# Spins start aligned to y, but the invariant spin field n0 is not exactly y
+# and varies over the bunch, so the ensemble dephases onto <n0> over the first
+# ~1-2k turns. That transient is not depolarization and including it biases
+# the fit badly -- it is much larger than the radiative decay it sits on top
+# of. Same default and same reasoning as 016_refit_polarization_linear.py.
+FIT_TURN_START = 2000
 
 
 def _lattice_paths(tag, order_tag_str=""):
@@ -133,10 +140,15 @@ def _compute_polarization(mon, n_turns):
     return spin_x_mean, spin_y_mean, spin_z_mean, polarization
 
 
-def _fit_exponential_depolarization(turns, polarization, t_rev0):
+def _fit_exponential_depolarization(turns, polarization, t_rev0,
+                                    turn_start=FIT_TURN_START):
     """Exponential fit P(n) = P0 * exp(-n / tau_depol), the actual functional
     form of radiative depolarization (a straight-line fit is only its
     linear-regime approximation for n << tau_depol).
+
+    Only turns >= turn_start are fitted, to exclude the initial spin-
+    decoherence transient (see FIT_TURN_START). P0 is the fitted value
+    extrapolated back to n=0, not P at turn_start.
 
     Fit by linear regression of ln(P) vs n (equivalent to a weighted
     nonlinear least-squares fit of P itself, and far more robust/cheap than
@@ -149,7 +161,8 @@ def _fit_exponential_depolarization(turns, polarization, t_rev0):
     turns/particles, or a case like sb_off where the true depolarization is
     negligible on any feasible turn count).
     """
-    mask = np.isfinite(polarization) & (polarization > 0)
+    mask = (np.isfinite(polarization) & (polarization > 0)
+            & (turns >= turn_start))
     if mask.sum() < 2:
         return np.nan, np.nan, np.nan, np.nan
 
@@ -179,19 +192,58 @@ def _plot_polarization_figure(
     p_eq_twiss,
     p_eq_derived,
     title,
+    t_rev0,
+    turn_start=FIT_TURN_START,
 ):
     fig, ax = plt.subplots(figsize=(6.4, 4.8))
     ax.plot(turns, polarization, label="tracked")
+    ax.axvline(turn_start, color="0.5", ls=":", lw=1,
+               label=f"fit start (n={turn_start})")
 
     if np.isfinite(fit_tau_depol_turns):
-        fit_curve = fit_p0 * np.exp(-turns / fit_tau_depol_turns)
-        ax.plot(turns, fit_curve, "--", color="C3", label="exponential fit")
+        # Drawn only over the fitted range, so the figure cannot suggest the
+        # fit describes the excluded transient.
+        fit_turns = turns[turns >= turn_start]
+        fit_curve = fit_p0 * np.exp(-fit_turns / fit_tau_depol_turns)
+        ax.plot(fit_turns, fit_curve, "--", color="C3",
+                label="exponential fit")
 
     ax.set_xlabel("turn")
     ax.set_ylabel(r"Polarization $P = |\langle \vec{s}\rangle|$")
     ax.legend(loc="lower right", fontsize=8)
 
-    fit_lines = ["fit (tracking, exponential decay):"]
+    # Each figure autoscales to its own data, and P sits so close to 1 that
+    # matplotlib falls back to offset notation ("1e-6 + 9.9999e-1"). Two
+    # figures can then differ by 10x in y-scale while looking identically
+    # steep -- a 2e-06 wobble fills the frame exactly like a 2e-05 one, so
+    # comparing two of these figures by eye gives the wrong answer, and can
+    # invert the ranking of which case depolarizes more. State the absolute
+    # excursion in the box so the figures are comparable as numbers, and
+    # state what Twiss's own tau_depol predicts over the same span so it is
+    # obvious that the tracked curve is orders of magnitude flatter than the
+    # analytic decay it is supposed to be measuring.
+    span_lines = []
+    if len(polarization) and np.isfinite(polarization[0]):
+        finite = polarization[np.isfinite(polarization)]
+        if finite.size:
+            drop_total = float(polarization[0] - finite[-1])
+            span_lines = [
+                "span (tracked):",
+                fr"  $\Delta P$ over run $= {drop_total:.3e}$",
+            ]
+            if np.isfinite(tau_depol_twiss_s) and tau_depol_twiss_s > 0:
+                tau_twiss_turns = tau_depol_twiss_s / t_rev0
+                n_span = float(turns[-1] - turns[0])
+                drop_twiss = float(
+                    polarization[0] * (1.0 - np.exp(-n_span / tau_twiss_turns)))
+                span_lines.append(
+                    fr"  $\Delta P$ if $\tau_\mathrm{{depol}}$(Twiss)"
+                    fr"$ = {drop_twiss:.3e}$")
+                if drop_total > 0:
+                    span_lines.append(
+                        fr"  ratio Twiss/tracked $= {drop_twiss / drop_total:.3g}$")
+
+    fit_lines = [f"fit (tracking, exponential decay, n>={turn_start}):"]
     if np.isfinite(fit_tau_depol_turns):
         fit_lines += [
             fr"  $P_0 = {fit_p0:.6f}$",
@@ -210,7 +262,7 @@ def _plot_polarization_figure(
         r"Derived ($P_\infty,\tau_\mathrm{pol}$ Twiss + $\tau_\mathrm{depol}$ fit):",
         fr"  $P_\mathrm{{eq}} = {p_eq_derived:.3e}$",
     ]
-    info_text = "\n".join(fit_lines + twiss_lines + derived_lines)
+    info_text = "\n".join(span_lines + fit_lines + twiss_lines + derived_lines)
     ax.text(
         0.98,
         0.98,
@@ -230,6 +282,7 @@ def _plot_polarization_figure(
 
 def _run_polarization_evolution(
     case, *, n_turns, n_part, with_progress, sexamp, tag,
+    turn_start=FIT_TURN_START,
 ):
     lattice_json = case["lattice_json"]
     title = case["title"]
@@ -330,11 +383,14 @@ def _run_polarization_evolution(
     )
 
     fit_p0, fit_slope, fit_tau_depol_turns, fit_tau_depol_s = (
-        _fit_exponential_depolarization(turns, polarization, t_rev0)
+        _fit_exponential_depolarization(
+            turns, polarization, t_rev0, turn_start=turn_start)
     )
 
     print(f"  P(0) tracked                = {polarization[0]:.6f}")
-    print(f"  P0 (fit intercept)          = {fit_p0:.6f}")
+    print(f"  P(n={turn_start}) tracked          "
+          f"= {polarization[min(turn_start, n_turns - 1)]:.6f}")
+    print(f"  P0 (fit intercept, n>={turn_start}) = {fit_p0:.6f}")
     print(
         f"  tau_depol (fit, tracking)   = {fit_tau_depol_s:.6e} s "
         f"({fit_tau_depol_turns:.6e} turns)   [Twiss: {tau_depol_twiss_s:.6e} s]"
@@ -362,6 +418,8 @@ def _run_polarization_evolution(
         p_eq_twiss=p_eq_twiss,
         p_eq_derived=p_eq_derived,
         title=title,
+        t_rev0=t_rev0,
+        turn_start=turn_start,
     )
     save_pol_study(
         fig=fig,
@@ -466,6 +524,17 @@ def main():
         help="Sextupole amplification knob (default: 1.0).",
     )
     parser.add_argument(
+        "--turn-start",
+        type=int,
+        default=FIT_TURN_START,
+        metavar="N",
+        help=(
+            "Only fit turns >= N, to drop the initial spin-decoherence "
+            f"transient (default: {FIT_TURN_START}). Same meaning as "
+            "016_refit_polarization_linear.py's --turn-start."
+        ),
+    )
+    parser.add_argument(
         "--no-show",
         action="store_true",
         help="Skip interactive figure display (data and PDFs are still saved).",
@@ -493,6 +562,7 @@ def main():
             with_progress=1,
             sexamp=args.sexamp,
             tag=f"{tag}{order_tag_str}",
+            turn_start=args.turn_start,
         )
 
     if not args.no_show:

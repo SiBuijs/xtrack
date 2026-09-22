@@ -10,11 +10,12 @@ import matplotlib.pyplot as plt
 
 plt.rcParams.update({"font.size": 14})
 # Set basic parameters
-interval = 30
+length = 2.6
+interval = 2*length
 dx = 0.001
 dy = 0.001
 multipole_order = 2
-n_steps = 5000
+n_steps = 1000
 
 # Make initial particles
 delta = np.array([0, 4])
@@ -30,7 +31,7 @@ p0.spin_z = 0.0
 p0.anomalous_magnetic_moment = 0.00115965218128
 
 # Make solenoid field instance
-sf = SolenoidField(L=4, a=0.3, B0=1.5, z0=20)
+sf = SolenoidField(L=length, a=0.13, B0=3.0, z0=0.5*interval)
 
 # Small wrapper, used to use it for x and y offsets, but kept it for simplicity.
 def get_field(x, y, z):
@@ -53,10 +54,14 @@ fitter = FieldFitter(
     raw_data=df_raw_data,
     xy_point=(0, 0),
     distance_unit=1,
-    min_region_size=10,
+    min_region_size=5,
     deg=multipole_order - 1,
     field_tol=1e-4,
 )
+
+for der in range(multipole_order):
+    fitter.plot_fields(der=der)
+plt.show()
 
 # # After FieldFitter construction
 # s = fitter.s_full
