@@ -423,7 +423,7 @@ COMPARISON_B0_BY_TAG = {'2T': 2.0, '3T': 3.0}
 
 
 def _twiss_for_tag(tag):
-    """(twiss with solenoids+corrections on, twiss with them off, markers) for
+    """(twiss on, twiss off, markers, twiss-on-4d-with-Edwards-Teng) for
     a given field tag. The main-solenoid half-length differs between the
     2T and 3T cases (see solenoid_params.half_length_for_b0), so markers are
     recomputed per tag rather than reusing the primary case's.
@@ -432,9 +432,16 @@ def _twiss_for_tag(tag):
     lands on the same s grid as the on case and the two can be overlaid
     directly. It is the uncoupled baseline: with no solenoid and no skew
     correction there is nothing in the ring to couple the planes, so betx2 and
-    bety1 should sit at numerical zero throughout."""
+    bety1 should sit at numerical zero throughout.
+
+    The fourth entry carries the coupling RDTs for the summary box: the two
+    twisses above are 6d for the primary tag, and coupling_edw_teng belongs on a
+    4d twiss (see the block comment above RDT_CASES), so it is a separate object
+    rather than a flag on those. For the primary tag it is the tw4d computed at
+    the top of the script; for the others it is the on-case twiss, which is 4d
+    already and only needs the flag."""
     if tag == FIELD_TAG:
-        return tw, tw_off, IR_MARKERS
+        return tw, tw_off, IR_MARKERS, tw4d
 
     input_json = (
         HERE / f'fccee_z_lcc_splineboris_solenoids_coupling_corrected_{tag}.json'
@@ -467,12 +474,12 @@ def _twiss_for_tag(tag):
         line_cmp[f'on_sol_{ip_name}'] = 1
         line_cmp[f'on_sol_corr_{ip_name}'] = 1
 
-    tw_cmp = line_cmp.twiss4d(strengths=True)
+    tw_cmp = line_cmp.twiss4d(strengths=True, coupling_edw_teng=True)
     tw_cmp.zero_at(IP_PLOT)
     markers_cmp = _compute_ir_markers(
         table_cmp, env_cmp.fccee_p_ring, tw_cmp, IP_PLOT,
         COMPARISON_B0_BY_TAG[tag])
-    return tw_cmp, tw_cmp_off, markers_cmp
+    return tw_cmp, tw_cmp_off, markers_cmp, tw_cmp
 
 
 # Computed once per tag and reused for both the local-region figure (fig3)
@@ -494,6 +501,94 @@ STRAIGHT_SECTION_S_RANGE = (
 )
 
 
+def _box_under_legend(fig, entries):
+    """Put a small framed text box directly under each panel's legend, sharing
+    its right edge.
+
+    The legend's height depends on font metrics, on its ncol, and on the
+    backend, so rather than guess an offset this draws once and reads each
+    legend's actual extent. The axes are placed by subplots_adjust and not by
+    tight/constrained layout, so nothing moves between this draw and the later
+    show/savefig and the placement holds. Call it after subplots_adjust.
+
+    `entries` is an iterable of (ax, legend, text).
+    """
+    fig.canvas.draw()
+    for ax, leg, text in entries:
+        leg_box = leg.get_window_extent().transformed(ax.transAxes.inverted())
+        # ha right pins the frame to the legend's right edge; multialignment
+        # left keeps the values lined up as a column inside it.
+        ax.text(leg_box.x1, leg_box.y0 - 0.05, text, transform=ax.transAxes,
+                ha='right', va='top', fontsize=7, multialignment='left',
+                bbox=dict(boxstyle='round,pad=0.35', facecolor='white',
+                          edgecolor='0.6', linewidth=0.8, alpha=0.9))
+
+
+def _rdt_ring_average(tw_et, rdt):
+    r"""Length-weighted ring average of a coupling RDT: sum(|f| dl) / C.
+
+    Weighted by dl = diff(s), not by the table's `length` column, which also
+    drops thin elements from the sum -- they get dl = 0. That is deliberate for
+    the eight corr_sol_* correctors: they are thin Multipoles carrying
+    length = 1.0 m while occupying zero s, so summing `length` would both
+    overshoot the circumference by exactly 8 m and hand each of them a metre of
+    weight at a point where it is not clear which f applies anyway. diff(s) sums
+    to line_length to 3e-8.
+
+    The weighting is what makes this number mean anything. _twiss_for_tag cuts
+    the IR into 0.2 m slices and leaves the arcs alone, so an unweighted mean
+    over table rows oversamples the few hundred metres around the IPs by an
+    order of magnitude -- it comes out about 10x the length-weighted value
+    (0.078 against 0.0072 for |f1001| on the 3T ring).
+
+    |f| rather than f: the complex sum partly cancels by phase and answers a
+    different question (what the ring drives in total, 3.1e-3 here against
+    7.2e-3). This is the mean strength of the driving term, and it is the |f|
+    that the panels plot.
+
+    The solenoid-body NaNs (see the block comment above RDT_CASES) are dropped
+    from the numerator, the denominator staying the full circumference. 12 m of
+    90.6 km, so a 1.3e-4 effect; the masking is here only so the sum is a number
+    rather than NaN.
+    """
+    f = np.abs(np.asarray(rdt))
+    # append=nan: the last row is _end_point and opens no interval.
+    dl = np.diff(np.asarray(tw_et.s), append=np.nan)
+    # dl > 0 is what excludes the thin elements. Weight 0 would contribute 0
+    # anyway, so this changes no number; it is here to make the exclusion
+    # explicit rather than an accident of the weighting.
+    ok = np.isfinite(f) & np.isfinite(dl) & (dl > 0)
+    return float(np.sum(f[ok] * dl[ok]) / tw_et.line_length)
+
+
+def _coupling_summary_text(tw_on, tw_off, tw_et_on):
+    r"""The three global coupling scalars for one panel of the betx2/bety1
+    figure. All three are ring averages, which is what makes them sit together:
+    `c_minus` is itself an s-average (trapz over the local closest-tune-approach
+    coefficient / line_length) and the two RDT entries are the length-weighted
+    averages of _rdt_ring_average.
+
+    They are the global partner of the betx2/bety1 curves beside them: those
+    show where the coupling sits, these show what the whole ring ends up with.
+    The RDTs are quoted for the solenoids-on case only -- with the solenoids off
+    there is no coupling source in the ring at all, which the |C^-| off value
+    (order 1e-17) already establishes.
+
+    Caveat, see the solenoid W-matrix note: `c_minus` is built from W_matrix
+    entries, which inside the solenoid bodies are in kinetic momenta. Those
+    slices are ~12 m of a 91 km ring so their weight here is negligible, but
+    none of these three numbers says anything about the IR specifically.
+    """
+    return '\n'.join((
+        r'ring averages (solenoids on)',
+        fr'  $|C^-|$ = {tw_on.c_minus:.2e}   [off: {tw_off.c_minus:.1e}]',
+        fr'  $\langle|f_{{1001}}|\rangle$ = '
+        fr'{_rdt_ring_average(tw_et_on, tw_et_on.f1001):.2e}',
+        fr'  $\langle|f_{{1010}}|\rangle$ = '
+        fr'{_rdt_ring_average(tw_et_on, tw_et_on.f1010):.2e}',
+    ))
+
+
 def _betx2_bety1_fig(xlim, title_suffix, mark_ir_regions):
     """One panel per field tag, each overlaying the coupled-mode betas with
     the solenoids on and off. Drawn twice, at the IR window and at the full
@@ -502,7 +597,8 @@ def _betx2_bety1_fig(xlim, title_suffix, mark_ir_regions):
     fig, axs = plt.subplots(
         len(COMPARISON_TAGS), 1, sharex=True, figsize=(6.4, 4.8),
     )
-    for ax, tag, (tw_tag, tw_off_tag, markers_tag) in zip(
+    c_minus_boxes = []
+    for ax, tag, (tw_tag, tw_off_tag, markers_tag, tw_et_tag) in zip(
             axs, COMPARISON_TAGS, _TAG_RESULTS):
         ax.plot(tw_tag.s, tw_tag.betx2, color='C0',
                 label=r'$\beta_{x2}$ (solenoids on)')
@@ -517,7 +613,9 @@ def _betx2_bety1_fig(xlim, title_suffix, mark_ir_regions):
                 linewidth=1.0, label=r'$\beta_{y1}$ (solenoids off)')
         ax.set_ylabel(r'$\beta_{x2,y1}$')
         ax.set_title(f'{tag} main solenoid{title_suffix}')
-        ax.legend(loc='upper right', fontsize=8, ncol=2, framealpha=0.9)
+        leg = ax.legend(loc='upper right', fontsize=8, ncol=2, framealpha=0.9)
+        c_minus_boxes.append(
+            (ax, leg, _coupling_summary_text(tw_tag, tw_off_tag, tw_et_tag)))
         ax.grid(True)
         # Every panel carries its own s ticks and label, so that any one of
         # them can be cropped out and used on its own (same reasoning as in
@@ -531,6 +629,7 @@ def _betx2_bety1_fig(xlim, title_suffix, mark_ir_regions):
                 ax.axvline(s_pos, color='black', linewidth=0.8, linestyle=':')
     axs[-1].set_xlim(*xlim)
     fig.subplots_adjust(hspace=0.45, top=0.92, bottom=0.1, left=0.14)
+    _box_under_legend(fig, c_minus_boxes)
     return fig
 
 
@@ -594,8 +693,10 @@ fig4 = _betx2_bety1_fig((-1400, 1400), ' (full straight section)', False)
 # correction zeroes them, but do not read them as canonical Twiss functions.
 
 RDT_CASES = (
-    (r'$|f_{1001}|$  (difference resonance, $q_x - q_y$)', tw4d.f1001),
-    (r'$|f_{1010}|$  (sum resonance, $q_x + q_y$)', tw4d.f1010),
+    (r'$|f_{1001}|$  (difference resonance, $q_x - q_y$)', tw4d.f1001,
+     r'|f_{1001}|'),
+    (r'$|f_{1010}|$  (sum resonance, $q_x + q_y$)', tw4d.f1010,
+     r'|f_{1010}|'),
 )
 
 
@@ -604,11 +705,26 @@ def _coupling_rdt_fig(xlim, title_suffix, mark_ir_regions):
     betx2/bety1 figures above so the local and global coupling diagnostics can
     be read against each other panel by panel."""
     fig, axs = plt.subplots(len(RDT_CASES), 1, sharex=True, figsize=(6.4, 4.8))
-    for ax, (label, rdt) in zip(axs, RDT_CASES):
-        ax.plot(tw4d.s, np.abs(rdt), color='C0')
+    rdt_boxes = []
+    for ax, (label, rdt, symbol) in zip(axs, RDT_CASES):
+        # Labelled so these panels carry a top-right legend like the
+        # betx2/bety1 ones, with the ring-average frame hanging under it. The
+        # label adds what the ylabel does not say: which lattice this is.
+        ax.plot(tw4d.s, np.abs(rdt), color='C0',
+                label=fr'${symbol}$ ({FIELD_TAG}, solenoids on)')
         ax.set_ylabel(label, fontsize=9)
         ax.set_title(f'coupling RDT{title_suffix}', fontsize=10)
         ax.grid(True)
+        leg = ax.legend(loc='upper right', fontsize=8, framealpha=0.9)
+        # The ring average behind the curve: the same number in both s-windows
+        # and in both panels of the betx2/bety1 figure, since a ring average
+        # does not depend on what is currently plotted. That is the point of
+        # showing it here -- it says how much of the curve the window shows.
+        # Number outside the mathtext: inside it, "7.24e-03" typesets as an
+        # italic e and a spaced minus.
+        rdt_boxes.append((ax, leg,
+                          fr'ring average $\langle{symbol}\rangle$ = '
+                          fr'{_rdt_ring_average(tw4d, rdt):.2e}'))
         # Per-panel ticks and label, so a single panel can be cropped out and
         # used on its own -- same reasoning as _betx2_bety1_fig.
         ax.tick_params(labelbottom=True)
@@ -620,6 +736,7 @@ def _coupling_rdt_fig(xlim, title_suffix, mark_ir_regions):
                 ax.axvline(s_pos, color='black', linewidth=0.8, linestyle=':')
     axs[-1].set_xlim(*xlim)
     fig.subplots_adjust(hspace=0.45, top=0.92, bottom=0.1, left=0.16)
+    _box_under_legend(fig, rdt_boxes)
     return fig
 
 
@@ -694,22 +811,33 @@ else:
 BEAT_X = (tw.betx - BETX_OFF) / BETX_OFF * 100.0
 BEAT_Y = (tw.bety - BETY_OFF) / BETY_OFF * 100.0
 
-# (xlim, title suffix, mark the IR solenoid/quad annotations?, beta y-scale)
+# (xlim, title suffix, mark the IR solenoid/quad annotations?, beta y-scale,
+#  legend location)
 # The IR window is drawn twice, log and linear. Neither reading is complete on
 # its own: log resolves the IP waist (betx* ~ 0.09 m, bety* ~ 0.7 mm, i.e. 4-7
 # decades below the peaks) but flattens the bety double hump (5.2e3 -> 1.5e4,
 # only half a decade) and hides the ~5 % betx hump entirely; linear shows those
 # humps as the familiar twin peaks but collapses the whole waist onto zero.
-# The full straight section is log-only -- beta spans several decades there, so
-# a linear axis is just the arc maxima and a flat line.
+#
+# The full straight section is linear as well, by request. Be aware of what that
+# costs, measured on the 3T ring: the bety doublet spike (~1.5e4 m, within a few
+# m of the IP) sets the scale, so betx -- which peaks near 1.5e3 m in the arcs --
+# is compressed onto the bottom tenth of the panel and the IP waist is not
+# visible at all. What survives is the arc bety modulation and the dispersion.
+# The legend is top left there. On a linear axis that is the free corner: the
+# only thing reaching the top of the panel is the doublet spike at s ~ 0, while
+# the bottom right carries the arc bety and D_x traces. It is the opposite of
+# where the log version wanted it, which is why this is a per-figure setting
+# rather than one location shared by all three.
 BETA_COMPARISON_RANGES = [
-    ((-20, 20), 'IR', True, 'log'),
-    ((-20, 20), 'IR, linear scale', True, 'linear'),
-    ((-1400, 1400), 'full straight section', False, 'log'),
+    ((-20, 20), 'IR', True, 'log', 'upper right'),
+    ((-20, 20), 'IR, linear scale', True, 'linear', 'upper right'),
+    ((-1400, 1400), 'full straight section', False, 'linear', 'upper left'),
 ]
 
 
-def _beta_comparison_fig(xlim, title_suffix, mark_ir_regions, yscale):
+def _beta_comparison_fig(xlim, title_suffix, mark_ir_regions, yscale,
+                         legend_loc):
     fig, axs = plt.subplots(2, 1, sharex=True, figsize=(7.0, 5.6))
 
     # beta is the Edwards-Teng mode-1/mode-2 beta once the solenoids couple
@@ -770,8 +898,10 @@ def _beta_comparison_fig(xlim, title_suffix, mark_ir_regions, yscale):
         # 10 % pad would otherwise hang the axis slightly below zero. Only the
         # beta panel: the beta-beat below it legitimately goes negative. The
         # extra headroom on top keeps the legend clear of the beta_y peaks,
-        # which on a linear axis run all the way to the top of the panel.
-        axs[0].set_ylim(bottom=0.0, top=axs[0].get_ylim()[1] * 1.3)
+        # which on a linear axis run all the way to the top of the panel -- so
+        # it is only worth paying for when the legend is actually up there.
+        headroom = 1.3 if legend_loc.startswith('upper') else 1.05
+        axs[0].set_ylim(bottom=0.0, top=axs[0].get_ylim()[1] * headroom)
 
     for ax in axs:
         ax.grid(True)
@@ -788,8 +918,8 @@ def _beta_comparison_fig(xlim, title_suffix, mark_ir_regions, yscale):
     ax_disp.legend(
         handles=(axs[0].get_legend_handles_labels()[0]
                  + ax_disp.get_legend_handles_labels()[0]),
-        loc='upper right', fontsize=8, ncol=2, framealpha=0.9)
-    axs[1].legend(loc='upper right', fontsize=8, framealpha=0.9)
+        loc=legend_loc, fontsize=8, ncol=2, framealpha=0.9)
+    axs[1].legend(loc=legend_loc, fontsize=8, framealpha=0.9)
 
     fig.subplots_adjust(hspace=0.3, top=0.93, bottom=0.1, left=0.12,
                         right=0.88)
@@ -828,6 +958,8 @@ for _rdt_name, _rdt in (('f1001', tw4d.f1001), ('f1010', tw4d.f1010)):
     print(f'|{_rdt_name}|: max = {np.nanmax(_abs):.4g} (ring), '
           f'{np.nanmax(_abs[_in_straight_4d]):.4g} ({IP_PLOT} straight), '
           f'median = {np.nanmedian(_abs):.4g} (ring), '
+          f'length-weighted ring average = '
+          f'{_rdt_ring_average(tw4d, _rdt):.4g}, '
           f'{_n_nan} NaN pts (solenoid bodies)')
 
 plt.show()

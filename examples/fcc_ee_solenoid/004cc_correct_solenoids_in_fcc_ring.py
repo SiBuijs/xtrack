@@ -495,27 +495,30 @@ plt.show(block=False)
 ###########################################################
 
 # What the 'sext' targets buy, read at the sextupole they target and along the
-# whole half straight. Log y: beta spans the IP waist (bety* = 0.7 mm) up to
-# ~1.5e4 m in the doublet, so a linear axis collapses everything but the peaks
-# (same reasoning as 004d's BETA_COMPARISON_RANGES, see
-# claude_notes/01_lattice_construction_000_004d.md).
+# whole half straight. Linear y, as in the other beta figures of this study.
+# Note the dynamic range this costs: beta runs from the IP waist (bety* =
+# 0.7 mm) to ~1.5e4 m in the doublet, so on a linear axis the waist and the
+# whole low-beta region sit on the baseline and only the peaks are legible.
+# The comparison this figure is for -- the three cases at the sextupole, where
+# beta is a few m -- is read from the printed table above and from the bety
+# separation in the IR panel, not from the waist.
 
 s_sext = tw_corrected.rows[sext_for_chromaticity_correction]['s'][0]
 
-# The bare case is drawn as a thick pale band rather than a thin line, so that
-# the corrected-with-targets curve drawn on top of it sits *inside* it: where
-# the correction works, blue runs down the middle of grey, which is the whole
-# point of the figure and is invisible if both are hairlines.
+# Default colours and widths, as in the other figures of this study. The two
+# corrected cases lie on top of the bare one wherever the correction works, so
+# they are separated by dash pattern rather than by weight: bare solid
+# underneath, sext-corrected dashed, not-sext-corrected dotted.
 BETA_CASES = (
-    ('bare (no solenoid)', tw_no_solenoid, 'C0', '-', 4.0),
-    ('corrected, sext targets off', tw_corrected_no_sext, 'C1', '-', 1.4),
-    ('corrected, sext targets on', tw_corrected, 'C2', '-', 1.4),
+    ('bare (no solenoid)', tw_no_solenoid, 'C0', '-'),
+    ('corrected, sext targets off', tw_corrected_no_sext, 'C1', ':'),
+    ('corrected, sext targets on', tw_corrected, 'C2', '--'),
 )
 
 print('\nOptics at the targeted sextupole '
       f'({sext_for_chromaticity_correction}):')
 print(f'  {"case":30s} {"betx [m]":>12s} {"bety [m]":>12s} {"dy [m]":>12s}')
-for case_label, tw_case, _, _, _ in BETA_CASES:
+for case_label, tw_case, _, _ in BETA_CASES:
     print(f'  {case_label:30s} '
           f'{tw_case["betx", sext_for_chromaticity_correction]:12.5f} '
           f'{tw_case["bety", sext_for_chromaticity_correction]:12.5f} '
@@ -532,34 +535,34 @@ BETA_PLOT_RANGES = (
 )
 
 
-def beta_ylim_for_xlim(plane, xlim, margin=1.6):
-    """Log-friendly y-limits from the data actually inside `xlim` -- on a
-    shared full-straight axis the arc peaks would otherwise set the scale for
-    the IR zoom too."""
-    lo, hi = np.inf, -np.inf
-    for _, tw_case, _, _, _ in BETA_CASES:
+def beta_ylim_for_xlim(plane, xlim, margin=1.05):
+    """Y-limits from the data actually inside `xlim` -- on a shared
+    full-straight axis the arc peaks would otherwise set the scale for the IR
+    zoom too. Linear axis, so the bottom is pinned at 0 rather than at the
+    smallest positive value."""
+    hi = -np.inf
+    for _, tw_case, _, _ in BETA_CASES:
         beta = np.asarray(tw_case[f'bet{plane}'])
         s_case = np.asarray(tw_case.s)
         mask = (np.ones_like(s_case, dtype=bool) if xlim is None
                 else (s_case >= xlim[0]) & (s_case <= xlim[1]))
-        beta_in = beta[mask & (beta > 0)]
+        beta_in = beta[mask & np.isfinite(beta)]
         if beta_in.size:
-            lo, hi = min(lo, beta_in.min()), max(hi, beta_in.max())
-    if not np.isfinite(lo) or not np.isfinite(hi):
+            hi = max(hi, beta_in.max())
+    if not np.isfinite(hi):
         return None
-    return lo / margin, hi * margin
+    return 0.0, hi * margin
 
 
 def beta_comparison_fig(xlim, title_suffix):
     fig, axs = plt.subplots(2, 1, sharex=True, figsize=(10, 7.5))
     for ax, plane in zip(axs, ('x', 'y')):
-        for case_label, tw_case, color, linestyle, linewidth in BETA_CASES:
+        for case_label, tw_case, color, linestyle in BETA_CASES:
             ax.plot(tw_case.s, tw_case[f'bet{plane}'], color=color,
-                    linestyle=linestyle, lw=linewidth, label=case_label)
+                    linestyle=linestyle, label=case_label)
         ax.axvline(x=s_sext, color='k', lw=1.5)
-        ax.set_yscale('log')
         ax.set_ylabel(rf'$\beta_{plane}$ [m]')
-        ax.grid(True, alpha=0.3, which='both')
+        ax.grid(True, alpha=0.3)
         ylim = beta_ylim_for_xlim(plane, xlim)
         if ylim is not None:
             ax.set_ylim(*ylim)
