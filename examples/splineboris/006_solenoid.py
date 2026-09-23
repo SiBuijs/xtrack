@@ -14,7 +14,7 @@ length = 2.6
 interval = 2*length
 dx = 0.001
 dy = 0.001
-multipole_order = 2
+multipole_order = 4
 n_steps = 1000
 
 # Make initial particles

@@ -1,13 +1,12 @@
 """004e: effect of a localized sextupole-content window on the
-beta_x-weighted d^2Bx/dx^2 driving-term integral.
+beta-weighted d^2Bx/dx^2 driving-term integral.
 
 Follow-up to 004a_build_and_check_solenoids.py's beta_x-weighted
 d^2Bx/dx^2 diagnostic (see its final plot/printout). d^2Bx/dx^2 -- the
 order-2 ("sextupole-like") transverse-x Hermite row of the installed
 SplineBoris main solenoid -- is antisymmetric about the IP (s=0), which is
 why its plain cumulative integral cancels between the two coil ends while a
-beta_x-weighted (or beta_x^(3/2)-weighted) version need not, since beta_x(s)
-is not antisymmetric.
+beta-weighted version need not, since beta(s) is not antisymmetric.
 
 This script builds two copies of the isolated main-solenoid SplineBoris
 line:
@@ -17,9 +16,11 @@ line:
     sextupole-like content is switched off only in that s-window, everything
     else (bs, lower-order bx/by) left untouched.
 
-It then compares the beta_x- and beta_x^(3/2)-weighted cumulative integrals
+It then compares the beta_y- and beta_y^(3/2)-weighted cumulative integrals
 of d^ORDER Bx/dx^ORDER between the two, to quantify how much of the total
 driving-term integral comes specifically from the [S_MIN, S_MAX] window.
+d^2 Bx/dx^2 is the skew-sextupole coefficient, so the 3/2 power belongs to
+beta_y (the 3 Q_y driving term) -- see BETA_WEIGHTS for why.
 Standalone check -- does not read/write any of the 004_solenoid_lines*.json
 / fccee_z_lcc_*.json pipeline files (same spirit as 006/007/008).
 """
@@ -56,7 +57,7 @@ from xtrack._temp.boris_and_solenoid_map.solenoid_field import SolenoidField
 _parser = argparse.ArgumentParser(
     description=(
         'Effect of zeroing the sextupole-like SplineBoris content in an '
-        's-window on the beta_x-weighted d^2Bx/dx^2 integral.'))
+        's-window on the beta-weighted d^2Bx/dx^2 integral.'))
 add_b0_argument(_parser, default=MAIN_SOLENOID_B0)
 add_max_order_argument(_parser, default=4)
 _parser.add_argument(
@@ -108,7 +109,17 @@ X_FIELD_COMPARISON = 0.0
 Y_FIELD_COMPARISON = 0.0
 BETX = 0.09
 BETY = 0.0007
-BETA_WEIGHT_EXPONENTS = [1.0, 1.5]
+# (plane, exponent) per weighted panel. Kept as an explicit plane per panel so
+# either can be moved back to 'x' with a one-word edit.
+#
+# Both are bety. d^2 Bx/dx^2 is the skew-sextupole coefficient: for a skew
+# sextupole Bx = k2s/2 (x^2 - y^2), so d^2 Bx/dx^2 = k2s exactly. The third-order
+# term a skew sextupole drives with a pure 3/2 power is the 3 Q_y resonance,
+# whose driving term goes as k2s * bety^(3/2) -- betx^(3/2) is the *normal*
+# sextupole's 3 Q_x partner and pairs with nothing here. betx is also simply the
+# small beta over this window (under ~100 m against bety's ~8000 m at the coil
+# ends), so weighting by it says little about where the driving term builds up.
+BETA_WEIGHTS = [('y', 1.0), ('y', 1.5)]
 
 MAIN_SOLENOID_S_AXIS = np.linspace(-2.399, 2.399, 201)
 COMP_SOLENOID_S_AXIS = np.linspace(-1.0, 1.0, 201)
@@ -290,8 +301,14 @@ s_nominal, d_bx_nominal, _ = transverse_derivative_on_s(
 s_windowed, d_bx_windowed, _ = transverse_derivative_on_s(
     line_main_windowed, main_field_data, ORDER, DERIVATIVE_STEP)
 
-betx_on_nominal = np.interp(s_nominal, s_from_ip, tw.betx)
-betx_on_windowed = np.interp(s_windowed, s_from_ip, tw.betx)
+beta_on_nominal = {
+    'x': np.interp(s_nominal, s_from_ip, tw.betx),
+    'y': np.interp(s_nominal, s_from_ip, tw.bety),
+}
+beta_on_windowed = {
+    'x': np.interp(s_windowed, s_from_ip, tw.betx),
+    'y': np.interp(s_windowed, s_from_ip, tw.bety),
+}
 
 cum_plain_nominal = cumulative_trapezoid_with_zero(d_bx_nominal, s_nominal)
 cum_plain_windowed = cumulative_trapezoid_with_zero(
@@ -299,17 +316,17 @@ cum_plain_windowed = cumulative_trapezoid_with_zero(
 
 cum_weighted_nominal = {}
 cum_weighted_windowed = {}
-for exponent in BETA_WEIGHT_EXPONENTS:
-    cum_weighted_nominal[exponent] = cumulative_trapezoid_with_zero(
-        betx_on_nominal**exponent * d_bx_nominal, s_nominal)
-    cum_weighted_windowed[exponent] = cumulative_trapezoid_with_zero(
-        betx_on_windowed**exponent * d_bx_windowed, s_windowed)
+for plane, exponent in BETA_WEIGHTS:
+    cum_weighted_nominal[plane, exponent] = cumulative_trapezoid_with_zero(
+        beta_on_nominal[plane]**exponent * d_bx_nominal, s_nominal)
+    cum_weighted_windowed[plane, exponent] = cumulative_trapezoid_with_zero(
+        beta_on_windowed[plane]**exponent * d_bx_windowed, s_windowed)
 
 # ---------------------------- Plot ---------------------------- #
 # The unweighted cumulative integral of d^ORDER Bx/dx^ORDER is still computed
-# (and printed below), but not plotted -- the beta_x-weighted panels are the
+# (and printed below), but not plotted -- the beta-weighted panels are the
 # ones that carry the sextupole-driving-term message.
-n_panels = 2 + len(BETA_WEIGHT_EXPONENTS)
+n_panels = 2 + len(BETA_WEIGHTS)
 
 order_label = (
     rf'$\partial_x^{{{ORDER}}} B_x$' if ORDER != 1 else r'$\partial_x B_x$')
@@ -330,18 +347,21 @@ def build_figure(include_windowed, fig_num):
     fig, axes = plt.subplots(n_panels, 1, figsize=(8, 3.2 * n_panels),
                              sharex=True, num=fig_num)
 
-    axes[0].plot(s_from_ip, tw.betx, color='0.3')
-    axes[0].set_ylabel(r'$\beta_x$ [m]')
+    # bety only: it is the plane both weighted panels below use, and on a shared
+    # axis betx is a flat line on the baseline anyway (under ~100 m against
+    # bety's ~8000 m at the coil ends).
+    axes[0].plot(s_from_ip, tw.bety, color='0.3')
+    axes[0].set_ylabel(r'$\beta_y$ [m]')
     # tw spans the whole three-solenoid system, well beyond the plotted s
-    # range, and beta_x grows fast outside it -- autoscaling on the full
-    # curve flattens the visible part to a near-straight line. Scale to the
-    # plotted window only.
-    betx_visible = tw.betx[
+    # range, and beta grows fast outside it -- autoscaling on the full curve
+    # flattens the visible part to a near-straight line. Scale to the plotted
+    # window only.
+    bety_visible = tw.bety[
         (s_from_ip >= s_nominal[0]) & (s_from_ip <= s_nominal[-1])]
-    if betx_visible.size:
-        betx_lo, betx_hi = betx_visible.min(), betx_visible.max()
-        betx_pad = 0.08 * max(betx_hi - betx_lo, 1e-12)
-        axes[0].set_ylim(betx_lo - betx_pad, betx_hi + betx_pad)
+    if bety_visible.size:
+        bety_lo, bety_hi = bety_visible.min(), bety_visible.max()
+        bety_pad = 0.08 * max(bety_hi - bety_lo, 1e-12)
+        axes[0].set_ylim(bety_lo - bety_pad, bety_hi + bety_pad)
 
     axes[1].plot(s_nominal, d_bx_nominal, '-', label='nominal')
     if include_windowed:
@@ -349,24 +369,23 @@ def build_figure(include_windowed, fig_num):
     axes[1].set_ylabel(f'{order_label} [{order_unit}]')
     axes[1].legend(loc='lower left')
 
-    for panel_index, exponent in enumerate(BETA_WEIGHT_EXPONENTS, start=2):
+    for panel_index, (plane, exponent) in enumerate(BETA_WEIGHTS, start=2):
         ax = axes[panel_index]
-        ax.plot(s_nominal, cum_weighted_nominal[exponent], '-',
-                label='nominal')
+        key = (plane, exponent)
+        ax.plot(s_nominal, cum_weighted_nominal[key], '-', label='nominal')
         if include_windowed:
-            ax.plot(s_windowed, cum_weighted_windowed[exponent], '--',
+            ax.plot(s_windowed, cum_weighted_windowed[key], '--',
                     label='windowed')
-        weight_label = (
-            r'\beta_x' if exponent == 1.0 else rf'\beta_x^{{{exponent:g}}}')
+        weight_label = (rf'\beta_{plane}' if exponent == 1.0
+                        else rf'\beta_{plane}^{{{exponent:g}}}')
         ax.set_ylabel(rf'$\int {weight_label}\,${order_label}$\, ds$')
         ax.legend(loc='lower left')
         if include_windowed:
             annotate_totals(
-                ax, 'nominal', cum_weighted_nominal[exponent][-1],
-                'windowed', cum_weighted_windowed[exponent][-1])
+                ax, 'nominal', cum_weighted_nominal[key][-1],
+                'windowed', cum_weighted_windowed[key][-1])
         else:
-            annotate_totals(
-                ax, 'nominal', cum_weighted_nominal[exponent][-1])
+            annotate_totals(ax, 'nominal', cum_weighted_nominal[key][-1])
 
     for ax in axes:
         ax.grid(True, alpha=0.3)
@@ -402,12 +421,12 @@ print(
 print(f'  Plain integral of d^{ORDER} Bx/dx^{ORDER} ds (T/m):')
 print(f'    nominal  = {cum_plain_nominal[-1]:+.6e}')
 print(f'    windowed = {cum_plain_windowed[-1]:+.6e}')
-for exponent in BETA_WEIGHT_EXPONENTS:
+for plane, exponent in BETA_WEIGHTS:
     print(
-        f'  beta_x^{exponent:g}-weighted integral of '
+        f'  beta_{plane}^{exponent:g}-weighted integral of '
         f'd^{ORDER} Bx/dx^{ORDER} ds:')
-    print(f'    nominal  = {cum_weighted_nominal[exponent][-1]:+.6e}')
-    print(f'    windowed = {cum_weighted_windowed[exponent][-1]:+.6e}')
+    print(f'    nominal  = {cum_weighted_nominal[plane, exponent][-1]:+.6e}')
+    print(f'    windowed = {cum_weighted_windowed[plane, exponent][-1]:+.6e}')
 
 if not _args.no_show:
     plt.show()
