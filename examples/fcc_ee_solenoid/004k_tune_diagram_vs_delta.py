@@ -24,10 +24,21 @@ therefore span several integer tunes. Use ``--qx-range`` / ``--qy-range`` to pin
 it by hand, and ``--max-resonance-order 2`` to thin the line set when the
 vertical sweep is large.
 
+``--vs-old`` additionally scans the *previous generation* of corrected lattices
+-- read straight out of git at ``--old-rev`` (default ``f6dfc5087``, the newest
+commit whose 2 T and 3 T rings both predate the mid-bend quads and the
+optics-match conditioning fix; see 004m for the archaeology) -- and emits two
+figures instead of one: the old ring and the current ring, **sharing one
+window**, computed from the old footprint. Sharing the axis is the whole point:
+the old 3 T tune sweeps across the integer at ``Qy = 171`` while the current one
+stays inside a third of a tune unit, and that is only legible if neither figure
+is allowed to autoscale to its own extent.
+
 Isolated ``delta0`` points that fail to converge (``ClosedOrbitSearchError`` /
 ``ValueError`` from the linear-normal-form eigenvector ordering) are expected on
 this coupled optics -- they are recorded as NaN, reported, and skipped, same as
-017_tune_vs_delta.py.
+017_tune_vs_delta.py. The old rings fail more often than the current ones, which
+is itself a statement about how well they closed.
 
 The (expensive) scan result is pickled to ``aperture_study_io.DATA_DIR``; rerun
 with ``--replot`` (same ``--b0`` / ``--max-transverse-order`` / ``--no-bare`` /
@@ -46,11 +57,20 @@ import numpy as np
 import xtrack as xt
 from xtrack.twiss import ClosedOrbitSearchError
 
-from aperture_study_io import DATA_DIR, PLOT_DIR
+from aperture_study_io import DATA_DIR, PLOT_DIR, old_lattice_path
 from lattice_knobs import robust_twiss, set_lattice_knobs
 from solenoid_params import add_max_order_argument, field_tag, order_tag
 
 HERE = Path(__file__).resolve().parent
+
+LATTICE_NAME_TEMPLATE = (
+    "fccee_z_lcc_splineboris_solenoids_coupling_corrected_{tag}{order}.json"
+)
+
+# Newest commit whose 2 T *and* 3 T corrected lattices both predate the mid-bend
+# cuts and the optics-match conditioning fix. Same default, and same reasoning,
+# as 004m_old_vs_new_beta.py.
+DEFAULT_OLD_REV = "f6dfc5087"
 
 DELTA_MAX = 0.015
 N_DELTA = 61
@@ -127,6 +147,20 @@ _parser.add_argument(
     help="Skip the solenoids-OFF baseline (design-ring) footprints.",
 )
 _parser.add_argument(
+    "--vs-old",
+    action="store_true",
+    help="Also scan the previous-generation corrected lattices (read from git "
+    f"at --old-rev) and emit two figures -- old and current -- sharing one "
+    "window, fitted to the old footprint.",
+)
+_parser.add_argument(
+    "--old-rev",
+    default=DEFAULT_OLD_REV,
+    metavar="REV",
+    help=f"Git revision the --vs-old lattices are read from (default: "
+    f"{DEFAULT_OLD_REV}).",
+)
+_parser.add_argument(
     "--qx-range",
     type=float,
     nargs=2,
@@ -164,6 +198,17 @@ _args = _parser.parse_args()
 
 ORDER_TAG = order_tag(_args.max_transverse_order)
 B0_VALUES = list(_args.b0)
+OLD_REV = _args.old_rev
+
+if _args.vs_old and ORDER_TAG:
+    # The old generation predates the --max-transverse-order tagging, so only
+    # the untagged filename exists at OLD_REV; asking for _o2 there would fetch
+    # nothing and the git read would fail with a less obvious message.
+    raise SystemExit(
+        f"--vs-old cannot be combined with --max-transverse-order "
+        f"{_args.max_transverse_order}: the {OLD_REV} generation only has the "
+        "untagged lattices. Drop one of the two flags."
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -263,27 +308,46 @@ def draw_resonance_lines(ax, max_order, qx_lim, qy_lim):
 # --------------------------------------------------------------------------- #
 # The delta scan (structurally 017_tune_vs_delta.py::_run_tune_vs_delta)
 # --------------------------------------------------------------------------- #
-def _scan_case(b0, config, *, n_delta, delta_max, order_tag_str):
-    """Off-momentum 4D-twiss tune scan for one (field strength, config) case.
+def _resolve_lattice(b0, order_tag_str, generation):
+    """Path to the corrected lattice for one (field strength, generation).
 
-    ``config`` is "corrected" (solenoids + correctors on) or "bare"
-    (solenoids off -- the design ring). Returns a dict with the delta grid and
-    the qx/qy arrays (NaN where the twiss did not converge).
+    "current" is the working-tree file; "old" is the same filename read out of
+    git at OLD_REV into the gitignored data/old_lattices/ cache (each 004c run
+    overwrote the corrected lattices in place, so the old generation exists
+    only as a blob).
     """
-    tag = field_tag(b0)
-    lattice_json = HERE / (
-        "fccee_z_lcc_splineboris_solenoids_coupling_corrected_"
-        f"{tag}{order_tag_str}.json"
+    if generation == "old":
+        # The old generation predates order tagging -- guarded at CLI parse.
+        return old_lattice_path(
+            OLD_REV, LATTICE_NAME_TEMPLATE.format(tag=field_tag(b0), order="")
+        )
+    path = HERE / LATTICE_NAME_TEMPLATE.format(
+        tag=field_tag(b0), order=order_tag_str
     )
-    if not lattice_json.exists():
+    if not path.exists():
         raise SystemExit(
-            f"Missing lattice: {lattice_json.name}\n"
+            f"Missing lattice: {path.name}\n"
             f"Build it via 004b_install_solenoids_in_fcc_ring.py --b0 {b0:g} "
             "[--max-transverse-order N] then "
             f"004c_correct_solenoids_in_fcc_ring.py --b0 {b0:g} [--max-transverse-order N]."
         )
+    return path
 
-    print(f"\n=== {tag}{order_tag_str} ring, {config} ===")
+
+def _scan_case(b0, config, *, n_delta, delta_max, order_tag_str,
+               generation="current"):
+    """Off-momentum 4D-twiss tune scan for one (field strength, config) case.
+
+    ``config`` is "corrected" (solenoids + correctors on) or "bare"
+    (solenoids off -- the design ring). ``generation`` is "current" (the
+    working-tree lattice) or "old" (read from git at OLD_REV). Returns a dict
+    with the delta grid and the qx/qy arrays (NaN where the twiss did not
+    converge).
+    """
+    tag = field_tag(b0)
+    lattice_json = _resolve_lattice(b0, order_tag_str, generation)
+
+    print(f"\n=== {generation} {tag}{order_tag_str} ring, {config} ===")
     print(f"Loading lattice: {lattice_json.name}")
     env = xt.load(lattice_json)
     line = env.fccee_p_ring
@@ -332,6 +396,7 @@ def _scan_case(b0, config, *, n_delta, delta_max, order_tag_str):
         b0=float(b0),
         field_tag=tag,
         config=config,
+        generation=generation,
         label=label,
         delta_values=delta_values,
         qx=qx,
@@ -397,11 +462,14 @@ def _compute_window(cases, *, pad, qx_range, qy_range):
     return qx_lim, qy_lim
 
 
-def _plot_tune_diagram(cases, *, max_resonance_order, pad, qx_range, qy_range):
-    qx_lim, qy_lim = _compute_window(
-        cases, pad=pad, qx_range=qx_range, qy_range=qy_range
-    )
+def _plot_tune_diagram(cases, *, max_resonance_order, qx_lim, qy_lim,
+                       generation_note=None):
+    """Draw one tune diagram into a pre-computed window.
 
+    The window is passed in rather than fitted here so that a pair of figures
+    can share one frame -- see main()'s --vs-old branch, where both the old and
+    the current ring are drawn on the window fitted to the old footprint.
+    """
     fig, ax = plt.subplots(figsize=(7.5, 9.0))
     # aspect left at "auto": the qx span (~0.01-0.05) is ~100x smaller than
     # the qy span, so "equal" would collapse the plot to a vertical line.
@@ -475,13 +543,15 @@ def _plot_tune_diagram(cases, *, max_resonance_order, pad, qx_range, qy_range):
     ax.set_ylabel(r"$Q_y$")
     ax.set_xlim(*qx_lim)
     ax.set_ylim(*qy_lim)
-    ax.set_title(
+    title = (
         r"FCC-ee solenoid rings: tune footprint vs $\delta \in "
         rf"[{-delta_max:+.3g},\ {delta_max:+.3g}]$"
         "\n"
-        f"resonances to order {max_resonance_order}",
-        fontsize=10,
+        f"resonances to order {max_resonance_order}"
     )
+    if generation_note is not None:
+        title += f"\n{generation_note}"
+    ax.set_title(title, fontsize=10)
     leg1 = ax.legend(
         handles=res_handles, title="resonance order",
         loc="upper left", fontsize=8, framealpha=0.9,
@@ -504,10 +574,18 @@ def _tags():
     return b0_tag, ORDER_TAG, bare_tag, scan_tag
 
 
-def _data_path():
+def _data_path(generation="current"):
+    """Pickle path for one generation's scan.
+
+    The generation is part of the key so an --vs-old run cannot overwrite the
+    current-lattice scan -- which means the (already cached) current scan is
+    reused and only the old one has to be paid for, once.
+    """
     b0_tag, order_tag_str, bare_tag, scan_tag = _tags()
+    gen_tag = "" if generation == "current" else f"_old-{OLD_REV}"
     return DATA_DIR / (
-        f"tune_diagram_vs_delta_{b0_tag}{order_tag_str}{bare_tag}_{scan_tag}.pkl"
+        f"tune_diagram_vs_delta_{b0_tag}{order_tag_str}{bare_tag}_{scan_tag}"
+        f"{gen_tag}.pkl"
     )
 
 
@@ -520,58 +598,150 @@ def _save_fig(fig, stem):
     return path
 
 
-def main():
-    data_path = _data_path()
+def _load_or_scan(generation, *, with_bare):
+    """The case list for one generation, from the pickle or from a fresh scan."""
+    data_path = _data_path(generation)
 
     if _args.replot:
         if not data_path.exists():
             raise SystemExit(
                 f"--replot: no saved scan at {data_path}\n"
                 "Run once without --replot (same --b0 / --max-transverse-order "
-                "/ --no-bare / --n-delta / --delta-max) to create it."
+                "/ --no-bare / --n-delta / --delta-max"
+                + (" / --old-rev" if generation != "current" else "")
+                + ") to create it."
             )
         print(f"--replot: loading saved scan data from {data_path}")
         with open(data_path, "rb") as f:
-            cases = pickle.load(f)
-    else:
-        scan_kw = dict(
-            n_delta=_args.n_delta,
-            delta_max=_args.delta_max,
-            order_tag_str=ORDER_TAG,
-        )
-        cases = [_scan_case(b0, "corrected", **scan_kw) for b0 in B0_VALUES]
-        if not _args.no_bare:
-            # Solenoids off -> field strength is irrelevant, so the bare ring is
-            # scanned once (using the first --b0's lattice file).
-            cases.append(_scan_case(B0_VALUES[0], "bare", **scan_kw))
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
-        with open(data_path, "wb") as f:
-            pickle.dump(cases, f)
-        print(f"Saved scan data: {data_path}")
+            return pickle.load(f)
 
-    if all(
+    scan_kw = dict(
+        n_delta=_args.n_delta,
+        delta_max=_args.delta_max,
+        order_tag_str=ORDER_TAG,
+        generation=generation,
+    )
+    cases = [_scan_case(b0, "corrected", **scan_kw) for b0 in B0_VALUES]
+    if with_bare:
+        # Solenoids off -> field strength is irrelevant, so the bare ring is
+        # scanned once (using the first --b0's lattice file).
+        cases.append(_scan_case(B0_VALUES[0], "bare", **scan_kw))
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with open(data_path, "wb") as f:
+        pickle.dump(cases, f)
+    print(f"Saved scan data: {data_path}")
+    return cases
+
+
+def _report_spans(cases, heading):
+    """Per case: Qy at delta = 0, at MARK_DELTA, and the total swept span.
+
+    The quantitative form of the picture -- the old 3 T ring sweeps well over a
+    tune unit and crosses the integer, the current one does not.
+    """
+    print(f"\n{heading}")
+    for case in cases:
+        d = case["delta_values"]
+        qy = case["qy"]
+        finite = np.isfinite(case["qx"]) & np.isfinite(qy)
+        if finite.sum() < 1:
+            print(f"  {case['label']:<22s}  (no converged points)")
+            continue
+        i0 = _nearest_delta_index(d, finite, 0.0)
+        i1 = _nearest_delta_index(d, finite, MARK_DELTA)
+        qy0 = f"{qy[i0]:.5f}" if i0 is not None else "--"
+        qy1 = f"{qy[i1]:.5f}" if i1 is not None else "--"
+        span = float(qy[finite].max() - qy[finite].min())
+        print(
+            f"  {case['label']:<22s}  Qy(0) = {qy0:>9s}  "
+            f"Qy({MARK_DELTA:g}) = {qy1:>9s}  span = {span:.4f}  "
+            f"({int(finite.sum())}/{len(d)} converged)"
+        )
+
+
+def _all_failed(cases):
+    return all(
         (np.isfinite(c["qx"]) & np.isfinite(c["qy"])).sum() < 1 for c in cases
-    ):
+    )
+
+
+def main():
+    b0_tag, order_tag_str, bare_tag, scan_tag = _tags()
+    base_stem = (
+        f"tune_diagram_vs_delta_{b0_tag}{order_tag_str}{bare_tag}_{scan_tag}"
+        f"_ord{_args.max_resonance_order}"
+    )
+
+    cases = _load_or_scan("current", with_bare=not _args.no_bare)
+    if _all_failed(cases):
         raise SystemExit(
             "Every case failed to converge at all delta points -- reduce "
             "--delta-max or raise --n-delta."
         )
 
     plt.close("all")
-    fig = _plot_tune_diagram(
-        cases,
-        max_resonance_order=_args.max_resonance_order,
-        pad=_args.pad,
-        qx_range=_args.qx_range,
-        qy_range=_args.qy_range,
+
+    if not _args.vs_old:
+        _report_spans(cases, "Current ring:")
+        qx_lim, qy_lim = _compute_window(
+            cases, pad=_args.pad,
+            qx_range=_args.qx_range, qy_range=_args.qy_range,
+        )
+        fig = _plot_tune_diagram(
+            cases,
+            max_resonance_order=_args.max_resonance_order,
+            qx_lim=qx_lim, qy_lim=qy_lim,
+        )
+        _save_fig(fig, base_stem)
+        if not _args.no_show:
+            plt.show()
+        return
+
+    # --vs-old: the old ring is scanned with solenoids on only. With the
+    # solenoids off, every corrector and every qbmid_ quad is gated to
+    # zero by the on_sol_* knobs, so both generations reduce to the same design
+    # ring -- the bare footprint is scanned once (above, from the current
+    # lattice) and drawn on both figures, where it doubles as a shared anchor.
+    old_cases = _load_or_scan("old", with_bare=False)
+    if _all_failed(old_cases):
+        raise SystemExit(
+            f"Every old ({OLD_REV}) case failed to converge at all delta "
+            "points -- reduce --delta-max or raise --n-delta."
+        )
+    bare_cases = [c for c in cases if c["config"] == "bare"]
+    old_cases = old_cases + bare_cases
+
+    _report_spans(old_cases, f"Old ring ({OLD_REV}):")
+    _report_spans(cases, "Current ring:")
+
+    # One window, fitted to the OLD footprint, used for both figures. Fitting
+    # each figure to its own extent would draw the two rings at wildly
+    # different magnifications and hide the very difference being shown.
+    qx_lim, qy_lim = _compute_window(
+        old_cases, pad=_args.pad,
+        qx_range=_args.qx_range, qy_range=_args.qy_range,
+    )
+    print(
+        f"\nShared window (fitted to the old footprint): "
+        f"Qx {qx_lim[0]:.4f}..{qx_lim[1]:.4f}, "
+        f"Qy {qy_lim[0]:.4f}..{qy_lim[1]:.4f}"
     )
 
-    b0_tag, order_tag_str, bare_tag, scan_tag = _tags()
-    stem = (
-        f"tune_diagram_vs_delta_{b0_tag}{order_tag_str}{bare_tag}_{scan_tag}"
-        f"_ord{_args.max_resonance_order}"
+    fig_old = _plot_tune_diagram(
+        old_cases,
+        max_resonance_order=_args.max_resonance_order,
+        qx_lim=qx_lim, qy_lim=qy_lim,
+        generation_note=f"old ring, {OLD_REV} (pre cut-bends, pre conditioning fix)",
     )
-    _save_fig(fig, stem)
+    _save_fig(fig_old, f"{base_stem}_old-{OLD_REV}")
+
+    fig_new = _plot_tune_diagram(
+        cases,
+        max_resonance_order=_args.max_resonance_order,
+        qx_lim=qx_lim, qy_lim=qy_lim,
+        generation_note=f"current ring, on the {OLD_REV} window",
+    )
+    _save_fig(fig_new, f"{base_stem}_new_vs_old-{OLD_REV}")
 
     if not _args.no_show:
         plt.show()
