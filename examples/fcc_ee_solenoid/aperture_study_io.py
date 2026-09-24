@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from pathlib import Path
 from typing import Any, Literal
 
@@ -12,7 +13,9 @@ import numpy as np
 from solenoid_params import FIELD_TAG
 
 HERE = Path(__file__).resolve().parent
+REPO_ROOT = HERE.parents[1]
 DATA_DIR = HERE / "data"
+OLD_LATTICE_CACHE = DATA_DIR / "old_lattices"
 # Override on machines where Path.home() isn't a synced CERNBox folder (e.g.
 # remote/headless boxes reached over ssh) via FCC_SOLENOID_PLOT_DIR.
 PLOT_DIR = Path(
@@ -35,6 +38,49 @@ BUILD_DEFAULTS = {
     "sext_window_s_max": None,
     "sext_window_order": 2,
 }
+
+
+def old_lattice_path(rev: str, filename: str) -> Path:
+    """Extract examples/fcc_ee_solenoid/<filename> at <rev> into the cache.
+
+    Each 004c run overwrote the corrected lattices in place, so the older
+    generations exist only as git blobs -- there is no file on disk to point
+    at. This is a plain read of history: the working tree is never touched,
+    and the cache lives under data/, which is gitignored, so it cannot be
+    committed by accident.
+
+    `git cat-file -p` rather than `git show`: no pager and no auto-decoration
+    on a 15 MB blob. The file is written to a .part name and renamed, so an
+    interrupted run cannot leave a truncated JSON behind that the next run
+    would happily load.
+
+    Shared by 004m (beta functions) and 004k (tune footprints) so that one
+    cache key -- `{rev}_{filename}` -- has one implementation behind it.
+    """
+    out = OLD_LATTICE_CACHE / f"{rev}_{filename}"
+    if out.exists():
+        return out
+    OLD_LATTICE_CACHE.mkdir(parents=True, exist_ok=True)
+    spec = f"{rev}:examples/fcc_ee_solenoid/{filename}"
+    print(f"  extracting {spec} -> {out.relative_to(HERE)}")
+    tmp = out.with_name(out.name + ".part")
+    try:
+        with open(tmp, "wb") as fh:
+            subprocess.run(
+                ["git", "cat-file", "-p", spec],
+                cwd=REPO_ROOT,
+                stdout=fh,
+                check=True,
+            )
+    except subprocess.CalledProcessError as exc:
+        tmp.unlink(missing_ok=True)
+        raise SystemExit(
+            f"Could not read {spec} from git (exit {exc.returncode}). Check "
+            f"that {rev!r} is a valid revision and that the lattice existed "
+            "there."
+        ) from exc
+    tmp.replace(out)
+    return out
 
 
 def format_tag_float(value: float) -> str:
