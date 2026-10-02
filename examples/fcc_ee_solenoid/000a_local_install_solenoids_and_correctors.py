@@ -53,11 +53,11 @@ for ip_name in ip_names:
 
     bx_comp_right = bx_comp_right_sol * np.cos(theta) - bz_comp_right_sol * np.sin(theta)
     bz_comp_right = bx_comp_right_sol * np.sin(theta) + bz_comp_right_sol * np.cos(theta)
-    by_comp_right = by_comp_right_sol * np.cos(theta) - bz_comp_right_sol * np.sin(theta)
+    by_comp_right = by_comp_right_sol
 
     bx_comp_left = bx_comp_left_sol * np.cos(theta) - bz_comp_left_sol * np.sin(theta)
     bz_comp_left = bx_comp_left_sol * np.sin(theta) + bz_comp_left_sol * np.cos(theta)
-    by_comp_left = by_comp_left_sol * np.cos(theta) - bz_comp_left_sol * np.sin(theta)
+    by_comp_left = by_comp_left_sol
 
     # Normalized strengths
     rigidity0 = line.particle_ref.rigidity0[0]
