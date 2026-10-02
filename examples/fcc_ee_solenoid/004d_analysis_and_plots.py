@@ -413,11 +413,47 @@ def _mark_solenoid_regions(ax, markers):
         ax.axvline(s_pos, color='grey', linewidth=0.8, linestyle='--')
 
 
+def _autoscale_y_to_xlim(ax, xlim, margin=0.1):
+    """Rescale ax's ylim to the data actually visible within xlim.
+
+    Must be called BEFORE the axvspan/axvline decoration: an axvline is a
+    Line2D with y-data [0, 1], which would otherwise be folded into the
+    min/max and flatten the panel.
+    """
+    log_scale = ax.get_yscale() == 'log'
+    y_min, y_max = np.inf, -np.inf
+    for line_obj in ax.get_lines():
+        xd = np.asarray(line_obj.get_xdata(), dtype=float)
+        yd = np.asarray(line_obj.get_ydata(), dtype=float)
+        if xd.size != yd.size:
+            continue
+        mask = (xd >= xlim[0]) & (xd <= xlim[1]) & np.isfinite(yd)
+        if log_scale:
+            mask &= yd > 0
+        if mask.any():
+            y_min = min(y_min, float(np.min(yd[mask])))
+            y_max = max(y_max, float(np.max(yd[mask])))
+    if not (np.isfinite(y_min) and np.isfinite(y_max)):
+        return
+    if log_scale:
+        # Generous factors rather than a fractional margin -- this is a
+        # decade-spanning axis, and the extra room keeps the legend clear.
+        ax.set_ylim(y_min / 5.0, y_max * 5.0)
+    else:
+        span = y_max - y_min
+        pad = margin * span if span > 0 else max(abs(y_max), 1.0) * margin
+        ax.set_ylim(y_min - pad, y_max + pad)
+
+
 #########
 # Plots #
 #########
 
 plt.close('all')
+
+# The s-window every fig1 panel ends up showing (they share x). Named so
+# the y-autoscales below and the set_xlim at the end cannot drift apart.
+FIG1_XLIM = (-20, 20)
 
 fig1 = plt.figure(figsize=_figsize(6.4, 4.8 * 1.8))
 ax1 = fig1.add_subplot(5, 1, 1)
@@ -431,13 +467,11 @@ ax2.grid(True)
 ax3 = fig1.add_subplot(5, 1, 3, sharex=ax1)
 ax3.plot(tw.s, tw.y * 1e3)
 ax3.set_ylabel('y [mm]')
-ax3.set_ylim(-0.2, 0.2)
 ax3.grid(True)
 
 ax4 = fig1.add_subplot(5, 1, 4, sharex=ax1)
 ax4.plot(tw.s, tw.dy * 1e3)
 ax4.set_ylabel(r'$D_y$ [mm]')
-ax4.set_ylim(-0.2, 0.2)
 ax4.grid(True)
 
 ax5 = fig1.add_subplot(5, 1, 5, sharex=ax1)
@@ -453,13 +487,20 @@ ax5.set_ylabel(r'$\beta_{x2}/\beta_x$,  $\beta_{y1}/\beta_y$')
 ax5.legend(loc='best')
 ax5.grid(True)
 
+# y and D_y used to be pinned to +-0.2 mm, which clipped the orbit and
+# dispersion excursions inside the solenoids. Fit them to what is actually in
+# the window instead -- before the decoration, since _mark_solenoid_regions
+# adds axvlines whose [0, 1] y-data would otherwise set the scale.
+for _ax in (ax3, ax4):
+    _autoscale_y_to_xlim(_ax, FIG1_XLIM)
+
 for _ax in (ax1, ax2, ax3, ax4, ax5):
     _mark_solenoid_regions(_ax, IR_MARKERS)
 
 ax1.set_xlabel('')
 ax5.set_xlabel('s [m]')
 fig1.subplots_adjust(hspace=0.25, top=0.95, bottom=0.06, left=0.14)
-ax5.set_xlim(-20, 20)
+ax5.set_xlim(*FIG1_XLIM)
 
 fig2 = plt.figure(figsize=_figsize(6.4, 4.8 * 1.8))
 ax1 = fig2.add_subplot(5, 1, 1)
@@ -517,7 +558,7 @@ def _twiss_for_tag(tag):
 
     The fourth entry carries the coupling RDTs for the summary box: the two
     twisses above are 6d for the primary tag, and coupling_edw_teng belongs on a
-    4d twiss (see the block comment above RDT_CASES), so it is a separate object
+    4d twiss (see the COUPLING RDT VALIDITY NOTE), so it is a separate object
     rather than a flag on those. For the primary tag it is the tw4d computed at
     the top of the script; for the others it is the on-case twiss, which is 4d
     already and only needs the flag."""
@@ -566,8 +607,8 @@ def _twiss_for_tag(tag):
     return tw_cmp, tw_cmp_off, markers_cmp, tw_cmp, tw_cmp_nocorr
 
 
-# Computed once per tag and reused for both the local-region figure (fig3)
-# and the full-straight-section figure (fig4) below, since each call rebuilds
+# Computed once per tag and reused by every figure built from it below,
+# since each call rebuilds
 # and re-twisses a comparison lattice and is not cheap to repeat.
 _TAG_RESULTS = [_twiss_for_tag(tag) for tag in COMPARISON_TAGS]
 
@@ -634,7 +675,7 @@ def _rdt_ring_average(tw_et, rdt):
     7.2e-3). This is the mean strength of the driving term, and it is the |f|
     that the panels plot.
 
-    The solenoid-body NaNs (see the block comment above RDT_CASES) are dropped
+    The solenoid-body NaNs (see the COUPLING RDT VALIDITY NOTE) are dropped
     from the numerator, the denominator staying the full circumference. 12 m of
     90.6 km, so a 1.3e-4 effect; the masking is here only so the sum is a number
     rather than NaN.
@@ -777,16 +818,15 @@ def _betx2_bety1_fig(xlim, title_suffix, mark_ir_regions, tags=None):
     return fig
 
 
-fig3 = _betx2_bety1_fig((-20, 20), '', True)
 
 
 #############################################################
-# The same curves as fig3, but 2 T and 3 T on one axes      #
+# betx2/bety1 in the IR, 2 T and 3 T on one axes            #
 #############################################################
 
 
 def _betx2_bety1_overlay_fig(xlim, title_suffix, mark_ir_regions, tags=None):
-    """fig3's curves with the two field cases on a single axes.
+    """The two-panel IR figure's curves with both field cases on one axes.
 
     Same quantities as _betx2_bety1_fig, on an axis with the same floor, so
     this reads against those panels directly, but with three differences:
@@ -870,7 +910,8 @@ def _betx2_bety1_overlay_fig(xlim, title_suffix, mark_ir_regions, tags=None):
         for s_pos in STRAIGHT_SECTION_S_RANGE:
             ax.axvline(s_pos, color='black', linewidth=0.8, linestyle=':')
     fig.subplots_adjust(top=0.9, bottom=0.14, left=0.14)
-    # One line per case instead of fig3's "on [solenoids off: ...]": with no
+    # One line per case instead of the two-panel figure's "on [solenoids
+    # off: ...]": with no
     # off curves on the axes there is no baseline to quote, and the number
     # that earns the space is 2 T against 3 T.
     _box_under_legend(fig, [(ax, leg, '\n'.join(
@@ -1006,10 +1047,6 @@ def _nocorr_fig(xlim, title_suffix, mark_ir_regions, quantity, tags=None):
     return fig
 
 
-fig4a = _nocorr_fig((-20, 20), '', True, 'beta')
-fig4b = _nocorr_fig((-1400, 1400), ' (full straight)', False, 'beta')
-fig4c = _nocorr_fig((-20, 20), '', True, 'coupling')
-fig4d = _nocorr_fig((-1400, 1400), ' (full straight)', False, 'coupling')
 
 ##############################################################
 # Coupling RDTs from the Edwards-Teng decoupling of the ring #
@@ -1033,6 +1070,7 @@ fig4d = _nocorr_fig((-1400, 1400), ' (full straight)', False, 'coupling')
 # MAD-X's by f1001 -> -conj(f1001); only |f1001| is plotted here, which is
 # insensitive to that, but keep it in mind before comparing phases to MAD-X.
 #
+# COUPLING RDT VALIDITY NOTE
 # IMPORTANT -- these curves have holes, and the holes are in the IR. Measured
 # on the corrected 3T ring: 1208 of 32573 points come back NaN, in exactly
 # eight contiguous blocks of 151, i.e. two per IP, centred at +-13.0 m and
@@ -1061,56 +1099,6 @@ fig4d = _nocorr_fig((-1400, 1400), ' (full straight)', False, 'coupling')
 # above are in that convention too -- fine for judging whether the coupling
 # correction zeroes them, but do not read them as canonical Twiss functions.
 
-RDT_CASES = (
-    (r'$|f_{1001}|$  (difference resonance, $q_x - q_y$)', tw4d.f1001,
-     r'|f_{1001}|'),
-    (r'$|f_{1010}|$  (sum resonance, $q_x + q_y$)', tw4d.f1010,
-     r'|f_{1010}|'),
-)
-
-
-def _coupling_rdt_fig(xlim, title_suffix, mark_ir_regions):
-    """The two coupling RDTs along s, drawn at the same two s-ranges as the
-    betx2/bety1 figures above so the local and global coupling diagnostics can
-    be read against each other panel by panel."""
-    fig, axs = plt.subplots(len(RDT_CASES), 1, sharex=True, figsize=_figsize(6.4, 4.8))
-    rdt_boxes = []
-    for ax, (label, rdt, symbol) in zip(axs, RDT_CASES):
-        # Labelled so these panels carry a top-right legend like the
-        # betx2/bety1 ones, with the ring-average frame hanging under it. The
-        # label adds what the ylabel does not say: which lattice this is.
-        ax.plot(tw4d.s, np.abs(rdt), color='C0',
-                label=fr'${symbol}$ ({FIELD_TAG}, solenoids on)')
-        ax.set_ylabel(label, fontsize=_fs(9))
-        ax.set_title(f'coupling RDT{title_suffix}', fontsize=_fs(10))
-        ax.grid(True)
-        leg = ax.legend(loc='upper right', fontsize=8, framealpha=0.9)
-        # The ring average behind the curve: the same number in both s-windows
-        # and in both panels of the betx2/bety1 figure, since a ring average
-        # does not depend on what is currently plotted. That is the point of
-        # showing it here -- it says how much of the curve the window shows.
-        # Number outside the mathtext: inside it, "7.24e-03" typesets as an
-        # italic e and a spaced minus.
-        rdt_boxes.append((ax, leg,
-                          fr'ring average $\langle{symbol}\rangle$ = '
-                          fr'{_rdt_ring_average(tw4d, rdt):.2e}'))
-        # Per-panel ticks and label, so a single panel can be cropped out and
-        # used on its own -- same reasoning as _betx2_bety1_fig.
-        ax.tick_params(labelbottom=True)
-        ax.set_xlabel('s [m]')
-        if mark_ir_regions:
-            _mark_solenoid_regions(ax, IR_MARKERS)
-        else:
-            for s_pos in STRAIGHT_SECTION_S_RANGE:
-                ax.axvline(s_pos, color='black', linewidth=0.8, linestyle=':')
-    axs[-1].set_xlim(*xlim)
-    fig.subplots_adjust(hspace=0.45, top=0.92, bottom=0.1, left=0.16)
-    _box_under_legend(fig, rdt_boxes)
-    return fig
-
-
-fig5 = _coupling_rdt_fig((-20, 20), '', True)
-fig6 = _coupling_rdt_fig((-1400, 1400), ' (full straight section)', False)
 
 ##############################################################
 # beta_x/beta_y with and without solenoids, and the beta-beat #
@@ -1123,38 +1111,6 @@ fig6 = _coupling_rdt_fig((-1400, 1400), ' (full straight section)', False)
 # latter right at the exit of qd4r.0 where the vertical beta-beat peaks (see
 # the max-beat print at the end of this script). They used to be shaded green
 # here; the shading was dropped, so the region has to be read off the s-axis.
-
-
-def _autoscale_y_to_xlim(ax, xlim, margin=0.1):
-    """Rescale ax's ylim to the data actually visible within xlim.
-
-    Must be called BEFORE the axvspan/axvline decoration: an axvline is a
-    Line2D with y-data [0, 1], which would otherwise be folded into the
-    min/max and flatten the panel.
-    """
-    log_scale = ax.get_yscale() == 'log'
-    y_min, y_max = np.inf, -np.inf
-    for line_obj in ax.get_lines():
-        xd = np.asarray(line_obj.get_xdata(), dtype=float)
-        yd = np.asarray(line_obj.get_ydata(), dtype=float)
-        if xd.size != yd.size:
-            continue
-        mask = (xd >= xlim[0]) & (xd <= xlim[1]) & np.isfinite(yd)
-        if log_scale:
-            mask &= yd > 0
-        if mask.any():
-            y_min = min(y_min, float(np.min(yd[mask])))
-            y_max = max(y_max, float(np.max(yd[mask])))
-    if not (np.isfinite(y_min) and np.isfinite(y_max)):
-        return
-    if log_scale:
-        # Generous factors rather than a fractional margin -- this is a
-        # decade-spanning axis, and the extra room keeps the legend clear.
-        ax.set_ylim(y_min / 5.0, y_max * 5.0)
-    else:
-        span = y_max - y_min
-        pad = margin * span if span > 0 else max(abs(y_max), 1.0) * margin
-        ax.set_ylim(y_min - pad, y_max + pad)
 
 
 # tw_off and tw are twissed on the same already-cut line (only knob *values*
@@ -1310,7 +1266,7 @@ _in_straight_4d = (
 for _rdt_name, _rdt in (('f1001', tw4d.f1001), ('f1010', tw4d.f1010)):
     _abs = np.abs(_rdt)
     # nan-aware throughout: the solenoid bodies come back NaN by construction,
-    # see the block comment above RDT_CASES. Report the count so a change in
+    # see the COUPLING RDT VALIDITY NOTE. Report the count so a change in
     # it is visible rather than silently absorbed into the statistics.
     _n_nan = int((~np.isfinite(_abs)).sum())
     print(f'|{_rdt_name}|: max = {np.nanmax(_abs):.4g} (ring), '
@@ -1320,7 +1276,8 @@ for _rdt_name, _rdt in (('f1001', tw4d.f1001), ('f1010', tw4d.f1010)):
           f'{_rdt_ring_average(tw4d, _rdt):.4g}, '
           f'{_n_nan} NaN pts (solenoid bodies)')
 
-# What the straight's correctors are worth, as numbers behind fig4a-fig4d.
+# What the straight's correctors are worth, as numbers. The combined
+# figures that showed this were removed; plots/*_coroff_*.pdf still carry it.
 # Solenoids and doublet rotations stay on in the "off" column; only
 # on_sol_{orbit,optics,coupling}_corr go to zero.
 print()
@@ -1347,36 +1304,27 @@ COUPLING_STUDIES_PLOT_DIR = PLOT_DIR / 'Coupling_Studies'
 COUPLING_STUDIES_PLOT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Note the two betas_*.pdf below come from BETA_COMPARISON_FIGS, which are
-# drawn for the primary field tag only -- unlike the other six, which carry a
+# drawn for the primary field tag only -- unlike the other two, which carry a
 # 2 T and a 3 T panel each. A run with a different --b0 therefore overwrites
 # those two with the other case's curves while leaving the rest unchanged.
+#
+# The five correctors-off and single-field coupled-beta figures that used to
+# be written here went with the figures they came from; their per-field
+# equivalents are still written under plots/ below.
 BETA_COMPARISON_FIGS[0].savefig(
     COUPLING_STUDIES_PLOT_DIR / 'betas_IR.pdf', bbox_inches='tight')
 BETA_COMPARISON_FIGS[1].savefig(
     COUPLING_STUDIES_PLOT_DIR / 'betas_straight.pdf', bbox_inches='tight')
-fig4a.savefig(
-    COUPLING_STUDIES_PLOT_DIR / 'betas_IR_coroff.pdf', bbox_inches='tight')
-fig4b.savefig(
-    COUPLING_STUDIES_PLOT_DIR / 'betas_straight_coroff.pdf',
-    bbox_inches='tight')
-fig3.savefig(
-    COUPLING_STUDIES_PLOT_DIR / 'coupledbetas_IR.pdf', bbox_inches='tight')
-# Same window as coupledbetas_IR.pdf above, with the two cases overlaid on
-# one axes and no solenoids-off baseline -- see _betx2_bety1_overlay_fig.
+# The IR window with the two cases overlaid on one axes and no solenoids-off
+# baseline -- see _betx2_bety1_overlay_fig.
 fig3b.savefig(
     COUPLING_STUDIES_PLOT_DIR / 'coupledbetas_IR_2T_3T.pdf',
     bbox_inches='tight')
 fig4.savefig(
     COUPLING_STUDIES_PLOT_DIR / 'coupledbetas_straight.pdf',
     bbox_inches='tight')
-fig4c.savefig(
-    COUPLING_STUDIES_PLOT_DIR / 'coupledbetas_IR_coroff.pdf',
-    bbox_inches='tight')
-fig4d.savefig(
-    COUPLING_STUDIES_PLOT_DIR / 'coupledbetas_straight_coroff.pdf',
-    bbox_inches='tight')
 print()
-print(f'Saved 9 combined figures to {COUPLING_STUDIES_PLOT_DIR}')
+print(f'Saved 4 combined figures to {COUPLING_STUDIES_PLOT_DIR}')
 
 
 #################################################
