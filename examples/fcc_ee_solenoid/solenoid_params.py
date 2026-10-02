@@ -3,7 +3,7 @@ compensation scheme, used across the "current" pipeline
 (004a -> 004b[_varsol] -> 004c -> 004d).
 
 Single source of truth: these values used to be independently hardcoded in
-004a_build_and_check_solenoids.py, 004b_install_solenoids_in_fcc_ring.py, and
+004a_build_and_check_solenoids.py, 004b_install_splineboris_solenoids_in_fcc_ring.py, and
 004b_install_varsol_solenoids_in_fcc_ring.py, which let them silently drift
 out of sync (e.g. B0 changed in one file but not the others). Import from
 here instead of re-hardcoding.

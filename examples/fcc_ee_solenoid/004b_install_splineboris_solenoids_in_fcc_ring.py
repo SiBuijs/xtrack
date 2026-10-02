@@ -23,17 +23,9 @@ _parser = argparse.ArgumentParser(
     description='Install SplineBoris solenoids and correctors in the FCC ring.')
 add_b0_argument(_parser, default=MAIN_SOLENOID_B0)
 add_max_order_argument(_parser)
-_parser.add_argument(
-    '--output-tag', default='',
-    help='Optional extra suffix appended to the output lattice filename '
-         '(e.g. "mainscale" -> temp_fcc_ee_lcc_splineboris_solenoids_'
-         '3T_mainscale.json). Empty (default) keeps the standard filename. '
-         '004c_correct_solenoids_in_fcc_ring.py must be run with the same '
-         '--output-tag to pick up this file.')
 _args = _parser.parse_args()
 FIELD_TAG = field_tag(_args.b0)
 ORDER_TAG = order_tag(_args.max_transverse_order)
-OUT_TAG = f'_{_args.output_tag}' if _args.output_tag else ''
 MAIN_SOLENOID_CORRECTOR_DS_START = corrector_ds_start_for_b0(_args.b0)
 
 HERE = Path(__file__).parent
@@ -41,7 +33,7 @@ INPUT_LATTICE_JSON = HERE / 'fccee_z_lcc.json'
 INPUT_SOLENOID_LINES_JSON = HERE / f'004_solenoid_lines_{FIELD_TAG}{ORDER_TAG}.json'
 OUTPUT_LATTICE_JSON = (
     HERE
-    / f'temp_fcc_ee_lcc_splineboris_solenoids_{FIELD_TAG}{ORDER_TAG}{OUT_TAG}.json')
+    / f'temp_fcc_ee_lcc_splineboris_solenoids_{FIELD_TAG}{ORDER_TAG}.json')
 
 IP_NAMES = ['ipa', 'ipd', 'ipg', 'ipj']
 
