@@ -9,7 +9,7 @@ from collections import defaultdict
 from collections.abc import Iterable
 from contextlib import contextmanager
 from pprint import pformat
-from typing import Dict, List, Literal, Optional, Container
+from typing import Container, Dict, List, Literal, Optional
 from warnings import warn
 
 import numpy as np
@@ -20,34 +20,49 @@ from xdeps.refs import is_ref
 
 import xtrack as xt
 from xtrack.aperture_meas import measure_aperture
-from xtrack.twiss import (DEFAULT_MATRIX_RESPONSIVENESS_TOL,
-                          DEFAULT_MATRIX_STABILITY_TOL,
-                          get_R_matrix,
-                          get_T_matrix_line, find_closed_orbit_line,
-                          get_non_linear_chromaticity, twiss_line)
+from xtrack.twiss import (
+    DEFAULT_MATRIX_RESPONSIVENESS_TOL,
+    DEFAULT_MATRIX_STABILITY_TOL,
+    find_closed_orbit_line,
+    get_non_linear_chromaticity,
+    get_R_matrix,
+    get_T_matrix_line,
+    twiss_line,
+)
 
-from .api_categorization import GroupedAPICollector, doc_group, property_with_doc_group
 from . import beam_elements
 from . import json as json_utils
-from .beam_elements import (BeamElement, Drift, Marker, Multipole,
-                            element_classes)
-from .beam_elements.elements import (_EDGE_MODEL_TO_INDEX,
-                                     _MODEL_TO_INDEX_CURVED,
-                                     _MODEL_TO_INDEX_DRIFT)
+from .api_categorization import GroupedAPICollector, doc_group, property_with_doc_group
+from .beam_elements import BeamElement, Drift, Marker, Multipole, element_classes
+from .beam_elements._common import (
+    _EDGE_MODEL_TO_INDEX,
+    _MODEL_TO_INDEX_CURVED,
+    _MODEL_TO_INDEX_DRIFT,
+)
 from .beam_elements.slice_base import ID_RADIATION_FROM_PARENT
-from .composer import (_all_places, _flatten_components,
-                      _generate_element_names_with_drifts,
-                      _resolve_s_positions, _sort_places)
+from .composer.composer import (
+    _all_places,
+    _flatten_components,
+)
+from .composer.ordering import _sort_places
+from .composer.resolve_positions import _resolve_s_positions
 from .footprint import Footprint, _footprint_with_linear_rescale
-from .general import _print, DEPRECATION_INFO_PREP_1_0
-from .internal_record import (start_internal_logging_for_elements_of_type,
-                              stop_internal_logging,
-                              stop_internal_logging_for_elements_of_type)
+from .general import DEPRECATION_INFO_PREP_1_0, _print
+from .internal_record import (
+    start_internal_logging_for_elements_of_type,
+    stop_internal_logging,
+    stop_internal_logging_for_elements_of_type,
+)
 from .mad_loader import MadLoader
 from .mad_writer import to_madx_sequence
-from .madng_interface import (_survey_ng, _tw_ng, build_madng_model,
-                              discard_madng_model, line_to_madng,
-                              regen_madng_model)
+from .madng_interface import (
+    _survey_ng,
+    _tw_ng,
+    build_madng_model,
+    discard_madng_model,
+    line_to_madng,
+    regen_madng_model,
+)
 from .match import Action, closed_orbit_correction, match_knob_line, match_line
 from .progress_indicator import progress
 from .slicing import Custom, Slicer, Strategy
@@ -59,16 +74,18 @@ from .trajectory_correction import TrajectoryCorrection
 log = logging.getLogger(__name__)
 
 _ALLOWED_ELEMENT_TYPES_IN_NEW = [
-    xt.Drift, xt.DriftExact,
+    xt.Drift, xt.DriftExact, xt.Device,
     xt.Magnet, xt.Replica, xt.Marker,
     xt.Bend, xt.RBend, xt.Quadrupole, xt.Sextupole, xt.Octupole, xt.Multipole,
     xt.UniformSolenoid, xt.Solenoid, xt.VariableSolenoid,
+    xt.BFieldExpansion,
     xt.Cavity, xt.RFMultipole, xt.CrabCavity, xt.ReferenceEnergyIncrease,
     xt.ReferenceEnergyChange,
-    xt.Translation, xt.Rotation, xt.XRotation, xt.TimeDelay,
+    xt.Translation, xt.Rotation, xt.TimeDelay,
     xt.XYShift, xt.XRotation, xt.YRotation, xt.SRotation, xt.ZetaShift,
     xt.LimitRacetrack, xt.LimitRectEllipse, xt.LimitRect, xt.LimitEllipse,
-    xt.LimitPolygon, xt.DipoleEdge, xt.LongitudinalLimitRect, xt.FirstOrderTaylorMap]
+    xt.LimitPolygon, xt.DipoleEdge, xt.LongitudinalLimitRect, xt.FirstOrderTaylorMap,
+    xt.SecondOrderTaylorMap]
 
 _ALLOWED_ELEMENT_TYPES_DICT = {
     cc.__name__: cc for cc in _ALLOWED_ELEMENT_TYPES_IN_NEW}
@@ -98,21 +115,13 @@ LINE_DOC_GROUP_ORDER = (
 
 _LINE_DOC_GROUP_COLLECTOR = GroupedAPICollector(LINE_DOC_GROUP_ORDER)
 
-def find_index_repeated(item, lst,count=0):
-    res=[ii for ii, nn in enumerate(lst) if nn == item]
-    print(item)
-    if count>=len(res):
+def find_index_repeated(item, lst, count=0):
+    res = [ii for ii, nn in enumerate(lst) if nn == item]
+    _print(item)
+    if count >= len(res):
         raise ValueError(f'Item {item} not found')
     return res[count]
 
-def find_index_repeated2(item, lst,count=0):
-    cc=0
-    for ii, nn in enumerate(lst):
-        if nn == item:
-            if cc==count:
-                return ii
-            cc+=1
-    raise ValueError(f'Item {item} not found')
 
 class Line:
 
@@ -151,10 +160,10 @@ class Line:
             Ordered list of beam element names. If not provided, `elements` must
             be a list, the names are automatically generated.
         particle_ref : xpart.Particles
-            Reference particle providing rest mass, charge and reference enegy
-            used for building particles distributions, computing twiss parameters
+            Reference particle providing rest mass, charge and reference energy
+            used for building particle distributions, computing twiss parameters
             and matching.
-        energy_program: EnergyProgram
+        energy_program : EnergyProgram
             (optional) Energy program used to update the reference energy during
             the tracking.
         env : Environment
@@ -270,6 +279,7 @@ class Line:
         self._metadata = None
         self._tracker = None
         self._xcoll = None
+        self._xfields = None
         self._xpart = None
 
         self.config = xt.tracker.TrackerConfig()
@@ -374,7 +384,7 @@ class Line:
     @doc_group("Constructors and Serialization")
     @classmethod
     def from_dict(cls, dct, _context=None, _buffer=None, classes=(),
-                  verbose=True, _env=None):
+                  verbose=True, _env=None, with_progress=True):
 
         """
         Create a Line object from a dictionary.
@@ -392,6 +402,16 @@ class Line:
         classes : list of classes, optional
             List of classes to be used for deserializing the elements. If not
             provided, the default classes are used.
+        verbose : bool, optional
+            If True (default), a message is printed when the loading is complete.
+        _env : Environment, optional
+            Environment to which the line is attached. Used when the line is
+            reloaded as part of an environment: in this case the elements and
+            the variables are taken from the environment and must not be
+            present in the dictionary.
+        with_progress : bool, optional
+            Whether to show progress while deserializing elements. Defaults to
+            ``True``.
 
         Returns
         -------
@@ -403,7 +423,7 @@ class Line:
         if "xtrack_version" in dct:
             version = dct["xtrack_version"]
             if xt.general._compare_versions(version, xt.__version__) > 0:
-                print(f'Warning: The line you are loading was created '
+                _print(f'Warning: The line you are loading was created '
                       f'with xtrack version {version}, which is more recent '
                       f'than the current version {xt.__version__}. '
                       'Some features may not be available or '
@@ -411,7 +431,7 @@ class Line:
                       f'package to the latest version.')
 
         # When env is given it means that the line is being reloaded as part of
-        # and env. In that case the element_dict, vars and xdeps stuff come through
+        # an env. In that case the element_dict, vars and xdeps stuff come through
         # the environment and should not be in the dictionary
 
         if cls_str := dct.get('__class__', None):
@@ -442,7 +462,8 @@ class Line:
                     nn: ee for nn, ee in zip(dct['element_names'], ele_list)}
 
             elements = xt.environment._deserialize_elements(dct=dct, classes=classes,
-                                             _buffer=_buffer, _context=_context)
+                                             _buffer=_buffer, _context=_context,
+                                             with_progress=with_progress)
             env = xt.Environment(
                 element_dict=elements,
                 _var_management_dct=var_management_dict)
@@ -502,7 +523,7 @@ class Line:
         ----------
         file : str or file-like object
             Path to the JSON file or file-like object.
-            If filename ends with '.gz' file is decompressed.
+            If the filename ends with '.gz', the file is decompressed.
         **kwargs : dict
             Additional keyword arguments passed to `Line.from_dict`.
 
@@ -540,14 +561,14 @@ class Line:
         length : float
             Total length (in m) of line. Determines drift behind last element.
         elements : dict
-            Dictionary with named elements, which can be refered to in the
-            sequence definion by name.
+            Dictionary with named elements, which can be referred to in the
+            sequence definition by name.
         sequences : dict
-            Dictionary with named sub-sequences, which can be refered to in the
-            sequence definion by name.
+            Dictionary with named sub-sequences, which can be referred to in the
+            sequence definition by name.
         copy_elements : bool, optional
             Whether to make copies of elements or not. By default, named elements
-            are re-used which is memory efficient but does not allow to change
+            are re-used which is memory efficient but does not allow changing
             parameters individually.
         naming_scheme : str, optional
             Naming scheme to name sub-sequences. A format string accepting two
@@ -564,7 +585,7 @@ class Line:
             marks the centre of the element. If 'exit' is given, the s coordinate
             marks the exit point of the element.
         **kwargs : dict
-            Arguments passed to constructor of the line
+            Arguments passed to the constructor of the line
 
         Returns
         -------
@@ -681,7 +702,8 @@ class Line:
         allow_thick=None,
         name_prefix=None,
         enable_layout_data=False,
-        enable_thick_kickers=True
+        enable_thick_kickers=True,
+        with_progress=True,
     ):
         """
         Build a line from a MAD-X sequence.
@@ -705,7 +727,7 @@ class Line:
         merge_drifts : bool, optional
             If true, consecutive drifts are merged.
         merge_multipoles : bool, optional
-            If true,consecutive multipoles are merged.
+            If true, consecutive multipoles are merged.
         expressions_for_element_types : list, optional
             List of element types for which expressions are imported.
         replace_in_expr : dict, optional
@@ -719,8 +741,16 @@ class Line:
         allow_thick : bool, optional
             If true, thick elements are allowed. Otherwise, an error is raised
             if a thick element is encountered.
-        enable_layout_data: bool, optional
+        name_prefix : str, optional
+            Prefix prepended to the names of the imported elements.
+        enable_layout_data : bool, optional
             If true, the layout data is imported.
+        enable_thick_kickers : bool, optional
+            Must be true (default). On-the-fly kicker slicing is not supported
+            anymore and an error is raised if false.
+        with_progress : bool, optional
+            Whether to show progress while converting elements. Defaults to
+            ``True``.
 
         Returns
         -------
@@ -752,7 +782,7 @@ class Line:
             name_prefix=name_prefix,
             enable_layout_data=enable_layout_data,
         )
-        line = loader.make_line()
+        line = loader.make_line(with_progress=with_progress)
         return line
 
     @doc_group("Constructors and Serialization")
@@ -767,6 +797,12 @@ class Line:
         include_var_management : bool, optional
             If True (default) the dictionary will contain the information
             needed to restore the line with deferred expressions.
+        include_element_dict : bool, optional
+            If True (default) the dictionary will contain the element
+            definitions. If False, only the element names are stored.
+        include_version : bool, optional
+            If True, the xtrack version is stored in the dictionary. Default
+            is False.
 
         Returns
         -------
@@ -799,7 +835,7 @@ class Line:
                 out['particle_ref'] = self._particle_ref.to_dict()
         if self.env._var_management is not None and include_var_management:
             if hasattr(self, '_in_multiline') and self._in_multiline is not None:
-                raise ValueError('The line is part ot a MultiLine object. '
+                raise ValueError('The line is part of a MultiLine object. '
                     'To save without expressions please use '
                     '`line.to_dict(include_var_management=False)`.\n'
                     'To save also the deferred expressions please save the '
@@ -822,6 +858,9 @@ class Line:
         ----------
         sequence_name : str
             Name of the sequence.
+        mode : str, optional
+            Output format. Can be 'sequence' (default), to write the elements
+            as a MAD-X sequence, or 'line', to write them as a MAD-X line.
 
         Returns
         -------
@@ -835,7 +874,7 @@ class Line:
                  **kwargs):
 
         '''
-        Build a MAD NG instance from present state of the line.
+        Build a MAD NG instance from the present state of the line.
 
         Parameters
         ----------
@@ -885,7 +924,7 @@ class Line:
 
         Parameters
         ----------
-        file: str or file-like object
+        file : str or file-like object
             The file to save to. If a string is provided, a file is opened and
             closed. If a file-like object is provided, it is used directly.
         **kwargs:
@@ -931,6 +970,36 @@ class Line:
             parent_name.append(ee_pname)
             parent_type.append(ee_ptype)
             prototype.append(getattr(ee, 'prototype', None))
+
+        # Resolve each shared ancestry only once per table build. Keep the cache
+        # local so changes to prototypes are reflected on the next call.
+        base_prototype = []
+        prototype_cache = {None: None}
+        for pp in prototype:
+            if pp in prototype_cache:
+                base_prototype.append(prototype_cache[pp])
+                continue
+            path = set()
+            current = pp
+            while current not in prototype_cache:
+                if current in path:
+                    warn(f'Circular prototype chain at {current!r}; '
+                         'base_prototype is set to None.', stacklevel=2)
+                    prototype_cache[current] = None
+                    break
+                path.add(current)
+                # A prototype can be absent after importing or removing elements.
+                ancestor = self._element_dict.get(current)
+                next_prototype = getattr(ancestor, 'prototype', None)
+                if next_prototype is None:
+                    prototype_cache[current] = current
+                    break
+                current = next_prototype
+            base = prototype_cache[current]
+            for name in path:
+                prototype_cache[name] = base
+            base_prototype.append(base)
+
         isthick = np.array(isthick + [False])
         iscollective = np.array(iscollective + [False])
         isreplica = np.array(isreplica + [False])
@@ -938,6 +1007,7 @@ class Line:
         parent_name = np.array(parent_name + [None])
         parent_type = np.array(parent_type + [None])
         prototype = np.array(prototype + [None])
+        base_prototype = np.array(base_prototype + [None])
 
         elements += [None]
 
@@ -947,7 +1017,7 @@ class Line:
         else:
             s_elements = np.array(list(self._get_s_elements()) + [self.get_length()])
 
-        length_elements = np.diff(s_elements, append=s_elements[-1]) # only think elements have length here
+        length_elements = np.diff(s_elements, append=s_elements[-1]) # only thick elements have length here
         s_start = s_elements
         s_end = s_elements + length_elements
         s_center = s_start + 0.5 * length_elements
@@ -961,6 +1031,7 @@ class Line:
             'parent_name': parent_name,
             'parent_type': parent_type,
             'prototype': prototype,
+            'base_prototype': base_prototype,
             'iscollective': iscollective,
             'element': elements,
             's_start': s_start,
@@ -1007,6 +1078,11 @@ class Line:
         -------
         table : LineTable
             Table containing one row per element plus the ``'_end_point'`` row.
+            ``base_prototype`` is the last non-None name in the prototype chain,
+            or None for elements without a prototype and for ``'_end_point'``.
+            If a prototype is absent from the environment, its name is used
+            without emitting a warning.
+            Circular chains emit a warning and have ``base_prototype=None``.
 
         Examples
         --------
@@ -1119,7 +1195,7 @@ class Line:
         Return a table with the horizontal and vertical aperture estimated at all
         elements of the line.
         The aperture is estimated by tracking a particle through the line and
-        measuring the maximum and minumum horizontal and vertical position
+        measuring the maximum and minimum horizontal and vertical position
         at which particles survive. For elements at which no lost particles are
         detected, the aperture is estimated by interpolating the values
         of the neighbouring elements.
@@ -1162,9 +1238,9 @@ class Line:
             If False (default), a deep copy is returned.
             If True, a shallow copy is returned, i.e. the line is placed in the
             same environment and shares variables and elements with the original.
-        _context: xobjects.Context
+        _context : xobjects.Context
             xobjects context to be used for the copy
-        _buffer: xobjects.Buffer
+        _buffer : xobjects.Buffer
             xobjects buffer to be used for the copy
 
         Returns
@@ -1302,13 +1378,14 @@ class Line:
         return out
 
     @doc_group("Compose Mode")
-    def end_compose(self):
+    def end_compose(self, diagnostics=False):
         """
         Resolve compose-mode placements and switch the line back to normal mode.
 
         Parameters
         ----------
-        None
+        diagnostics : bool, optional
+            If true, analyze unresolved placement dependencies before raising.
 
         Returns
         -------
@@ -1348,13 +1425,16 @@ class Line:
         if self.mode != 'compose':
             raise ValueError('Line is not in compose mode')
         self.discard_tracker()
-        self._full_elements_from_composer()
+        self._full_elements_from_composer(diagnostics=diagnostics)
         self._mode = 'normal'
 
-    def _full_elements_from_composer(self):
+    def _full_elements_from_composer(self, diagnostics=False):
         if self._mode != 'compose':
             raise ValueError('Line is not in compose mode')
-        self.composer.build(line=self, inplace=False)
+        self.composer.build(
+            line=self,
+            diagnostics=diagnostics,
+        )
 
     @doc_group("Compose Mode")
     def regenerate_from_composer(self):
@@ -1408,10 +1488,12 @@ class Line:
 
         Parameters
         ----------
-        name : str
-            Name assigned to the placed component.
+        name : str, Line or sequence of str
+            Element or line to place. A sequence of element names is first
+            combined into a line.
         obj : object, optional
-            Existing object to place. If omitted, ``name`` is resolved in the environment.
+            Object to register in the environment under ``name`` before placing
+            it. If omitted, ``name`` is resolved in the environment.
         at : float or str, optional
             Placement position.
         from_ : str, optional
@@ -1537,7 +1619,7 @@ class Line:
             is used.
         _buffer: xobjects.Buffer
             xobjects buffer to which the line data is moved. If not provided,
-            the _buffer is creted from the _context.
+            the _buffer is created from the _context.
         compile: bool, optional
             If True (default) the tracker is compiled. If False, the tracker
             is not compiled until the first usage.
@@ -1557,8 +1639,8 @@ class Line:
 
             ## Choose a context
             context = xo.ContextCpu()                         # For CPU (single thread)
-            # context = xo.ContextCpu(omp_num_threads=4)      # For CPU (4 thread)
-            # context = xo.ContextCpu(omp_num_threads='auto') # For CPU (max. thread)
+            # context = xo.ContextCpu(omp_num_threads=4)      # For CPU (4 threads)
+            # context = xo.ContextCpu(omp_num_threads='auto') # For CPU (max. threads)
             # context = xo.ContextCupy()                      # For CUDA GPUs
             # context = xo.ContextPyopencl()                  # For OpenCL GPUs
 
@@ -1637,7 +1719,7 @@ class Line:
         Composer or None
             Compose-mode builder object associated with the line.
         """
-        warn("`Line.builder` is deprecated and will be removed in a future version. '"
+        warn("`Line.builder` is deprecated and will be removed in a future version. "
              "Please use `Line.composer` instead." + DEPRECATION_INFO_PREP_1_0,
              FutureWarning, stacklevel=2)
         return self.composer
@@ -1684,6 +1766,8 @@ class Line:
 
     @config.setter
     def config(self, value):
+        if not isinstance(value, xt.tracker.TrackerConfig):
+            value = xt.tracker.TrackerConfig(value)
         self._config = value
 
     @property_with_doc_group("Inspection, Variables and Configuration")
@@ -1739,6 +1823,14 @@ class Line:
 
         return self.tracker._tracker_data_base.cache['attr']
 
+    @doc_group("Cleanup and Simplification")
+    def disable_tpsa_elements(self):
+        """Convert all TPSA-enabled elements in the line back to scalar storage."""
+        tpsa_enabled = self.attr['_tpsa_enabled']
+        for element_name, enabled in zip(self.element_names, tpsa_enabled):
+            if enabled:
+                self[element_name].disable_tpsa()
+
     @doc_group("Reference Particle and Particle Generation")
     def set_particle_ref(self, *args, **kwargs):
         """
@@ -1792,6 +1884,17 @@ class Line:
                 raise ImportError("Please install Xcoll to use this feature.") from error
         return self._xcoll
 
+    @property_with_doc_group("Radiation, Spin and Intra-Beam Scattering")
+    def xfields(self):
+        """Xfields-specific helpers associated with this line."""
+        if self._xfields is None:
+            try:
+                from xfields.line_tools import XfieldsLineAPI
+                self._xfields = XfieldsLineAPI(self)
+            except ImportError as error:
+                raise ImportError("Please install Xfields to use this feature.") from error
+        return self._xfields
+
     @property_with_doc_group("Reference Particle and Particle Generation")
     def xpart(self):
         """Xpart particle-generation helpers associated with this line."""
@@ -1803,10 +1906,15 @@ class Line:
                 raise ImportError("Please install Xpart to use this feature.") from error
         return self._xpart
 
-    @property_with_doc_group("Upcoming Deprecations")
+    @property_with_doc_group("Deprecated")
     def scattering(self):
         """
         Deprecated alias for ``line.xcoll.scattering``.
+
+        .. warning::
+            This property is deprecated and will be removed in a future version.
+            Use ``line.xcoll.scattering`` instead. This deprecation is part of
+            the interface cleanup in view of the 1.0 release.
 
         Returns
         -------
@@ -1814,14 +1922,20 @@ class Line:
             Xcoll scattering API bound to this line.
         """
         warn('`Line.scattering` is deprecated and will be removed in a future version. '
-             'Please use `Line.xcoll.scattering` instead.',
+             'Please use `Line.xcoll.scattering` instead.'
+             + DEPRECATION_INFO_PREP_1_0,
              FutureWarning, stacklevel=2)
         return self.xcoll.scattering
 
-    @property_with_doc_group("Upcoming Deprecations")
+    @property_with_doc_group("Deprecated")
     def collimators(self):
         """
         Deprecated alias for ``line.xcoll.collimators``.
+
+        .. warning::
+            This property is deprecated and will be removed in a future version.
+            Use ``line.xcoll.collimators`` instead. This deprecation is part of
+            the interface cleanup in view of the 1.0 release.
 
         Returns
         -------
@@ -1829,7 +1943,8 @@ class Line:
             Xcoll collimator API bound to this line.
         """
         warn('`Line.collimators` is deprecated and will be removed in a future version. '
-             'Please use `Line.xcoll.collimators` instead.',
+             'Please use `Line.xcoll.collimators` instead.'
+             + DEPRECATION_INFO_PREP_1_0,
              FutureWarning, stacklevel=2)
         return self.xcoll.collimators
 
@@ -1865,6 +1980,7 @@ class Line:
         num_turns=None,    # defaults to 1
         turn_by_turn_monitor=None,
         multi_element_monitor_at=None,
+        monitor_monomials=None,
         freeze_longitudinal=False,
         time=False,
         with_progress=False,
@@ -1875,8 +1991,9 @@ class Line:
 
         Parameters
         ----------
-        particles: xpart.Particles
-            The particles to track
+        particles: xpart.Particles or xtrack.tpsa.ParticlesTpsa
+            The particles to track. Using ParticlesTpsa to track truncated
+            polynomial expansions through the line is currently *experimental*.
         ele_start: int or str, optional
             The element to start tracking from (inclusive). If an integer is
             provided, it is interpreted as the index of the element in the line.
@@ -1893,17 +2010,24 @@ class Line:
             be provided.
         num_turns: int, optional
             The number of turns to track through. Defaults to 1.
-        backetrack: bool, optional
+        backtrack: bool, optional
             If True, the particles are tracked backward from ele_stop to ele_start.
         turn_by_turn_monitor: bool, str or xtrack.ParticlesMonitor, optional
             If True, a turn-by-turn monitor is created. If a monitor is provided,
             it is used directly. If the string `ONE_TURN_EBE` is provided, the
-            particles coordinates are recorded at each element (one turn).
+            particle coordinates are recorded at each element (one turn).
             The recorded data can be retrieved in `line.record_last_track`.
         multi_element_monitor_at: list of str, optional
             If provided, a multi-element monitor is created and coordinates of the
-            trcked particles are recorded at the elements whose names are in the list.
+            tracked particles are recorded at the elements whose names are in the list.
             The recorded data can be retrieved in `line.record_multi_element_last_track`.
+        monitor_monomials: list, array or dict, optional
+            TPSA tracking only. Record the given map coefficients at the multi-element
+            monitor locations instead of the full maps. A monomial is the per-variable
+            orders, of length 6 plus the number of descriptor parameters. Give a list
+            of monomials or a 2D array with one per row, recorded for all six output
+            coordinates, or a mapping `{coord: monomial}` / `{coord: monomials}`.
+            Retrieved with `line.record_multi_element_last_track.coefficient(...)`.
         freeze_longitudinal: bool, optional
             If True, the longitudinal coordinates are frozen during tracking.
         time: bool, optional
@@ -1913,12 +2037,36 @@ class Line:
             If truthy, a progress bar is displayed during tracking. If an integer
             is provided, it is used as the number of turns between two updates
             of the progress bar. If True, 100 is taken by default. By default,
-            equals to False and no progress bar is displayed.
+            it is False and no progress bar is displayed.
         """
+
+        if not isinstance(particles, xt.Particles):
+            from xtrack.tpsa import ParticlesTpsa
+            if not isinstance(particles, ParticlesTpsa):
+                raise TypeError(f"Cannot track particles of type {type(particles)}")
+            if not self._has_valid_tracker():
+                self.build_tracker()
+            if any(isinstance(element, xt.ParticlesMonitor)
+                   for element in self.tracker._tracker_data_base.elements):
+                raise NotImplementedError(
+                    "ParticlesMonitor elements are not supported with TPSA tracking"
+                )
+            return self.tracker._track(
+                particles,
+                ele_start=ele_start,
+                ele_stop=ele_stop,
+                num_elements=num_elements,
+                num_turns=num_turns,
+                turn_by_turn_monitor=turn_by_turn_monitor,
+                freeze_longitudinal=freeze_longitudinal,
+                time=time,
+                with_progress=with_progress,
+                multi_element_monitor_at=multi_element_monitor_at,
+                monitor_monomials=monitor_monomials,
+                **kwargs)
 
         if not self._has_valid_tracker():
             self.build_tracker()
-
         if hasattr(particles, '_needs_pipeline') and particles._needs_pipeline:
             if '_called_by_pipeline' not in kwargs or not kwargs['_called_by_pipeline']:
                 all_kwargs = locals()
@@ -1947,10 +2095,247 @@ class Line:
             time=time,
             with_progress=with_progress,
             multi_element_monitor_at=multi_element_monitor_at,
+            monitor_monomials=monitor_monomials,
             **kwargs)
 
+    @doc_group("Tracking and Analysis")
+    def get_local_momentum_acceptance(
+        self,
+        *,
+        elements=None,
+        twiss=None,
+        scattering='off',
+        x_offset: float = 0.0,
+        y_offset: float = 0.0,
+        x_norm_offset: float = 0.0,
+        y_norm_offset: float = 0.0,
+        nemitt_x=None,
+        nemitt_y=None,
+        delta_negative_limit: float = -0.10,
+        delta_positive_limit: float = +0.10,
+        delta_step_size: float = 0.01,
+        n_turns: int = 512,
+        with_progress: bool | int = False,
+        verbose: bool = False,
+        **kwargs):
+        """
+        Compute the local momentum acceptance (LMA) along the line by tracking a
+        grid of momentum offsets (δ) from the **entrance** of selected
+        elements and reporting the surviving negative and positive δ limits.
+
+        The δ grid is centered on the local closed orbit at each element, and offsets
+        can be applied (either physical x/y or normalized x/y in σ units).
+
+        Parameters
+        ----------
+        elements : list of str or array-like of str, optional
+            Names of the elements at whose entrance the LMA is evaluated.
+            If ``None`` (default), all elements in the line are used.
+            If multiple elements share the same ``s``, only the first encountered
+            is used.
+        twiss : xt.TwissTable, optional
+            Twiss table to define the closed orbit and optics. By default,
+            a 6D solution is computed with `self.twiss(method='6d')`. You can
+            override the method with `method=...` in `**kwargs`.
+        scattering : str, optional
+            Whether scattering has been enabled or not (`'on'` or `'off'`).
+        x_offset : float, default 0.0
+            Horizontal physical offset in meters. Mutually exclusive with
+            `x_norm_offset`.
+        y_offset : float, default 0.0
+            Vertical physical offset in meters. Mutually exclusive with
+            `y_norm_offset`.
+        x_norm_offset : float, default 0.0
+            Horizontal normalized offset in units of σx (rms). Mutually exclusive
+            with `x_offset`.
+        y_norm_offset : float, default 0.0
+            Vertical normalized offset in units of σy (rms). Mutually exclusive
+            with `y_offset`.
+        nemitt_x : float
+            Horizontal normalized emittance (m·rad, rms).
+        nemitt_y : float
+            Vertical normalized emittance (m·rad, rms).
+        delta_negative_limit : float, default -0.10
+            Lower bound of the δ scan (inclusive). Must be < 0.
+        delta_positive_limit : float, default +0.10
+            Upper bound of the δ scan (inclusive). Must be > 0.
+        delta_step_size : float, default 0.01
+            Step for the δ grid. Must be > 0. The positive end is included
+            with a half-step guard to reduce floating-point exclusion.
+        n_turns : int, default 512
+            Number of turns to track.
+        with_progress : bool | int, default False
+            If truthy, shows a per-element progress bar.
+        verbose : bool, default False
+            If True, enables tracker progress for each element scan.
+        **kwargs
+            Passed through to `self.twiss` and `build_particles`.
+
+        Selection semantics
+        -------------------
+        - LMA is evaluated at the **entrance** of each element.
+        - If multiple elements share the same `s`, only the first encountered is used.
+
+        Algorithm (per selected element)
+        --------------------------------
+        1. Build particles on closed orbit with the requested (normalized or physical) offsets.
+        2. Apply the δ grid by shifting the initial δ around `delta_co`.
+        3. Track for `n_turns` turns from the element to itself.
+        4. Among surviving particles, report:
+        - `delta_neg` = min of the *initial* δ of survivors,
+        - `delta_pos` = max of the *initial* δ of survivors.
+        If none survive, `delta_neg` = `delta_pos` = 0.0
+
+        Returns
+        -------
+        xt.Table
+            Table indexed by `'name'` with columns:
+            - `name` (str): Element name.
+            - `s` (float): Element entrance position (m).
+            - `delta_neg` (float): Surviving negative δ limit (may be 0).
+            - `delta_pos` (float): Surviving positive δ limit (may be 0).
+        """
+        if self.particle_ref is None:
+            raise ValueError("Line.particle_ref must be set to build probe particles.")
+
+        # Mutual exclusivity: physical vs normalized offsets
+        if x_offset != 0.0 and x_norm_offset != 0.0:
+            raise ValueError("Provide either x_offset or x_norm_offset, not both.")
+        if y_offset != 0.0 and y_norm_offset != 0.0:
+            raise ValueError("Provide either y_offset or y_norm_offset, not both.")
+
+        if nemitt_x is None or nemitt_y is None:
+            raise ValueError("nemitt_x and nemitt_y must be provided.")
+
+        if delta_negative_limit >= 0:
+            raise ValueError("delta_negative_limit must be < 0")
+        if delta_positive_limit <= 0:
+            raise ValueError("delta_positive_limit must be > 0")
+        if delta_step_size <= 0:
+            raise ValueError("delta_step_size must be > 0")
+        if n_turns <= 0:
+            raise ValueError("n_turns must be > 0")
+
+        if elements is not None:
+            if not hasattr(elements, '__iter__') or isinstance(elements, str):
+                raise ValueError("`elements` must be an iterable of strings, not a scalar.")
+            elements = list(elements)
+            if not all(isinstance(e, str) for e in elements):
+                raise ValueError("All entries in `elements` must be strings.")
+            invalid = [e for e in elements if e not in self.element_names]
+            if invalid:
+                raise ValueError(
+                    f"The following elements were not found in the line: {invalid}")
+
+        if not self._has_valid_tracker():
+            self.build_tracker()
+
+        # Compute twiss (use 6D by default, overridable via kwargs['method'])
+        twiss_method = kwargs.pop('method', '6d')
+        if twiss is None:
+            if scattering == 'on':
+                self.scattering.disable()
+            twiss = self.twiss(method=twiss_method, reverse=False)
+            if scattering == 'on':
+                self.scattering.enable()
+
+        if elements is None:
+            tt = self.get_table()
+            elements = tt.name
+
+        # Delta grid
+        deltas = np.arange(delta_negative_limit, delta_positive_limit + 0.5 * delta_step_size,
+                           delta_step_size)
+        n_part = len(deltas)
+
+        rows = []
+        seen_s = set()
+
+        iterable = progress(elements, desc="Local Momentum Acceptance") if with_progress else elements
+
+        for ii, ee in enumerate(iterable):
+            s_here = float(twiss['s', ee])
+
+            # Some elements may share the same s
+            if s_here in seen_s:
+                continue
+            seen_s.add(s_here)
+
+            ## Prepare test particles
+            # The longitudinal closed orbit need to be manually supplied
+            zeta_co = twiss['zeta', ee]
+            delta_co = twiss['delta', ee]
+
+            if scattering == 'on':
+                self.scattering.disable()
+
+            # Extract W_matrix and particle_on_co from the already-computed twiss
+            tw_init = twiss.get_twiss_init(at_element=ee)
+
+            idx_at_element = self.element_names.index(ee)
+
+            # On-momentum, matched, test particles
+            particles = self.build_particles(
+                _context=self._context,
+                num_particles=n_part,
+                x_norm=x_norm_offset,
+                y_norm=y_norm_offset,
+                zeta=zeta_co,
+                delta=delta_co,
+                nemitt_x=nemitt_x,
+                nemitt_y=nemitt_y,
+                W_matrix=tw_init.W_matrix,
+                particle_on_co=tw_init.particle_on_co,
+            )
+            particles.at_element[:] = idx_at_element
+            particles.s[:] = s_here
+            particles.start_tracking_at_element = -1
+
+            if scattering == 'on':
+                self.scattering.enable()
+
+            # Add the delta grid
+            delta_temp = particles.delta.copy()
+            delta_temp += deltas
+            particles.update_delta(delta_temp)
+
+            initial_deltas = particles.delta.copy()
+
+            # Apply absolute offsets, if any
+            particles.x += x_offset
+            particles.y += y_offset
+
+            _print(f"\nTrack test particles from reference point #{ii}")
+            self.track(
+                particles,
+                ele_start=ee,
+                ele_stop=ee,
+                num_turns=n_turns,
+                with_progress=1 if verbose else 0
+            )
+
+            mask_alive = (particles.state == 1)
+            if np.any(mask_alive):
+                surviving_pids = particles.filter(mask_alive).particle_id
+                delta_neg = float(np.min(initial_deltas[surviving_pids]))
+                delta_pos = float(np.max(initial_deltas[surviving_pids]))
+            else:
+                delta_neg = float(0.0)
+                delta_pos = float(0.0)
+
+            rows.append({
+                'name': ee,
+                's': s_here,
+                'delta_neg': delta_neg,
+                'delta_pos': delta_pos
+            })
+
+        cols = {k: np.array([r[k] for r in rows]) for k in rows[0].keys()}
+
+        return xt.Table(cols, index='name')
+
     @doc_group("Line Editing")
-    def slice_thick_elements(self, slicing_strategies):
+    def slice_thick_elements(self, slicing_strategies, with_progress=True):
         """
         Slice thick elements in the line. Slicing is done in place.
 
@@ -1958,7 +2343,9 @@ class Line:
         ----------
         slicing_strategies : list
             List of slicing Strategy objects. In case multiple strategies
-            apply to the same element, the last one takes precedence)
+            apply to the same element, the last one takes precedence.
+        with_progress : bool, optional
+            Whether to show progress while slicing. Defaults to ``True``.
 
         Examples
         --------
@@ -1989,7 +2376,7 @@ class Line:
         self._element_names_before_slicing = list(self.element_names).copy()
 
         slicer = Slicer(self, slicing_strategies)
-        return slicer.slice_in_place()
+        return slicer.slice_in_place(with_progress=with_progress)
 
     @doc_group("Reference Particle and Particle Generation")
     def build_particles(
@@ -2010,6 +2397,7 @@ class Line:
         _context=None, _buffer=None, _offset=None,
         _capacity=None,
         mode=None,
+        *, chi=None, charge_ratio=None, mass_ratio=None, pdg_id=None,
         **kwargs, # They are passed to the twiss
     ):
 
@@ -2022,12 +2410,29 @@ class Line:
 
         particle_ref : Particle object
             Reference particle defining the reference quantities (mass0, q0, p0c,
-            gamma0, etc.). Its coordinates (x, py, y, py, zeta, delta) are ignored
+            gamma0, etc.). Its coordinates (x, px, y, py, zeta, delta) are ignored
             unless `mode`='shift' is selected. If this is None (default), the
             reference particle associated with this line is used.
         num_particles : int
             Number of particles to be generated (used if provided coordinates are
             all scalar).
+        chi : float, optional
+            Override the charge-to-mass ratio relative to the reference species.
+            If provided alone, the reference charge ratio is preserved.
+        charge_ratio : float, optional
+            Override the relative charge q/q0. If provided alone, the reference
+            mass ratio is preserved.
+        mass_ratio : float, optional
+            Override the relative mass m/mass0. If provided alone, the reference
+            charge ratio is preserved. Species overrides do not modify the
+            supplied reference particle and cannot be combined with
+            `particle_on_co` or `co_guess`; set ratios on those particles directly.
+        pdg_id : int or str, optional
+            PDG ID or name of the species to generate. Its mass and charge define
+            `mass_ratio` and `charge_ratio` relative to `mass0` and `q0` of the
+            reference particle. Any explicitly supplied species ratios (including
+            `chi`) must be consistent with this species. The same restrictions
+            as for species ratio overrides apply.
         x : float or array
             x coordinate of the particles in meters (default is 0).
         px : float or array
@@ -2080,14 +2485,14 @@ class Line:
             weights to be assigned to the particles.
         mode : str
             To be chosen between `set`,  `shift` and `normalized_transverse` (the
-            default mode is `set`. `normalized_transverse` is used if any if any
+            default mode is `set`. `normalized_transverse` is used if any
             of `x_norm`, `px_norm`, `y_norm`, `py_norm` is provided):
                 - `set`: reference quantities including mass0, q0, p0c, gamma0,
-                    etc. are taken from the provided reference particle. Particles
+                    etc. are taken from the provided reference particle. Particle
                     coordinates are set according to the provided input x, px, y, py,
                     zeta, delta (zero is assumed as default for these variables).
                 - `shift`: reference quantities including mass0, q0, p0c, gamma0,
-                    etc. are taken from the provided reference particle. Particles
+                    etc. are taken from the provided reference particle. Particle
                     coordinates are set from the reference particles and shifted
                     according to the provided input x, px, y, py, zeta, delta (zero
                     is assumed as default for these variables).
@@ -2136,6 +2541,8 @@ class Line:
             _capacity=_capacity,
             mode=mode,
             include_collective=include_collective,
+            chi=chi, charge_ratio=charge_ratio, mass_ratio=mass_ratio,
+            pdg_id=pdg_id,
             **kwargs)
 
     @doc_group("Tracking and Analysis")
@@ -2202,7 +2609,9 @@ class Line:
         freeze_energy=None,
         polarization=None,
         eneloss_and_damping=None,
-        steps_r_matrix=None
+        steps_r_matrix=None, *,
+        with_progress=True,
+        chi=None, charge_ratio=None, mass_ratio=None,
     ):
         if not self._has_valid_tracker():
             self.build_tracker()
@@ -2269,7 +2678,7 @@ class Line:
         targets : list of Target objects
             List of targets to be matched.
         solve : bool
-            If True (default), the matching is performed immediately. If not an
+            If True (default), the matching is performed immediately. If not, an
             Optimize object is returned, which can be used for advanced matching.
         assert_within_tol : bool
             If True (default), an exception is raised if the matching fails.
@@ -2280,7 +2689,7 @@ class Line:
             Dictionary of options to be passed to the solver.
         allow_twiss_failure : bool
             If True (default), the matching continues if the twiss computation
-            computation fails at some of the steps.
+            fails at some of the steps.
         restore_if_fail : bool
             If True (default), the beamline is restored to its initial state if
             the matching fails.
@@ -2384,7 +2793,7 @@ class Line:
         '''
         Match a new knob in the beam line such that the specified targets are
         matched when the knob is set to the value `knob_value_end` and the
-        state of the line before tha matching is recovered when the knob is
+        state of the line before the matching is recovered when the knob is
         set to the value `knob_value_start`.
 
         Parameters
@@ -2455,7 +2864,7 @@ class Line:
 
     @doc_group("Tracking and Analysis")
     def survey(self,X0=0,Y0=0,Z0=0,theta0=0, phi0=0, psi0=0,
-               element0=0, reverse=None):
+               element0=0, reverse=None, include_element_frames=False):
 
         """
         Compute the geometrical layout, i.e. the coordinates of all beam line
@@ -2481,6 +2890,9 @@ class Line:
         element0 : int or str
             Element at which the given coordinates are defined. Default is the
             first element in the beam line.
+        include_element_frames : bool
+            If True, include the aligned reference and physical element frames
+            at both ends of every element. Default is False.
 
         Returns
         -------
@@ -2495,6 +2907,7 @@ class Line:
         - ``name``: element name (with occurrence counts for repeated names).
         - ``element_type``: type of the element (e.g. Drift, Marker, Bend).
         - ``prototype``: name of the element prototype, when present.
+        - ``base_prototype``: last non-None name in the prototype chain.
         - ``s``: longitudinal coordinate at the element entrance [m].
         - ``X``, ``Y``, ``Z``: position of the element entrance in the global frame [m].
         - ``theta``, ``phi``, ``psi``: orientation angles of the local frame
@@ -2508,6 +2921,13 @@ class Line:
         - ``drift_length``: length used while advancing the survey (zero for
           thin elements) [m].
         - ``length``: physical length of the element [m].
+
+        With ``include_element_frames=True``, the table also contains
+        ``XYZ_ref_start``, ``E_ref_start``, ``XYZ_ref_end``, ``E_ref_end``,
+        ``XYZ_elem_start``, ``E_elem_start``, ``XYZ_elem_end``, and
+        ``E_elem_end``. Each ``XYZ_*`` column is also exposed as three scalar
+        coordinate columns, for example ``X_elem_start``, ``Y_elem_start``,
+        and ``Z_elem_start``.
 
         Examples
         --------
@@ -2546,7 +2966,8 @@ class Line:
             self.build_tracker()
 
         return survey_from_line(self, X0=X0, Y0=Y0, Z0=Z0, theta0=theta0,
-                                   phi0=phi0, psi0=psi0, element0=element0)
+                                   phi0=phi0, psi0=psi0, element0=element0,
+                                   include_element_frames=include_element_frames)
 
     @doc_group("Matching and Corrections")
     def correct_trajectory(self, run=True, n_iter='auto', start=None, end=None,
@@ -2558,8 +2979,8 @@ class Line:
                  corrector_limits_y=None):
 
         '''
-        Correct the beam trajectory using linearized response matrix from optics
-        table.
+        Correct the beam trajectory using a linearized response matrix computed
+        from the optics table.
 
         Parameters
         ----------
@@ -2579,7 +3000,7 @@ class Line:
         end : str
             End of the line range in which the correction is performed.
             If `end` is provided `start` must also be provided.
-            If `start` is None, the correction is performed on the periodic
+            If `end` is None, the correction is performed on the periodic
             solution (closed orbit).
         twiss_table : TwissTable
             Twiss table used to compute the response matrix for the correction.
@@ -2606,6 +3027,9 @@ class Line:
         rcond : float
             Cutoff for small singular values (relative to the largest singular
             value). Singular values smaller than `rcond` are considered zero.
+        monitor_alignment : dict or None
+            Optional monitor alignment information passed to the response
+            matrix computation.
         corrector_limits_x : tuple of array-like or None
             Limits for the horizontal corrector strengths. If not None, it should be a tuple
             of two arrays (lower_limits, upper_limits) with the same length as
@@ -2739,8 +3163,10 @@ class Line:
         co_search_settings : dict
             Dictionary containing the settings for the closed orbit search
             (passed as keyword arguments to the `scipy.fsolve` function)
-        delta_zeta : float
-            Initial delta_zeta coordinate.
+        zeta_shift : float
+            Offset applied to ``zeta`` during the closed orbit search (the
+            closed orbit is found for ``zeta[out] = zeta[in] - zeta_shift``).
+            Default is 0.
         delta0 : float
             Initial delta coordinate.
         zeta0 : float
@@ -2762,6 +3188,21 @@ class Line:
         co_search_at : int or str
             Element at which the closed orbit search is performed. If None,
             the closed orbit search is performed at the start of the line.
+        search_for_t_rev : bool
+            If True, the revolution period is searched for, otherwise the
+            revolution period computed from the line length is assumed.
+        spin : bool
+            If True, the spin closed solution (n0) is also computed and stored
+            in the returned particle.
+        num_turns_search_t_rev : int
+            Number of turns used for the search of the revolution period. Used
+            only if ``search_for_t_rev`` is True.
+        symmetrize : bool
+            If True, the one-turn map used for the search is symmetrized by
+            tracking the particle also through the mirrored line.
+        include_collective : bool
+            If True, collective elements are kept active during the closed
+            orbit search. If False (default), they are replaced by drifts.
 
         Returns
         -------
@@ -2822,6 +3263,8 @@ class Line:
             Particle at the closed orbit (optional).
         steps : dict
             Finite difference step for computing the second order tensor.
+        steps_t_matrix : dict
+            Deprecated. Use ``steps`` instead.
 
         Returns
         -------
@@ -2866,7 +3309,7 @@ class Line:
             keep_fft=True, keep_tracking_data=False):
 
         '''
-        Compute the tune footprint for a beam with given emittences using tracking.
+        Compute the tune footprint for a beam with given emittances using tracking.
 
         Parameters
         ----------
@@ -2907,20 +3350,26 @@ class Line:
         n_y_norm : int
             Number of y_norm values for footprint in `uniform action grid` mode.
             Default is 10.
-        linear_rescale_on_knobs: list of xt.LinearRescale
+        linear_rescale_on_knobs : list of xt.LinearRescale
             Detuning from listed knobs is evaluated at a given value of the knob
             with the provided step and rescaled to the actual knob value.
-            This is useful to avoid artefact from linear coupling or resonances.
+            This is useful to avoid artefacts from linear coupling or resonances.
             Example:
                 ``line.get_footprint(..., linear_rescale_on_knobs=[
-                    xt.LinearRescale(knob_name='beambeam_scale', v0=0, dv-0.1)])``
+                    xt.LinearRescale(knob_name='beambeam_scale', v0=0, dv=0.1)])``
         freeze_longitudinal : bool
-            If True, the longitudinal coordinates are frozen during the particles
+            If True, the longitudinal coordinates are frozen during the particle
             matching and the tracking.
-        delta0: float
+        delta0 : float
             Initial value of the delta coordinate.
-        zeta0: float
+        zeta0 : float
             Initial value of the zeta coordinate in meters.
+        keep_fft : bool
+            If True (default), the FFT spectra of the tracked particles are
+            stored in the returned object (``fp.fft_x``, ``fp.fft_y``).
+        keep_tracking_data : bool
+            If True, the turn-by-turn tracking data is stored in the returned
+            object (``fp.tracking_data``). Default is False.
 
         Returns
         -------
@@ -2978,14 +3427,10 @@ class Line:
 
         Returns
         -------
-        det_xx : float
-            Amplitude detuning coefficient dQx / dJx.
-        det_yy : float
-            Amplitude detuning coefficient dQy / dJy.
-        det_xy : float
-            Amplitude detuning coefficient dQx / dJy.
-        det_yx : float
-            Amplitude detuning coefficient dQy / dJx.
+        det : dict
+            Dictionary with the amplitude detuning coefficients, with keys
+            ``'det_xx'`` (dQx / dJx), ``'det_yy'`` (dQy / dJy),
+            ``'det_xy'`` (dQx / dJy) and ``'det_yx'`` (dQy / dJx).
         '''
 
         self._method_incompatible_with_compose()
@@ -3074,8 +3519,9 @@ class Line:
         ----------
         particle_on_co : Particle
             Particle at the closed orbit.
-        steps : float
-            Step size for finite differences. In not given, default step sizes
+        steps : dict
+            Step sizes for finite differences (keys ``dx``, ``dpx``, ``dy``,
+            ``dpy``, ``dzeta``, ``ddelta``). If not given, default step sizes
             are used.
         start : str
             Optional. It can be used to find the periodic solution for a
@@ -3083,11 +3529,24 @@ class Line:
         end : str
             Optional. It can be used to find the periodic solution for a
             portion of the line.
+        num_turns : int
+            Number of turns over which the matrix is computed. Default is 1.
+        element_by_element : bool
+            If True, the transfer matrices from the start of the line to each
+            element are also computed and returned in ``'R_matrix_ebe'``.
+        include_collective : bool
+            If True, collective elements are kept active during the
+            computation. If False (default), they are replaced by drifts.
+        steps_r_matrix : dict
+            Deprecated. Use ``steps`` instead.
 
         Returns
         -------
-        one_turn_matrix : np.ndarray
-            One turn matrix.
+        out : dict
+            Dictionary containing the one turn matrix (``'R_matrix'``), the
+            steps used for the finite differences (``'steps_R_matrix'``) and,
+            when ``element_by_element`` is True, the element-by-element
+            matrices (``'R_matrix_ebe'``).
 
         '''
 
@@ -3145,6 +3604,8 @@ class Line:
             Range of delta values for chromaticity computation.
         num_delta : int
             Number of delta values for chromaticity computation.
+        fit_order : int
+            Order of the polynomial fit used to extract the chromaticity.
         kwargs : dict
             Additional arguments to be passed to the twiss.
 
@@ -3355,7 +3816,8 @@ class Line:
         return cuts_for_element
 
     @doc_group("Line Editing")
-    def cut_at_s(self, s: Iterable[float], s_tol=1e-6, return_slices=False):
+    def cut_at_s(self, s: Iterable[float], s_tol=1e-6, return_slices=False,
+                 with_progress=True):
         """
         Slice the line in place at positions ``s``.
 
@@ -3368,6 +3830,8 @@ class Line:
             an existing boundary.
         return_slices : bool, optional
             If ``True``, return the slice information produced by the slicer.
+        with_progress : bool, optional
+            Whether to show progress while slicing. Defaults to ``True``.
 
         Returns
         -------
@@ -3420,7 +3884,7 @@ class Line:
             strategies.append(strategy)
 
         slicer = Slicer(self, slicing_strategies=strategies)
-        slices = slicer.slice_in_place()
+        slices = slicer.slice_in_place(with_progress=with_progress)
 
         if return_slices:
             return slices
@@ -3434,8 +3898,7 @@ class Line:
         Parameters
         ----------
         what : str, Line or Iterable
-            Element(s) to be appended. Can be a list of `Place` objects specifying
-            the location of each insertion.
+            Element(s) to be appended. Can be a name, a line or a list of names.
         obj : object (optional)
             Object to be appended (if not already present in the environment).
             It can be specified only when `what` is a string.
@@ -3498,9 +3961,8 @@ class Line:
 
     @doc_group("Line Editing")
     def insert(self, what, obj=None, at=None, from_=None, anchor=None,
-               from_anchor=None, s_tol=1e-10):
-        """
-        Insert elements in the line.
+               from_anchor=None, s_tol=1e-10, with_progress=True):
+        """Insert elements in the line.
 
         If there are multiple valid options for the insertion (which is sometimes the
         case for thin elements), the first suitable place will usually be chosen.
@@ -3515,7 +3977,7 @@ class Line:
             It can be specified only when `what` is a string.
         at : str or float (optional)
             Location of the insertion. If a string is given, it will first be interpreted
-            as a name of the element in the line: if one exits the behaviour will be the
+            as a name of the element in the line: if one exists the behaviour will be the
             same as with ``at=0, from_=at``. Otherwise, ``at`` will be treated as an expression
             evaluating to the s position. The s positions can be absolute or relative to
             another element (specified by `from_`).
@@ -3527,9 +3989,14 @@ class Line:
         from_anchor : str (optional)
             Location within the element specified by `from_` for which `at` is defined.
             It can be 'start', 'end' or 'center'. Default is 'center'.
+        s_tol : float (optional)
+            Tolerance used when comparing s positions. Default is 1e-10.
+        with_progress : bool, optional
+            Whether to show progress while slicing at insertion boundaries.
+            Defaults to ``True``.
 
-        Example
-        -------
+        Examples
+        --------
 
         .. code-block:: python
 
@@ -3568,7 +4035,6 @@ class Line:
             # Alternatively, add the element to the environment and then do the insertion:
             env.elements['ap1'] = myaperture
             line.insert('ap1', at='q0@start')
-
         """
 
         self._method_incompatible_with_compose()
@@ -3625,7 +4091,7 @@ class Line:
         s_cuts = list(tab_insertions['s_start']) + list(tab_insertions['s_end'])
         s_cuts = list(set(s_cuts))
 
-        self.cut_at_s(s_cuts, s_tol=s_tol, return_slices=True)
+        self.cut_at_s(s_cuts, s_tol=s_tol, with_progress=with_progress)
 
         tt_after_cut = self.get_table()
         tt_after_cut['length'] = np.diff(tt_after_cut.s, append=tt_after_cut.s[-1])
@@ -3635,6 +4101,11 @@ class Line:
         for ii in range(len(tab_insertions)):
             s_ins_start = tab_insertions['s_start', ii]
             s_ins_end = tab_insertions['s_end', ii]
+
+            if s_ins_end - s_ins_start <= s_tol:
+                # A zero-length interval cannot contain anything
+                continue
+
             entry_is_inside = ((tt_after_cut.s_start >= s_ins_start - s_tol)
                             & (tt_after_cut.s_start <= s_ins_end - s_tol))
             exit_is_inside = ((tt_after_cut.s_end >= s_ins_start + s_tol)
@@ -3642,8 +4113,8 @@ class Line:
             thin_at_entry = ((tt_after_cut.s_start >= s_ins_start - s_tol)
                             & (tt_after_cut.s_end <= s_ins_start + s_tol))
             thin_at_exit = ((tt_after_cut.s_start >= s_ins_end - s_tol)
-                        & (tt_after_cut.s_end <= s_ins_end + s_tol))
-            remove = (entry_is_inside | exit_is_inside) & (~thin_at_entry) & (~thin_at_exit)
+                            & (tt_after_cut.s_end <= s_ins_end + s_tol))
+            remove = entry_is_inside & exit_is_inside & ~(thin_at_entry | thin_at_exit)
             idx_remove.extend(list(np.where(remove)[0]))
 
         mask_keep = np.ones(len(tt_after_cut), dtype=bool)
@@ -3659,15 +4130,31 @@ class Line:
 
         # Sort elements
         tab_sorted = _sort_places(tab_unsorted_with_insertions,
-                                  allow_non_existent_from=True # If from_ is removed s only is conisiderer
-                                                               # (right order comes form previous sorting,
+                                  allow_non_existent_from=True # If from_ is removed s only is considered
+                                                               # (right order comes from previous sorting,
                                                                # (done before removing elements)
         )
-        element_names = _generate_element_names_with_drifts(self.env, tab_sorted, s_tol=s_tol)
+
+        # Sanity check: no overlaps or gaps should be present after the insertion
+        ds_upstream = tab_sorted['ds_upstream']
+        if np.any(np.abs(ds_upstream) > s_tol):
+            # Only identify the culprit on the error path
+            ii = int(np.argmax(np.abs(ds_upstream) > s_tol))
+            gap = ds_upstream[ii]
+            if gap < 0:
+                raise ValueError(
+                    f'Element {tab_sorted.env_name[ii]!r} (at s={tab_sorted["s_start", ii]}) '
+                    f'overlaps the preceding element by {abs(gap)} m after the insertion.'
+                )
+            else:
+                raise RuntimeError(
+                    'A gap is present after the insertion. This is likely a bug: '
+                    'please report it.'
+                )
 
         # Update line
         self.element_names.clear()
-        self.element_names.extend(element_names)
+        self.element_names.extend(tab_sorted.env_name)
 
     @doc_group("Line Editing")
     def remove(self, name, s_tol=1e-10):
@@ -3820,7 +4307,7 @@ class Line:
     # To be deprecated in favor of Line.insert
     @doc_group("Deprecated")
     def insert_element(self, name, element=None, at=None, index=None, at_s=None,
-                       s_tol=1e-6):
+                       s_tol=1e-6, with_progress=True):
         """Insert an element in the line.
 
         .. warning:: This method is deprecated. Use :meth:`Line.insert` instead.
@@ -3834,11 +4321,16 @@ class Line:
             already present in the line is used.
         at: int or string, optional
             Index or name of the element in the line. If ``index`` is provided, ``at_s`` must be None.
+        index: int or string, optional
+            Same as ``at`` (kept for backward compatibility).
         at_s: float, optional
             Position of the element in the line in meters. If ``at_s`` is provided, ``index``
             must be None.
         s_tol: float, optional
             Tolerance for the position of the element in the line in meters.
+        with_progress : bool, optional
+            Whether to show progress while slicing at insertion boundaries.
+            Defaults to ``True``.
         """
         warn('Line.insert_element is deprecated. Use Line.insert instead.'
              + DEPRECATION_INFO_PREP_1_0, FutureWarning)
@@ -3892,12 +4384,13 @@ class Line:
         # Insert by s position
         s_vect_upstream = np.array(self._get_s_position(mode='upstream'))
 
-        # Shortcut in case ot thin element and no cut needed
+        # Shortcut in case of thin element and no cut needed
         if not _is_thick(element, self) or np.abs(_length(element, self)) == 0:
             i_closest = np.argmin(np.abs(s_vect_upstream - at_s))
             if np.abs(s_vect_upstream[i_closest] - at_s) < s_tol:
                 return self.insert_element(
-                    index=i_closest, element=element, name=name)
+                    index=i_closest, element=element, name=name,
+                    with_progress=with_progress)
 
         s_start_ele = at_s
         if _is_thick(element, self) and np.abs(_length(element, self)) > 0:
@@ -3905,7 +4398,8 @@ class Line:
         else:
             s_end_ele = s_start_ele
 
-        self.cut_at_s([s_start_ele, s_end_ele])
+        self.cut_at_s(
+            [s_start_ele, s_end_ele], with_progress=with_progress)
 
         s_vect_upstream = np.array(self._get_s_position(mode='upstream'))
         if _is_thick(element, self) and _length(element, self) > 0:
@@ -4125,6 +4619,9 @@ class Line:
         ----------
         state: bool
             If True, energy is frozen. If False, it is unfrozen.
+        force: bool
+            If True, the energy is frozen also when the line has collective
+            elements. Default is False.
 
         """
 
@@ -4214,7 +4711,7 @@ class Line:
     def configure_drift_model(self, model=None):
 
         """
-        Configure the method used to track drifts.
+        Configure the method used to track drifts and devices.
 
         See documentation of ``xt.Drift`` for more details on the values of the
         models used below.
@@ -4222,7 +4719,7 @@ class Line:
         Parameters
         ----------
         model: str
-            Model to be used for the drifts. Can be 'adaptive', 'exact' or
+            Model to be used for drifts and devices. Can be 'adaptive', 'exact' or
             'expanded'.
         """
 
@@ -4232,7 +4729,7 @@ class Line:
             raise ValueError(f'Unknown drift model {model}')
 
         for ee in self._element_dict.values():
-            if model is not None and isinstance(ee, xt.Drift):
+            if model is not None and isinstance(ee, (xt.Drift, xt.Device)):
                 ee.model = model
 
     @doc_group("Magnet Model Configuration")
@@ -4263,7 +4760,7 @@ class Line:
             Number of multipole kicks to consider.
         integrator: str
             Integration scheme to be used. Can be 'adaptive', 'teapot',
-            'yoshida4', or 'uniform'.
+            'yoshida-4', 'yoshida-6', 'yoshida-8', or 'uniform'.
         """
 
         self._method_incompatible_with_compose()
@@ -4309,14 +4806,14 @@ class Line:
             Number of multipole kicks to consider.
         integrator: str
             Integration scheme to be used. Can be 'adaptive', 'teapot',
-            'yoshida4', or 'uniform'.
+            'yoshida-4', 'yoshida-6', 'yoshida-8', or 'uniform'.
         """
 
         self._method_incompatible_with_compose()
 
         if edge not in [None, 'full', 'suppressed']:
-            raise ValueError(f'Unknown edge model {edge}: only None or '
-                             f'"full" are supported.')
+            raise ValueError(f'Unknown edge model {edge}: only None, '
+                             f'"full" or "suppressed" are supported.')
 
         enable_fringes = edge == 'full'
 
@@ -4464,6 +4961,8 @@ class Line:
             Beamstrahlung model to use. Can be 'mean', 'quantum' or None.
         model_bhabha: str
             Bhabha model to use. Can be 'quantum' or None.
+        mode: str
+            Deprecated. Use ``model`` instead.
         """
 
         self._method_incompatible_with_compose()
@@ -4562,14 +5061,19 @@ class Line:
 
         self._update_synrad_compile_flag()
 
-    @doc_group("Radiation, Spin and Intra-Beam Scattering")
+    @doc_group("Deprecated")
     def configure_intrabeam_scattering(
         self, element = None,
         update_every: int = None,
         **kwargs,
     ) -> None:
         """
-        Configures the IBS kick element in the line for tracking.
+        Deprecated alias for ``line.xfields.ibs_configure(...)``.
+
+        .. warning::
+            This method is deprecated and will be removed in a future version.
+            Use ``line.xfields.ibs_configure(...)`` instead. This deprecation
+            is part of the interface cleanup in view of the 1.0 release.
 
         Notes
         -----
@@ -4580,8 +5084,6 @@ class Line:
 
         Parameters
         ----------
-        line : xtrack.Line
-            The line in which the IBS kick element was inserted.
         element : IBSKick, optional
             If provided, the element is first inserted in the line,
             before proceeding to configuration. In this case the keyword
@@ -4609,13 +5111,13 @@ class Line:
             below transition energy.
         """
         self._method_incompatible_with_compose()
-        try:
-            from xfields.ibs import configure_intrabeam_scattering
-        except ImportError as error:
-            raise ImportError("Please install xfields to use this feature.") from error
-        configure_intrabeam_scattering(
-            self, element=element, update_every=update_every, **kwargs
-        )
+        warn('`Line.configure_intrabeam_scattering(...)` is deprecated and '
+             'will be removed in a future version. Please use '
+             '`Line.xfields.ibs_configure(...)` instead.'
+             + DEPRECATION_INFO_PREP_1_0,
+             FutureWarning, stacklevel=2)
+        return self.xfields.ibs_configure(
+            element=element, update_every=update_every, **kwargs)
 
     @doc_group("Radiation, Spin and Intra-Beam Scattering")
     def compensate_radiation_energy_loss(self, delta0='zero_mean', rtol_eneloss=1e-10,
@@ -4654,7 +5156,8 @@ class Line:
         """
         Optimize the line for tracking by removing inactive elements and
         merging consecutive elements where possible. Deferred expressions are
-        disabled.
+        disabled. Devices are replaced with drifts, discarding their survey
+        misalignments.
 
         Parameters
         ----------
@@ -4663,7 +5166,9 @@ class Line:
         verbose: bool
             If True (default), print information about the optimization.
         keep_markers: bool or list of str
-            If True, all markers are kept.
+            If True, all markers are kept. If a list of names is provided,
+            only the listed markers are kept. If False (default), all markers
+            are removed.
 
         """
         self._method_incompatible_with_compose()
@@ -4685,8 +5190,18 @@ class Line:
         # Unfreeze the line
         self.discard_tracker()
 
+        if verbose: _print("Replace replicas with independent elements")
+        self.replace_all_replicas()
+
         if verbose: _print("Replace slices with equivalent elements")
         self._replace_with_equivalent_elements()
+
+        if verbose: _print("Replace devices with drifts")
+        with xt.environment._disable_name_clash_checks(self.env):
+            for nn, ee in zip(self.element_names, self._elements):
+                if isinstance(ee, xt.Device):
+                    self.env.elements[nn] = xt.Drift(
+                        length=ee.length, model=ee.model, _buffer=ee._buffer)
 
         if keep_markers is True:
             if verbose: _print('Markers are kept')
@@ -5043,7 +5558,7 @@ class Line:
             raise NotImplementedError('`remove_redundant_apertures` only'
                                       ' available for inplace operation')
 
-        # For every occurence of three or more apertures that are the same,
+        # For every occurrence of three or more apertures that are the same,
         # only separated by Drifts or Markers, this script removes the
         # middle apertures
         # TODO: this probably actually works, but better be safe than sorry
@@ -5187,7 +5702,7 @@ class Line:
         return elements, names
 
     @doc_group("Upcoming Deprecations")
-    def check_aperture(self, needs_aperture=[]):
+    def check_aperture(self, needs_aperture=[], with_progress=True):
 
         '''Check that all active elements have an associated aperture.
 
@@ -5195,6 +5710,9 @@ class Line:
         ----------
         needs_aperture : list of str
             Names of inactive elements that also need an aperture.
+        with_progress : bool, optional
+            Whether to show progress while checking elements. Defaults to
+            ``True``.
 
         Returns
         -------
@@ -5249,7 +5767,12 @@ class Line:
         i_prev_aperture = elements_df[elements_df['is_aperture']].index[0]
         i_next_aperture = 0
 
-        for iee in progress(range(i_prev_aperture, num_elements), desc='Checking aperture'):
+        element_indices = range(i_prev_aperture, num_elements)
+        if with_progress:
+            element_indices = progress(
+                element_indices, desc='Checking aperture')
+
+        for iee in element_indices:
             if elements_df.loc[iee, 'is_aperture']:
                 i_prev_aperture = iee
                 continue
@@ -5288,12 +5811,12 @@ class Line:
 
         _print('Done checking aperture.           ')
 
-        # Identify issues with apertures associate with thin elements
+        # Identify issues with apertures associated with thin elements
         df_thin_missing_aper = elements_df[elements_df['misses_aperture_upstream'] & ~elements_df['isthick']]
         _print(f'{len(df_thin_missing_aper)} thin elements miss associated aperture (upstream):')
         _print(pformat(list(df_thin_missing_aper.name)))
 
-        # Identify issues with apertures associate with thick elements
+        # Identify issues with apertures associated with thick elements
         df_thick_missing_aper = elements_df[
             (elements_df['misses_aperture_upstream'] | elements_df['misses_aperture_downstream'])
             & elements_df['isthick']]
@@ -5388,13 +5911,21 @@ class Line:
     def get_line_with_second_order_maps(self, split_at):
 
         '''
-        Return a new lines with segments definded by the elements in `split_at`
+        Return a new line with segments defined by the elements in `split_at`
         replaced by second order maps.
 
         Parameters
         ----------
         split_at : list of str
-            Names of elements at which to split the line.
+            Names of elements at which to split the line. These elements are
+            kept as they are in the new line and are excluded from the maps:
+            each map spans from the exit of one split element to the
+            entrance of the next. Hence also thick and/or nonlinear elements
+            can be preserved exactly by splitting at them (e.g. octupoles,
+            to retain their amplitude detuning). Repeated elements are
+            referred to by their disambiguated name 'name::N' (as shown in
+            the line table and in the twiss table); the same names are used
+            in the returned line.
 
         Returns
         -------
@@ -5403,15 +5934,30 @@ class Line:
         '''
         self._method_incompatible_with_compose()
 
-        ele_cut_ext = split_at.copy()
-        if self.element_names[0] not in ele_cut_ext:
-            ele_cut_ext.insert(0, self.element_names[0])
-        if self.element_names[-1] not in ele_cut_ext:
-            ele_cut_ext.append(self.element_names[-1])
+        if not self._has_valid_tracker():
+            self.build_tracker()
 
+        # element names disambiguated for repeated elements ('name::N', as
+        # in the line table and in the twiss table); for non-repeated
+        # elements they coincide with the plain element names
+        ele_names = self._element_names_unique
+
+        missing = set(split_at) - set(ele_names)
+        if missing:
+            raise ValueError(f'Elements {sorted(missing)} are not present in the line')
+
+        ele_idx = {nn: ii for ii, nn in enumerate(ele_names)}
+
+        ele_cut_ext = split_at.copy()
+        if ele_names[0] not in ele_cut_ext:
+            ele_cut_ext.insert(0, ele_names[0])
+        if ele_names[-1] not in ele_cut_ext:
+            ele_cut_ext.append(ele_names[-1])
+
+        ele_cut_set = set(ele_cut_ext)
         ele_cut_sorted = []
-        for ee in self.element_names:
-            if ee in ele_cut_ext:
+        for ee in ele_names:
+            if ee in ele_cut_set:
                 ele_cut_sorted.append(ee)
 
         elements_map_line = []
@@ -5420,10 +5966,21 @@ class Line:
 
         for ii in range(len(ele_cut_sorted)-1):
             names_map_line.append(ele_cut_sorted[ii])
-            elements_map_line.append(self.get(ele_cut_sorted[ii]))
+            # element object by its unique name: `element_names` and
+            # `self.element_names` are index-aligned (all occurrences of a
+            # repeated element share the same object)
+            elements_map_line.append(self.get(self.element_names[ele_idx[ele_cut_sorted[ii]]]))
+
+            # the split element is placed in the new line as it is, hence it
+            # is excluded from the map: the map starts at its exit, i.e. at
+            # the entrance of the following element (relevant for thick
+            # split elements)
+            map_start = ele_names[ele_idx[ele_cut_sorted[ii]] + 1]
+            if map_start == ele_cut_sorted[ii+1]:
+                continue  # nothing between this element and the next cut
 
             smap = xt.SecondOrderTaylorMap.from_line(
-                                    self, start=ele_cut_sorted[ii],
+                                    self, start=map_start,
                                     end=ele_cut_sorted[ii+1],
                                     twiss_table=tw,
                                     _buffer=self._buffer)
@@ -5431,7 +5988,7 @@ class Line:
             elements_map_line.append(smap)
 
         names_map_line.append(ele_cut_sorted[-1])
-        elements_map_line.append(self.get(ele_cut_sorted[-1]))
+        elements_map_line.append(self.get(self.element_names[ele_idx[ele_cut_sorted[-1]]]))
 
         line_maps = Line(elements=elements_map_line, element_names=names_map_line)
         line_maps.particle_ref = self.particle_ref.copy()
@@ -5703,7 +6260,7 @@ class Line:
     @doc_group("Line Editing")
     def replace_replica(self, name):
         """
-        Replace a replica element a clone of its parent element. Expressions
+        Replace a replica element with a clone of its parent element. Expressions
         on element attributes are preserved.
 
         Parameters
@@ -5921,7 +6478,7 @@ class Line:
         if not self._has_valid_tracker():
             raise RuntimeError(
                 "This line does not have a valid tracker. "
-                "Please build the tracke using `line.build_tracker(...)`.")
+                "Please build the tracker using `line.build_tracker(...)`.")
 
     @property_with_doc_group("Inspection, Variables and Configuration")
     def name(self):
@@ -6143,7 +6700,7 @@ class Line:
         ----------
         name : str or iterable of str
             Name or names of the variable(s) or element(s).
-        value: float or str
+        value : float or str
             Value or expression of the variable to set. Can be provided only
             if the name is associated to a variable.
         **kwargs, float or str
@@ -6282,7 +6839,7 @@ class Line:
 
         Parameters
         ----------
-        expr : str
+        var : str
             Expression to create.
 
         Returns
@@ -6670,7 +7227,7 @@ class Line:
             return
         self.env.elements['energy_program'] = value
         assert self.vars is not None, (
-            'Xdeps expression need to be enabled to use `energy_program`')
+            'Xdeps expressions need to be enabled to use `energy_program`')
         if self.energy_program.needs_complete:
             self.energy_program.complete_init(self)
         self.energy_program.line = self
@@ -6803,7 +7360,7 @@ class Line:
     def __setitem__(self, key, value):
 
         if isinstance(value, Line):
-            raise ValueError('Cannot set a Line, please use Envirnoment.new_line')
+            raise ValueError('Cannot set a Line, please use Environment.new_line')
             # Would need to make sure they refer to the same environment
 
         if np.isscalar(value) or xd.refs.is_ref(value):
@@ -6832,7 +7389,7 @@ class Line:
             out.env.__dict__.update(self.env.__dict__)
 
             # Change the element dict (beware of the element_dict property
-            # and of ef the env.elements container
+            # and of the env.elements container)
             out.env._element_dict = self.tracker._element_dict_non_collective
             out.env._elements = xt.environment.EnvElements(out.env)
             out.env._lines_weakrefs.add(out)
@@ -6850,6 +7407,9 @@ class Line:
                 '_own_length': AttrDefinition(name='length'),
 
                 '_own_rot_s_rad': AttrDefinition(name='rot_s_rad'),
+                '_own_rot_x_rad': AttrDefinition(name='rot_x_rad'),
+                '_own_rot_y_rad': AttrDefinition(name='rot_y_rad'),
+                '_own_rot_s_rad_no_frame': AttrDefinition(name='rot_s_rad_no_frame'),
                 '_own_shift_x': AttrDefinition(name='shift_x'),
                 '_own_shift_y': AttrDefinition(name='shift_y'),
                 '_own_shift_s': AttrDefinition(name='shift_s'),
@@ -6866,8 +7426,10 @@ class Line:
                 '_own_harmonic': AttrDefinition(name='harmonic'),
 
                 '_own_radiation_flag': AttrDefinition(name='radiation_flag', dtype=np.int64),
+                '_tpsa_enabled': AttrDefinition(name='_tpsa_enabled', dtype=np.int8),
 
                 '_own_ks': AttrDefinition(name='ks'),
+                '_own_ksoll': AttrDefinition(name='ksoll', index=0),
                 '_own_ks_profile_0': AttrDefinition(name='ks_profile', index=0),
                 '_own_ks_profile_1': AttrDefinition(name='ks_profile', index=1),
                 '_own_bs_mean': AttrDefinition(name='bs', index=4),
@@ -6920,6 +7482,9 @@ class Line:
 
                 '_parent_length': AttrDefinition(name=('_parent', 'length')),
                 '_parent_rot_s_rad': AttrDefinition(name=('_parent', 'rot_s_rad')),
+                '_parent_rot_x_rad': AttrDefinition(name=('_parent', 'rot_x_rad')),
+                '_parent_rot_y_rad': AttrDefinition(name=('_parent', 'rot_y_rad')),
+                '_parent_rot_s_rad_no_frame': AttrDefinition(name=('_parent', 'rot_s_rad_no_frame')),
                 '_parent_shift_x': AttrDefinition(name=('_parent', 'shift_x')),
                 '_parent_shift_y': AttrDefinition(name=('_parent', 'shift_y')),
                 '_parent_shift_s': AttrDefinition(name=('_parent', 'shift_s')),
@@ -6940,6 +7505,7 @@ class Line:
                 '_parent_radiation_flag': AttrDefinition(name=('_parent', 'radiation_flag'), dtype=np.int64),
 
                 '_parent_ks': AttrDefinition(name=('_parent', 'ks')),
+                '_parent_ksoll': AttrDefinition(name=('_parent', 'ksoll'), index=0),
 
                 '_parent_k0': AttrDefinition(name=('_parent', 'k0')),
                 '_parent_k1': AttrDefinition(name=('_parent', 'k1')),
@@ -6996,6 +7562,15 @@ class Line:
                 '_main_strength': _main_strength_from_attr,
                 'rot_s_rad': lambda attr:
                     attr['_own_rot_s_rad'] + attr['_parent_rot_s_rad']
+                    * attr._rot_and_shift_from_parent,
+                'rot_x_rad': lambda attr:
+                    attr['_own_rot_x_rad'] + attr['_parent_rot_x_rad']
+                    * attr._rot_and_shift_from_parent,
+                'rot_s_rad_no_frame': lambda attr:
+                    attr['_own_rot_s_rad_no_frame'] + attr['_parent_rot_s_rad_no_frame']
+                    * attr._rot_and_shift_from_parent,
+                'rot_y_rad': lambda attr:
+                    attr['_own_rot_y_rad'] + attr['_parent_rot_y_rad']
                     * attr._rot_and_shift_from_parent,
                 'shift_x': lambda attr:
                     attr['_own_shift_x'] + attr['_parent_shift_x']
@@ -7109,6 +7684,10 @@ class Line:
                 'k5sl': lambda attr: attr['_k5sl_no_rel'] + attr['_k5sl_rel'] * attr['_main_strength'],
                 'ks': lambda attr: (attr['_own_ks'] + attr['_parent_ks'] * attr._inherit_strengths
                                     + 0.5 * (attr['_own_ks_profile_0'] + attr['_own_ks_profile_1'])),
+                'ksoll': lambda attr: (
+                    attr['_own_ksoll']
+                    + attr['ks'] * attr['length']
+                    + attr['_parent_ksoll'] * attr['weight'] * attr._inherit_strengths),
                 'bs': lambda attr: attr['_own_bs_mean'] * attr['_own_scale_b'],
                 'hkick': lambda attr: attr["angle"] - attr["k0l"],
                 'vkick': lambda attr: attr["k0sl"],
@@ -7116,7 +7695,8 @@ class Line:
         )
         return cache
 
-    def _insert_thin_elements_at_s(self, elements_to_insert, s_tol=0.5e-6):
+    def _insert_thin_elements_at_s(self, elements_to_insert, s_tol=0.5e-6,
+                                   with_progress=True):
 
         '''
         Example:
@@ -7140,10 +7720,10 @@ class Line:
                 this_ins.append(nn)
             insertions.append(env.place(this_ins, at=ss))
 
-        self.insert(insertions)
+        self.insert(insertions, with_progress=with_progress)
 
     def _insert_thick_elements_at_s(self, element_names, elements,
-                                    at_s, s_tol=1e-6):
+                                    at_s, s_tol=1e-6, with_progress=True):
 
         self._method_incompatible_with_compose()
 
@@ -7160,7 +7740,8 @@ class Line:
             self.env.elements[nn] = ee
             insertions.append(self.env.place(nn, at=ss, anchor='start'))
 
-        self.insert(insertions, s_tol=s_tol)
+        self.insert(
+            insertions, s_tol=s_tol, with_progress=with_progress)
 
     @property
     def _line_before_slicing(self):
@@ -7670,12 +8251,15 @@ class LineAttrItem:
                 if isinstance(ee, xt.Replica):
                     nn = ee.resolve(line, get_name=True)
                     ee = line._element_dict[nn]
-                if hasattr(ee, nn0):
+                if (hasattr(ee, nn0)
+                        or nn0 in getattr(ee, '_line_attr_methods', {})):
                     has_nn0.append((ii, nn, ee))
             cache_has_name[nn0] = has_nn0
 
         mask = np.zeros(len(all_names), dtype=bool)
         setter_names = []
+        self._python_properties = []
+        self._python_methods = []
         for ii, nn, ee in has_nn0:
             has_name = True
             if isinstance(name, str):
@@ -7691,7 +8275,25 @@ class LineAttrItem:
                         break
                     inner_obj = getattr(inner_obj, nn_inner)
 
-            if has_name and hasattr(inner_obj, '_xofields') and inner_name in inner_obj._xofields:
+            if has_name and inner_name in getattr(inner_obj, '_line_attr_skip_fields', ()):
+                # Some elements provide complete integrated strengths through
+                # a method, including their scalar k_i * length contributions.
+                # Do not add those scalar terms a second time.
+                continue
+            if (has_name and inner_name in
+                    getattr(inner_obj, '_line_attr_methods', {})):
+                # Computed totals can differ from the user-facing knl/ksl
+                # inputs, and profile slices need their own interval integral.
+                method, result_index = inner_obj._line_attr_methods[inner_name]
+                self._python_methods.append((ii, inner_obj, method, result_index))
+            elif (has_name and inner_name in
+                    getattr(inner_obj, '_line_attr_properties', ())):
+                # Nonuniform-profile slices compute interval strengths from
+                # their parent without maintaining a second cache per slice.
+                if index is not None and index >= len(getattr(inner_obj, inner_name)):
+                    continue
+                self._python_properties.append((ii, inner_obj, inner_name))
+            elif has_name and hasattr(inner_obj, '_xofields') and inner_name in inner_obj._xofields:
                 if index is not None:
                     this_len = cache_len.get(tuple(name)+(nn,), None)
                     if this_len is None:
@@ -7721,10 +8323,28 @@ class LineAttrItem:
             self._prepare_multisetter()
         return self._mask
 
-    def get_full_array(self):
+    def get_full_array(self, method_cache=None):
         full_array = np.zeros(len(self.mask), dtype=np.float64)
         ctx2np = self.multisetter._context.nparray_from_context_array
         full_array[self.mask] = ctx2np(self.multisetter.get_values())
+        for ii, obj, name in self._python_properties:
+            value = getattr(obj, name)
+            full_array[ii] = value if self.index is None else value[self.index]
+        for ii, obj, method, result_index in self._python_methods:
+            # Reuse a total across normal/skew orders while building a table.
+            # The cache belongs to one extraction, so later updates stay live.
+            key = (id(obj), method)
+            if method_cache is not None and key in method_cache:
+                result = method_cache[key]
+            else:
+                result = getattr(obj, method)()
+                if method_cache is not None:
+                    method_cache[key] = result
+            value = result[result_index]
+            if self.index is None:
+                full_array[ii] = value
+            elif self.index < len(value):
+                full_array[ii] = value[self.index]
         return full_array
 
 class LineAttr:
@@ -7737,9 +8357,10 @@ class LineAttr:
     ----------
     line : Line
         The line to access.
-    fields : list of str or tuple of (str, int)
-        The fields to access. If a tuple is provided, the second element
-        is the index of the vector to access.
+    fields : dict
+        The fields to access, keyed by field name. Each value is an
+        AttrDefinition specifying the element attribute name and, for
+        vector attributes, the index to access.
     derived_fields : dict, optional
         A dictionary of derived fields. The key is the name of the derived
         field and the value is a function that takes the LineAttr object
@@ -7790,7 +8411,7 @@ class LineAttr:
         if key in self.derived_fields:
             out=  self.derived_fields[key](self)
         else:
-            out = self._cache[key].get_full_array()
+            out = self._cache[key].get_full_array(method_cache=self._value_cache)
 
         if self._value_cache is not None:
             self._value_cache[key] = out
@@ -7917,7 +8538,7 @@ class EnergyProgram:
         circumference = self.line.get_length()
         return beta0 * clight / circumference
 
-    def get_p0c_increse_per_turn_at_t_s(self, t_s):
+    def get_p0c_increase_per_turn_at_t_s(self, t_s):
 
         ts_scalar = np.isscalar(t_s)
         if ts_scalar:
@@ -7939,6 +8560,15 @@ class EnergyProgram:
             out = out[0]
 
         return out
+
+    def get_p0c_increse_per_turn_at_t_s(self, t_s):
+        """Deprecated spelling of get_p0c_increase_per_turn_at_t_s."""
+        warn(
+            '`get_p0c_increse_per_turn_at_t_s` is deprecated. Use '
+            '`get_p0c_increase_per_turn_at_t_s` instead.',
+            FutureWarning, stacklevel=2,
+        )
+        return self.get_p0c_increase_per_turn_at_t_s(t_s)
 
     @property
     def t_turn_s_line(self):
@@ -7978,7 +8608,7 @@ def _vars_unused(line):
 
 def _angle_force_body_from_attr(attr):
 
-    """This angle has always the curvature in the body, even for RBend elements
+    """This angle always has the curvature in the body, even for RBend elements
     with rbend_model='straight-body'. It is used mostly for plotting purposes.
     """
 

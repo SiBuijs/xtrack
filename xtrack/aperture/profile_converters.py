@@ -7,14 +7,18 @@ from xtrack.aperture.structures import (
     Circle, Ellipse, Octagon, Polygon, Racetrack, Rectangle, RectEllipse,
     ShapeTypes
 )
-from xtrack.beam_elements import apertures
+from xtrack.beam_elements.limit_ellipse import LimitEllipse
+from xtrack.beam_elements.limit_polygon import LimitPolygon
+from xtrack.beam_elements.limit_racetrack import LimitRacetrack
+from xtrack.beam_elements.limit_rect import LimitRect
+from xtrack.beam_elements.limit_rect_ellipse import LimitRectEllipse
 
 LimitElement = Union[
-    apertures.LimitRect,
-    apertures.LimitEllipse,
-    apertures.LimitRectEllipse,
-    apertures.LimitRacetrack,
-    apertures.LimitPolygon,
+    LimitRect,
+    LimitEllipse,
+    LimitRectEllipse,
+    LimitRacetrack,
+    LimitPolygon,
 ]
 
 
@@ -25,16 +29,19 @@ def profile_from_limit_element(element: LimitElement) -> Tuple[ShapeTypes, float
 
     Parameters
     ----------
-    element: LimitElement
+    element : LimitElement
         Element to convert to a profile.
-    Returns:
-        A tuple consting of the profile type, x offset, and y offset.
+
+    Returns
+    -------
+    Tuple[ShapeTypes, float, float]
+        A tuple consisting of the profile type, x offset, and y offset.
     """
     raise NotImplementedError(f"Unsupported element type: {type(element)}")
 
 
 @profile_from_limit_element.register
-def _profile_from_limit_rect(element: apertures.LimitRect) -> Tuple[ShapeTypes, float, float]:
+def _profile_from_limit_rect(element: LimitRect) -> Tuple[ShapeTypes, float, float]:
     half_width = (element.max_x - element.min_x) / 2
     half_height = (element.max_y - element.min_y) / 2
     x = (element.min_x + element.max_x) / 2
@@ -44,7 +51,7 @@ def _profile_from_limit_rect(element: apertures.LimitRect) -> Tuple[ShapeTypes, 
 
 
 @profile_from_limit_element.register
-def _profile_from_limit_ellipse(element: apertures.LimitEllipse) -> Tuple[ShapeTypes, float, float]:
+def _profile_from_limit_ellipse(element: LimitEllipse) -> Tuple[ShapeTypes, float, float]:
     rx = element.a
     ry = element.b
     ellipse = Ellipse(half_major=rx, half_minor=ry)
@@ -52,7 +59,7 @@ def _profile_from_limit_ellipse(element: apertures.LimitEllipse) -> Tuple[ShapeT
 
 
 @profile_from_limit_element.register
-def _profile_from_limit_rect_ellipse(element: apertures.LimitRectEllipse) -> Tuple[ShapeTypes, float, float]:
+def _profile_from_limit_rect_ellipse(element: LimitRectEllipse) -> Tuple[ShapeTypes, float, float]:
     max_x = element.max_x
     max_y = element.max_y
     rx = element.a
@@ -62,7 +69,7 @@ def _profile_from_limit_rect_ellipse(element: apertures.LimitRectEllipse) -> Tup
 
 
 @profile_from_limit_element.register
-def _profile_from_limit_racetrack(element: apertures.LimitRacetrack) -> Tuple[ShapeTypes, float, float]:
+def _profile_from_limit_racetrack(element: LimitRacetrack) -> Tuple[ShapeTypes, float, float]:
     half_width = (element.max_x - element.min_x) / 2
     half_height = (element.max_y - element.min_y) / 2
     x = (element.min_x + element.max_x) / 2
@@ -79,7 +86,7 @@ def _profile_from_limit_racetrack(element: apertures.LimitRacetrack) -> Tuple[Sh
 
 
 @profile_from_limit_element.register
-def _profile_from_limit_polygon(element: apertures.LimitPolygon) -> Tuple[ShapeTypes, float, float]:
+def _profile_from_limit_polygon(element: LimitPolygon) -> Tuple[ShapeTypes, float, float]:
     xs = np.asarray(element.x_closed)
     ys = np.asarray(element.y_closed)
     polygon = Polygon(vertices=np.column_stack([xs, ys]))
@@ -96,15 +103,15 @@ def profile_from_madx_aperture(shape: str, params: List[float]) -> Optional[Shap
         'octagon': (_profile_from_madx_octagon, 4),
     }[shape]
 
-    # Clean up params due to MAD-X quirks
-    params = params[:allowed_len_params]
-
-    if np.any(np.array(params[allowed_len_params:]) != 0):
+    if np.any(np.asarray(params[allowed_len_params:]) != 0):
         raise ValueError(
             f"Extra non-zero parameters provided for MAD-X aperture shape "
             f"{shape}. Accepted number of params is {allowed_len_params}; "
             f"provided {params}."
         )
+
+    # MAD-X may pad the parameter list with zeros.
+    params = np.asarray(params[:allowed_len_params])
 
     # If all params are zero, we ignore the aperture
     if np.all(params == 0):
