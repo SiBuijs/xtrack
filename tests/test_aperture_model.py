@@ -12,7 +12,7 @@ from cpymad.madx import Madx
 
 from xobjects.general import allclose_with_outliers
 from xobjects.test_helpers import (
-    allow_no_prebuilt_kernels, for_all_test_contexts, requires_context)
+    allow_kernel_compilation, for_all_test_contexts, requires_context)
 from xtrack.aperture.aperture import Aperture, ProfilesView, _split_wrapped_s_interval
 from xtrack.aperture.builder import ApertureBuilder
 from xtrack.aperture.views import PipePositionsView, PipesView
@@ -370,7 +370,7 @@ def test_from_line_with_aperture_type_bounds(test_context):
 
 
 @for_all_test_contexts(excluding=('ContextPyopencl', 'ContextCupy'))
-@allow_no_prebuilt_kernels
+@allow_kernel_compilation
 def test_zigzag_iterator_wrap_and_bounds(test_context):
 
     ZIGZAG_TEST_SOURCE = r"""
@@ -558,6 +558,9 @@ def test_aperture_model_views(test_context):
     pipe_positions = PipePositionsView(model)
     pipe0 = pipes[0]
     positions = pipe0
+
+    with pytest.raises(ValueError, match='Frame must be "curved" or "straight"'):
+        positions[0].get_transform(frame='invalid')
 
     assert repr(profiles) == '<ProfilesView: 2 profiles>'
     assert repr(pipes) == '<PipesView: 1 pipe>'
@@ -2481,7 +2484,7 @@ def test_cross_sections_at_s_interpolate_circles_to_cone(test_context):
     sv_ref_mat = np.identity(4)
     sv_ref_mat[:3, 0] = sv_ref.ex
     sv_ref_mat[:3, 1] = sv_ref.ey
-    sv_ref_mat[:3, 2] = sv_ref.ez
+    sv_ref_mat[:3, 2] = sv_ref.es
     sv_ref_mat[:3, 3] = np.array([sv_ref.X[0], sv_ref.Y[0], sv_ref.Z[0]])
     world_from_type = sv_ref_mat @ model.pipe_positions[0].transformation.to_nparray()
     pipe_from_world = np.linalg.inv(world_from_type)

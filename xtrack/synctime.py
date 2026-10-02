@@ -1,25 +1,45 @@
 import xobjects as xo
 
+from .base_element import BeamElement
+
 COAST_STATE_RANGE_START= 1000000
 DEFAULT_FRAME_RELATIVE_LENGTH = 0.9
 
-class SyncTime:
+class SyncTime(BeamElement):
+
+    _xofields = {
+        "id": xo.Int64,
+        "frame_relative_length": xo.Float64,
+        "circumference": xo.Float64,
+        "at_start": xo.Int64,
+        "at_end": xo.Int64,
+    }
+
+    iscollective = True
+    # Use our Python track() below instead of generating C tracking kernels.
+    allow_track = False
+    allow_rot_and_shift = False
 
     def __init__(self, circumference, id, frame_relative_length=None,
-                 at_start=False, at_end=False):
+                 at_start=False, at_end=False, **kwargs):
+
         if frame_relative_length is None:
             frame_relative_length = DEFAULT_FRAME_RELATIVE_LENGTH
         assert id > COAST_STATE_RANGE_START
-        self.id = id
-        self.frame_relative_length = frame_relative_length
-        self.circumference = circumference
-        self.at_start = at_start
-        self.at_end = at_end
+        
+        super().__init__(
+            circumference=circumference,
+            id=id,
+            frame_relative_length=frame_relative_length,
+            at_start=int(at_start),
+            at_end=int(at_end),
+            **kwargs,
+        )
 
     def track(self, particles):
 
-        assert isinstance(particles._context, xo.ContextCpu), (
-                          'SyncTime only available for CPU for now')
+        if isinstance(particles._context, xo.ContextPyopencl):
+            raise ValueError('SyncTime does not work with ContextPyopencl')
 
         beta0 = particles._xobject.beta0[0]
         beta1 = beta0 / self.frame_relative_length
@@ -39,6 +59,7 @@ class SyncTime:
         # Resume particles previously stopped
         particles.state[particles.state==-self.id] = 1
         particles.reorganize()
+        mask_alive = particles.state > 0
 
         # Identify particles that need to be stopped
         zeta_min = -self.circumference/ 2 * beta0_beta1 + particles.s * (1 - beta0_beta1)
@@ -71,29 +92,42 @@ class SyncTime:
         if self.at_end and particles.at_turn[0] == 0:
             particles.state[particles.state==-COAST_STATE_RANGE_START] = 1
 
-def install_sync_time_at_collective_elements(line, frame_relative_length=None):
+def install_sync_time_at_collective_elements(
+        line, frame_relative_length=None, with_progress=True):
 
     circumference = line.get_length()
 
     ltab = line.get_table()
     tab_collective = ltab.rows[ltab.iscollective]
+
+    env = line.env
+    places = []
+
+    env.elements["synctime_start"] = SyncTime(circumference=circumference,
+        frame_relative_length=frame_relative_length,
+        id=COAST_STATE_RANGE_START + len(tab_collective)+1,
+        at_start=True,
+    )
+    places.append(env.place(name="synctime_start", at=0))
+
     for ii, nn in enumerate(tab_collective.name):
-        cc = SyncTime(circumference=circumference,
-                        frame_relative_length=frame_relative_length,
-                        id=COAST_STATE_RANGE_START + ii + 1)
-        line.insert(obj=cc, what=f'synctime_{ii}', at=nn)
+        name = f"synctime_{ii}"
+        env.elements[name] = SyncTime(
+            circumference=circumference,
+            frame_relative_length= frame_relative_length,
+            id=COAST_STATE_RANGE_START + ii + 1,
+        )
+        places.append(env.place(name=name, at=nn))
 
-    synctime_start = SyncTime(circumference=circumference,
-                        frame_relative_length=frame_relative_length,
-                        id=COAST_STATE_RANGE_START + len(tab_collective)+1,
-                        at_start=True)
-    synctime_end = SyncTime(circumference=circumference,
-                        frame_relative_length=frame_relative_length,
-                        id=COAST_STATE_RANGE_START + len(tab_collective)+2,
-                        at_end=True)
+    env.elements["synctime_end"] = SyncTime(circumference=circumference,
+        frame_relative_length=frame_relative_length,
+        id=COAST_STATE_RANGE_START + len(tab_collective)+2,
+        at_end=True,
+    )
+    places.append(env.place(name="synctime_end", at=circumference))
 
-    line.insert(obj=synctime_start, what='synctime_start', at=0)
-    line.append('synctime_end', obj=synctime_end)
+    line.insert(places, with_progress=with_progress)
+
 
 def prepare_particles_for_sync_time(particles, line):
     synctime_start = line['synctime_start']
