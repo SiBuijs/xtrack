@@ -585,7 +585,7 @@ STRAIGHT_SECTION_S_RANGE = (
 )
 
 
-def _box_under_legend(fig, entries):
+def _box_under_legend(fig, entries, fontsize=7):
     """Put a small framed text box directly under each panel's legend, sharing
     its right edge.
 
@@ -595,7 +595,10 @@ def _box_under_legend(fig, entries):
     tight/constrained layout, so nothing moves between this draw and the later
     show/savefig and the placement holds. Call it after subplots_adjust.
 
-    `entries` is an iterable of (ax, legend, text).
+    `entries` is an iterable of (ax, legend, text). `fontsize` defaults to
+    the absolute 7 pt the multi-panel figures use (see the FIGURE_SCALE note
+    at the top: those deliberately do not scale, so the curves get the room);
+    the single-axes overlay passes a scaled size instead.
     """
     fig.canvas.draw()
     for ax, leg, text in entries:
@@ -603,7 +606,8 @@ def _box_under_legend(fig, entries):
         # ha right pins the frame to the legend's right edge; multialignment
         # left keeps the values lined up as a column inside it.
         ax.text(leg_box.x1, leg_box.y0 - 0.05, text, transform=ax.transAxes,
-                ha='right', va='top', fontsize=7, multialignment='left',
+                ha='right', va='top', fontsize=fontsize,
+                multialignment='left',
                 bbox=dict(boxstyle='round,pad=0.35', facecolor='white',
                           edgecolor='0.6', linewidth=0.8, alpha=0.9))
 
@@ -670,6 +674,14 @@ def _coupling_summary_text(tw_on, tw_off):
 # future case overshoots it the figure widens the axis and prints a note
 # instead of clipping.
 BETX2_BETY1_YLIM_TOP = 0.03
+
+# The overlay figure (_betx2_bety1_overlay_fig) sits lower: it carries no
+# solenoids-off traces, so nothing needs the headroom between the 3 T peak
+# (2.24e-2) and 0.03 except the legend, which the fixed ticks below keep clear
+# of. Its floor stays tied to BETX2_BETY1_YLIM_TOP so the axis starts exactly
+# where the two-panel figure's does.
+BETX2_BETY1_OVERLAY_YLIM_TOP = 0.025
+BETX2_BETY1_OVERLAY_YTICK_STEP = 0.005
 
 
 def _betx2_bety1_fig(xlim, title_suffix, mark_ir_regions, tags=None):
@@ -766,6 +778,108 @@ def _betx2_bety1_fig(xlim, title_suffix, mark_ir_regions, tags=None):
 
 
 fig3 = _betx2_bety1_fig((-20, 20), '', True)
+
+
+#############################################################
+# The same curves as fig3, but 2 T and 3 T on one axes      #
+#############################################################
+
+
+def _betx2_bety1_overlay_fig(xlim, title_suffix, mark_ir_regions, tags=None):
+    """fig3's curves with the two field cases on a single axes.
+
+    Same quantities as _betx2_bety1_fig, on an axis with the same floor, so
+    this reads against those panels directly, but with three differences:
+
+    - No solenoids-off baseline. On the two-panel figure it is there to show
+      that the ring has no other coupling source; repeating it here would put
+      four flat-zero traces under the four that carry the signal, and the
+      point of this figure is the 2 T against 3 T difference.
+    - Colour is the plane (C0/C1, as everywhere else in this script) and
+      linestyle is the field case, rather than colour being the case. The
+      pairing that matters when reading these is betx2 against bety1 within
+      one case, and that stays visible when the colours carry the plane.
+    - A lower y-top (BETX2_BETY1_OVERLAY_YLIM_TOP), and a legend and |C^-|
+      frame that scale with FIGURE_SCALE. See both at their definitions.
+
+    The IR markers are drawn once, from the last tag's case. The two
+    geometries differ only in the main solenoid's half-length (1.23 m at 2 T
+    against 1.30 m at 3 T, see solenoid_params), i.e. 7 cm per side on a 40 m
+    window -- below the width of the bar's own edge, so two overlaid sets
+    would be indistinguishable from one.
+    """
+    tags = list(tags or COMPARISON_TAGS)
+    results = [_TAG_RESULTS[COMPARISON_TAGS.index(t)] for t in tags]
+    fig, ax = plt.subplots(1, 1, figsize=_figsize(6.4, 3.6))
+    # Dashed for the first case (2 T), solid for the second (3 T): the
+    # solid line goes to the stronger, larger-amplitude curves, which is what
+    # the figure is about. Extended here rather than assumed, so a third tag
+    # fails loudly instead of silently reusing a style.
+    linestyles = ['--', '-', ':']
+    visible_max = 0.0
+    markers_last = None
+    for tag, style, (tw_tag, _tw_off_tag, markers_tag, _tw_et_tag,
+                     _tw_nocorr_tag) in zip(tags, linestyles, results):
+        ax.plot(tw_tag.s, tw_tag.betx2 / tw_tag.betx, color='C0',
+                linestyle=style,
+                label=fr'$\beta_{{x2}}/\beta_x$ ({tag})')
+        ax.plot(tw_tag.s, tw_tag.bety1 / tw_tag.bety, color='C1',
+                linestyle=style,
+                label=fr'$\beta_{{y1}}/\beta_y$ ({tag})')
+        # Window-limited peak, taken from the arrays for the same reason as in
+        # _betx2_bety1_fig: the axvlines added below carry y-data [0, 1].
+        in_window = ((np.asarray(tw_tag.s) >= xlim[0])
+                     & (np.asarray(tw_tag.s) <= xlim[1]))
+        visible_max = max(
+            visible_max,
+            np.nanmax(np.asarray(tw_tag.betx2 / tw_tag.betx)[in_window]),
+            np.nanmax(np.asarray(tw_tag.bety1 / tw_tag.bety)[in_window]))
+        markers_last = markers_tag
+    ax.set_ylabel(r'$\beta_{x2}/\beta_x$,  $\beta_{y1}/\beta_y$')
+    ax.set_title(f'{" vs ".join(tags)} main solenoid{title_suffix}')
+    ax.set_xlabel('s [m]')
+    ax.grid(True)
+    # ncol=len(tags) with the curves added case by case puts one case per
+    # column (matplotlib fills a legend column-major).
+    # Unlike the multi-panel figures, this one's legend and |C^-| frame go
+    # through _fs: a single axes on the same canvas has the room, and at the
+    # absolute 8/7 pt they came out too small to read beside curves this size.
+    leg = ax.legend(loc='upper right', fontsize=_fs(8), ncol=len(tags),
+                    framealpha=0.9)
+    ax.set_xlim(*xlim)
+    top = BETX2_BETY1_OVERLAY_YLIM_TOP
+    if visible_max > top:
+        top = visible_max * 1.15
+        print(f'NOTE: betx2/betx exceeds BETX2_BETY1_OVERLAY_YLIM_TOP '
+              f'({BETX2_BETY1_OVERLAY_YLIM_TOP:g}) at {visible_max:.4g} on '
+              f'the {"/".join(tags)} overlay; y-axis widened to {top:.4g}.')
+    else:
+        # Ticks placed by hand up to and including `top`: the default locator
+        # drops a tick that lands exactly on the upper limit, which would
+        # leave the axis ending at an unlabelled 0.025. Off again when the
+        # fallback above widens the axis, where a round step no longer fits.
+        ax.set_yticks(np.arange(
+            0.0, top + 0.5 * BETX2_BETY1_OVERLAY_YTICK_STEP,
+            BETX2_BETY1_OVERLAY_YTICK_STEP))
+    # Floor unchanged from the two-panel figure's, so both axes start at the
+    # same place; only the top moves.
+    ax.set_ylim(-0.03 * BETX2_BETY1_YLIM_TOP, top)
+    if mark_ir_regions:
+        _mark_solenoid_regions(ax, markers_last)
+    else:
+        for s_pos in STRAIGHT_SECTION_S_RANGE:
+            ax.axvline(s_pos, color='black', linewidth=0.8, linestyle=':')
+    fig.subplots_adjust(top=0.9, bottom=0.14, left=0.14)
+    # One line per case instead of fig3's "on [solenoids off: ...]": with no
+    # off curves on the axes there is no baseline to quote, and the number
+    # that earns the space is 2 T against 3 T.
+    _box_under_legend(fig, [(ax, leg, '\n'.join(
+        fr'$|C^-|$ ({tag}) = {tw_tag.c_minus:.2e}'
+        for tag, (tw_tag, *_) in zip(tags, results)))], fontsize=_fs(7))
+    return fig
+
+
+fig3b = _betx2_bety1_overlay_fig((-20, 20), '', True)
 
 #############################################################
 # Same betx2/bety1 comparison, zoomed out to the coupling-  #
@@ -1248,6 +1362,11 @@ fig4b.savefig(
     bbox_inches='tight')
 fig3.savefig(
     COUPLING_STUDIES_PLOT_DIR / 'coupledbetas_IR.pdf', bbox_inches='tight')
+# Same window as coupledbetas_IR.pdf above, with the two cases overlaid on
+# one axes and no solenoids-off baseline -- see _betx2_bety1_overlay_fig.
+fig3b.savefig(
+    COUPLING_STUDIES_PLOT_DIR / 'coupledbetas_IR_2T_3T.pdf',
+    bbox_inches='tight')
 fig4.savefig(
     COUPLING_STUDIES_PLOT_DIR / 'coupledbetas_straight.pdf',
     bbox_inches='tight')
@@ -1258,7 +1377,7 @@ fig4d.savefig(
     COUPLING_STUDIES_PLOT_DIR / 'coupledbetas_straight_coroff.pdf',
     bbox_inches='tight')
 print()
-print(f'Saved 8 combined figures to {COUPLING_STUDIES_PLOT_DIR}')
+print(f'Saved 9 combined figures to {COUPLING_STUDIES_PLOT_DIR}')
 
 
 #################################################
