@@ -145,10 +145,10 @@ The template-building script; everything downstream reads its output
   key charge-balancing computation, done **here** (not in 004b/004c).
 - Builds 4 templates via `build_splineboris_line`/`build_variable_solenoid_line`:
   `main_solenoid`, `compensation_solenoid` (SplineBoris, with
-  `sextupole_amplification_factor` support built in but applied at 1.0 here —
-  actual runtime scaling happens later via the `sext_amp` knob in 004b, see
-  below), `main_solenoid_varsol`, `compensation_solenoid_varsol`
-  (VariableSolenoid, linear-only, no sextupole knob).
+  `sextupole_amplification_factor` applied at 1.0 here — since 2026-10-02 this
+  is the *only* place sextupole content can be scaled, as the runtime
+  `sext_amp` knob was removed from 004b), `main_solenoid_varsol`,
+  `compensation_solenoid_varsol` (VariableSolenoid, linear-only).
 - Saves all 4 (`.to_dict()`) plus a `metadata` block (build settings +
   `comp_scale_b` + integrals) to `004_solenoid_lines.json`.
 - Remainder of the script (majority of its ~790 lines) is **checks/plots
@@ -177,18 +177,20 @@ Both: input `fccee_z_lcc.json` + `004_solenoid_lines.json` -> output
   each IP separately).
   - SplineBoris variant: knob applied via `scale_b = template_scale_b *
     on_sol_or_comp_ref` (SplineBoris exposes a `scale_b` multiplier
-    directly). **Sextupole term hookup**: if
-    `cloned_element.multipole_order >= 3`, `bx[2,k]`/`by[2,k]` (the
-    order-2/sextupole Spline4 coefficients, `k=0..4`) get multiplied by the
-    global `sext_amp` env var — this is the actual runtime location of the
-    "sextupole amplification" feature; 004a's
-    `sextupole_amplification_factor` param is a no-op at 1.0 baked into the
-    template, and the *real* per-run knob is `env['sext_amp']` set here (and
-    later toggled by `lattice_knobs.set_lattice_knobs`).
+    directly). **Removed 2026-10-02:** this used to also hook the order-2
+    Spline4 coefficients `bx[2,k]`/`by[2,k]` (`k=0..4`) to a global
+    `sext_amp` env var when `multipole_order >= 3`, making that the real
+    runtime sextupole-amplification knob. Those coefficients are now installed
+    as plain element data, so sextupole content is fixed at template build
+    time by 004a's `sextupole_amplification_factor`. Dropping the knob also
+    removed ~24000 deferred expressions, about 46% of the expression graph in
+    the SplineBoris lattices.
   - VariableSolenoid variant: knob applied via
     `_apply_solenoid_knob_to_element` multiplying `ks_profile[0:2]` and
     `knl[0]`/`ksl[0]` by the knob ref directly (no `scale_b` attribute on
-    this element type). No sextupole knob (VariableSolenoid is linear-only).
+    this element type). No sextupole content at all (linear-only). The
+    compensation knob ref is `on_comp_sol_{ip}` alone since 2026-10-02; it
+    used to be multiplied by a global `comp_b_scale`.
 - Same insertion geometry as 001a (`anchor='center'` for main at `s_ip`,
   comp left/right at `+-12 m`), same embedded first-order correctors
   (`acbh1/acbv1_sol_{left,right}_{ip}` distributed over `s_ip+-[1.23,2.29]`),

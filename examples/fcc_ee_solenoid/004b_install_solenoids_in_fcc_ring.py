@@ -73,21 +73,6 @@ comp_solenoid_template = solenoid_templates['compensation_solenoid']
 # Install independent SplineBoris solenoid clones at IPs #
 #########################################################
 
-env['sext_amp'] = 1.0
-
-# Global multiplier on the compensation solenoids' field, on top of their
-# built-in charge-balance scale (comp_scale_b, baked into the template by
-# 004a) and each IP's on_comp_sol_{ip} on/off knob. 1.0 = nominal
-# compensation (net solenoid integral cancels); over/under-compensating lets
-# studies probe how sensitive the correction is to that balance.
-env['comp_b_scale'] = 1.0
-
-# Global multiplier on every main detector solenoid's field, analogous to
-# comp_b_scale above but for the main solenoids. 1.0 = nominal. Scanned by
-# 004h_main_b_scale_scan.py; left at 1.0 by 004c so the nominal correction
-# (doublet tilt, orbit/optics/coupling knobs) is still solved at design field.
-env['main_b_scale'] = 1.0
-
 for ip_name in IP_NAMES:
 
     # Use the same local line orientation around each IP as in the original
@@ -103,37 +88,21 @@ for ip_name in IP_NAMES:
     env[f'on_sol_{ip_name}'] = 0
     env[f'on_comp_sol_{ip_name}'] = 0
 
-    # Per-side, per-IP compensation-solenoid field multipliers (default 1.0),
-    # on top of the global comp_b_scale. Left at 1.0 by 004c; used by
-    # 004h_main_b_scale_scan.py as free skew-/dispersion-correction parameters
-    # (varied in the coupling match alongside the k1s_*_sol_coupling_corr
-    # skew quads). Note: letting these float breaks the exact net-int(Bs)
-    # cancellation the nominal design relies on.
-    env[f'comp_b_scale_left_{ip_name}'] = 1.0
-    env[f'comp_b_scale_right_{ip_name}'] = 1.0
-
-    main_knob_ref = (
-        env.ref[f'on_sol_{ip_name}'] * env.ref['main_b_scale'])
-    comp_left_knob_ref = (
-        env.ref[f'on_comp_sol_{ip_name}'] * env.ref['comp_b_scale']
-        * env.ref[f'comp_b_scale_left_{ip_name}'])
-    comp_right_knob_ref = (
-        env.ref[f'on_comp_sol_{ip_name}'] * env.ref['comp_b_scale']
-        * env.ref[f'comp_b_scale_right_{ip_name}'])
+    main_knob_ref = env.ref[f'on_sol_{ip_name}']
+    comp_knob_ref = env.ref[f'on_comp_sol_{ip_name}']
     solenoid_lines = {}
     clone_specs = [
         ('main', main_solenoid_template,
          f'sol_slice_{ip_name}', main_knob_ref),
         ('comp_left', comp_solenoid_template,
-         f'comp_sol_slice_left_{ip_name}', comp_left_knob_ref),
+         f'comp_sol_slice_left_{ip_name}', comp_knob_ref),
         ('comp_right', comp_solenoid_template,
-         f'comp_sol_slice_right_{ip_name}', comp_right_knob_ref),
+         f'comp_sol_slice_right_{ip_name}', comp_knob_ref),
     ]
 
     # Clone the isolated templates into the environment. The compensation
     # template already carries the scale needed to cancel the main integral;
-    # here it is only multiplied by the local on/off knob and the global
-    # comp_b_scale knob.
+    # here it is only multiplied by the local on/off knob.
     for clone_name, template_line, element_prefix, knob_ref in clone_specs:
         element_names = []
         name_width = len(str(max(0, len(template_line.element_names) - 1)))
@@ -148,16 +117,6 @@ for ip_name in IP_NAMES:
 
             env.elements[element_name] = cloned_element
             env.ref[element_name].scale_b = float(saved_scale_b) * knob_ref
-
-            if (
-                isinstance(cloned_element, xt.SplineBoris)
-                and cloned_element.multipole_order >= 3
-            ):
-                sext_ref = env.ref['sext_amp']
-                ref = env.ref[element_name]
-                for k in range(5):
-                    ref.bx[2, k] = float(cloned_element.bx[2, k]) * sext_ref
-                    ref.by[2, k] = float(cloned_element.by[2, k]) * sext_ref
 
             element_names.append(element_name)
 
