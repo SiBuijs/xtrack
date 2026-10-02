@@ -170,7 +170,6 @@ and Burkhardt, [CDS 2948247](https://cds.cern.ch/record/2948247), NIM A 1083
 |---|---|
 | `000a_local_install_solenoids_and_correctors.py` | install solenoids + correctors, **local** correction scheme |
 | `000b_local_correction.py` | run the local correction |
-| `000c_field_map_y_s_plane.py` | standalone: plot the main solenoid's (By, Bz) field in the y–s plane at x=0. Reads no lattice |
 | `001a_non_local_install_solenoids_and_correctors.py` | install solenoids + correctors, **non-local** scheme |
 | `001b_non_local_correction.py` | run the non-local correction |
 | `002_analysis_and_plots.py` | twiss and plot the result. Currently reads the non-local lattice; the local one is a commented-out line at the top |
@@ -182,7 +181,7 @@ The branch name `fcc_nonlocal_solenoid` refers to the 001 non-local scheme.
 
 | module | used by | contents |
 |---|---|---|
-| `solenoid_params.py` | 000c, 004a–004d | single source of truth for geometry; `field_tag`/`order_tag` filename helpers; `--b0`/`--max-transverse-order` argparse helpers; `PLOT_DIR` |
+| `solenoid_params.py` | 004a–004d | single source of truth for geometry; `field_tag`/`order_tag` filename helpers; `--b0`/`--max-transverse-order` argparse helpers; `PLOT_DIR` |
 | `spline_boris_setup.py` | 004a | the field-extraction and SplineBoris/VarSol line-building logic |
 | `tilted_solenoid.py` | 001a, 003_a, 004a | `TiltedSolenoid`: the analytic field model, rotated into and out of the tilted frame |
 
