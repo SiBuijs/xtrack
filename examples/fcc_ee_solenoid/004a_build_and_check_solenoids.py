@@ -84,9 +84,10 @@ Y_FIELD_COMPARISON = 0
 PLOT_MAIN_SOLENOID = True
 PLOT_COMPENSATION_SOLENOID = False
 
+# Build-time scale on the order-2 (sextupole) spline coefficients baked into
+# the templates. 004b installs those coefficients as plain element data, so
+# this is the only place sextupole content can be scaled.
 SEXTUPOLE_AMPLIFICATION_FACTOR = 1.0
-# Sextupole amplification is applied at study time via the runtime sext_amp knob
-# on the installed SplineBoris lattice (004b), not at template build time.
 
 MIXED_DERIVATIVE_SPECS = [
     {

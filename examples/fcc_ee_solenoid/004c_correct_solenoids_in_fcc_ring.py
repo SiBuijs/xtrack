@@ -767,8 +767,7 @@ for ip_name in IP_NAMES:
 
         # Mid-bend trim quads between the IP and the sextupole on this side.
         # These are zero-length, so the strength has to go on the integrated
-        # knl[1]; k1 is dead at zero length -- same reasoning as
-        # lattice_knobs.install_extra_sextupole. Units therefore differ from
+        # knl[1]; k1 is dead at zero length. Units therefore differ from
         # the trims above (k1l [1/m] rather than k1 [1/m^2]), but over a
         # 25-60 m bend a k1l of 1e-7 is a distributed k1 of ~2-4e-9, so the
         # shared step=1e-7 in the VaryList below is a comparable perturbation

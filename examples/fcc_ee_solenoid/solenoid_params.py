@@ -1,6 +1,6 @@
 """Shared physical/geometric parameters for the detector solenoid + local
 compensation scheme, used across the "current" pipeline
-(004a -> 004b[_varsol] -> 004c -> 004d -> 009/010/014).
+(004a -> 004b[_varsol] -> 004c -> 004d).
 
 Single source of truth: these values used to be independently hardcoded in
 004a_build_and_check_solenoids.py, 004b_install_solenoids_in_fcc_ring.py, and
@@ -12,6 +12,19 @@ Not used by the legacy/superseded 000a/000b/001a/001b path (see
 claude_notes/00_overview.md) -- those scripts keep their own independent
 copies of these numbers.
 """
+
+import os
+from pathlib import Path
+
+# Where 004d writes its figures. Override on machines where Path.home() isn't
+# a synced CERNBox folder (e.g. remote/headless boxes reached over ssh) via
+# FCC_SOLENOID_PLOT_DIR.
+PLOT_DIR = Path(
+    os.environ.get(
+        "FCC_SOLENOID_PLOT_DIR",
+        Path.home() / "cernbox" / "Pictures" / "FCC_Solenoid_Studies",
+    )
+)
 
 # Tilt of the main detector solenoid w.r.t. the beam axis [rad].
 THETA = -0.015
@@ -112,8 +125,8 @@ def field_tag(b0: float = MAIN_SOLENOID_B0) -> str:
 
 # Tag identifying the main-solenoid field strength (MAIN_SOLENOID_B0) this
 # module is currently configured for. Threaded into filenames across the
-# 004a-004d/009-015 pipeline and aperture_study_io.py so lattices/studies
-# built at different field strengths don't silently overwrite each other.
+# 004a-004d pipeline so lattices built at different field strengths don't
+# silently overwrite each other.
 FIELD_TAG = field_tag()
 
 
@@ -144,8 +157,7 @@ def add_b0_argument(parser, *, default: float = MAIN_SOLENOID_B0) -> None:
 # spline_boris_setup.py -- this directly sets each installed xt.SplineBoris
 # element's multipole_order, i.e. how many bx/by polynomial terms the Boris
 # pusher evaluates per step. Lower orders drop higher multipole content
-# (order 2 = sextupole, the order the 004b `sext_amp` knob scales) in
-# exchange for cheaper tracking. Kept in sync with the module-level default
+# (order 2 = sextupole) in exchange for cheaper tracking. Kept in sync with the module-level default
 # in 004a_build_and_check_solenoids.py (the only place it is actually built).
 MAX_TRANSVERSE_DERIVATIVE_ORDER_FOR_SPLINE = 4
 

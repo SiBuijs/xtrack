@@ -5,10 +5,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import xtrack as xt
 
-from aperture_study_io import PLOT_DIR
 from solenoid_params import (
     COMP_SOLENOID_LENGTH,
     MAIN_SOLENOID_B0,
+    PLOT_DIR,
     add_b0_argument,
     add_max_order_argument,
     field_tag,
@@ -1130,8 +1130,7 @@ def _autoscale_y_to_xlim(ax, xlim, margin=0.1):
 
     Must be called BEFORE the axvspan/axvline decoration: an axvline is a
     Line2D with y-data [0, 1], which would otherwise be folded into the
-    min/max and flatten the panel (same helper, and the same gotcha, as
-    004f/004j -- see claude_notes/07_main_b_scale_scans.md).
+    min/max and flatten the panel.
     """
     log_scale = ax.get_yscale() == 'log'
     y_min, y_max = np.inf, -np.inf

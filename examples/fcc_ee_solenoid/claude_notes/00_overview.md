@@ -1,8 +1,18 @@
 # fcc_ee_solenoid — directory overview (for Claude, read this first)
 
-Written 2026-07-10. Purpose: let a future session skip re-reading every script.
-If a referenced file/function no longer exists, treat these notes as stale for
-that detail and re-check the source.
+Written 2026-07-10, pruned 2026-10-02. Purpose: let a future session skip
+re-reading every script. If a referenced file/function no longer exists, treat
+these notes as stale for that detail and re-check the source.
+
+**Branch `fcc_nonlocal_solenoid` (2026-10-02) keeps only the lattice-construction
+chain.** Scripts 004aa, 004cc, 004dd, 004e-004m and 006-018 were removed, along
+with the helpers `lattice_knobs.py`, `aperture_grid.py`, `aperture_study_io.py`
+and `radial_steering.py`, the `results/` directory, and the `_o2` / `_mainscale`
+lattice variants. The four study-only knobs `sext_amp`, `comp_b_scale`,
+`main_b_scale` and `comp_b_scale_{side}_{ip}` no longer exist: 004b installs the
+order-2 spline coefficients as plain element data, and the compensation field is
+gated by `on_comp_sol_{ip}` alone. All of it is recoverable from git history
+except notes 06 and 07, which were never committed.
 
 ## What this study is about
 
@@ -19,14 +29,16 @@ Two competing solenoid **element models** are carried in parallel throughout:
 - **SplineBoris** (`xt.SplineBoris`): field given by quartic (`xt.Spline4`)
   longitudinal profiles of `bs`, and per-multipole-order `bx`/`by`, integrated
   with a Boris pusher. Higher fidelity (captures multipole content up to
-  sextupole-like order incl. `sext_amp` knob), more expensive.
+  sextupole-like order and beyond), more expensive. Sextupole content is now
+  fixed at build time by `SEXTUPOLE_AMPLIFICATION_FACTOR` in 004a; there is no
+  runtime knob for it.
 - **VariableSolenoid** (`xt.VariableSolenoid`): linear `ks_profile` (2-point
   linear ramp) + one dipole kick (`knl`/`ksl`) per slice. Cheaper, linear-only.
 
 Naming convention seen everywhere: **"SB"** = SplineBoris, **"VarSol"** =
-VariableSolenoid. Case names `sb_on` / `varsol_on` / `sb_off` recur across
-009/010/014 (`sb_off` = SplineBoris lattice with solenoids+correctors both
-switched off, i.e. the "bare machine" baseline using the same JSON).
+VariableSolenoid. The case names `sb_on` / `varsol_on` / `sb_off` belonged to the
+removed 009/010/014 family (`sb_off` = the same JSON with solenoids and
+correctors switched off, i.e. the bare-machine baseline).
 
 ## Pipeline / file dependency order
 
@@ -51,25 +63,18 @@ fccee_z_lcc.json (external input, LCC optics, no solenoids)
            -> fccee_z_lcc_splineboris_solenoids_coupling_corrected.json
            -> fccee_z_lcc_varsol_solenoids_coupling_corrected.json
        004d: analysis/plots of the SplineBoris corrected lattice
-
-These two *_coupling_corrected.json files are the ones actually consumed by
-009/010/011/013/014 (the "current" study family). Everything upstream of them
-(000a-003) is legacy/exploratory and not on the live dependency path anymore.
-
-   006, 007, 008: standalone model-validation studies (do NOT read/write any
-       of the JSON above; they rebuild field models from scratch each time).
-       See 02_solenoid_model_checks_006_008.md.
-
-   009, 010, 011, 013, 014, 015, 018: aperture/emittance/spin studies
-       reading the two *_coupling_corrected.json lattices. See
-       03_aperture_emittance_studies_009_014.md and 05_spin_polarization.md.
-       **2026-09-17: 018_emittance_and_polarization.py merges 014 and 015**
-       into ONE tracking run per case (they differed only in twiss flavour,
-       bunch initial emittance and spin IC), and 013 now drives 018 in place
-       of 014 -- so a default 013 run yields DA + MA + EMIT + POL for the
-       cost of three tracking passes. 014 and 015 are kept untouched and
-       still runnable standalone. See 05_spin_polarization.md.
 ```
+
+004d is the end of the chain on this branch. It reads the SplineBoris corrected
+lattice for the requested `--b0` plus, always, the untagged 2T and 3T ones as
+comparisons. The varsol corrected pair is still produced by 004c but nothing
+reads it any more. Everything in the 000a-003 path is legacy/exploratory and not
+on the live dependency path.
+
+Concrete filenames carry a field tag and, for SplineBoris only, an order tag:
+`004_solenoid_lines_{2T,3T}.json`,
+`temp_fcc_ee_lcc_{splineboris,varsol}_solenoids_{2T,3T}.json`,
+`fccee_z_lcc_{splineboris,varsol}_solenoids_coupling_corrected_{2T,3T}.json`.
 
 ## Shared helper modules (used across many scripts)
 
@@ -84,17 +89,6 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   `build_splineboris_line`, `build_variable_solenoid_line`,
   `assemble_three_solenoid_system`, `symplectic_error`,
   `sample_splineboris_line[_on_s]`, `smooth_edge_taper`.
-- `lattice_knobs.py` — `set_lattice_knobs(line, with_solenoids, with_correctors,
-  sext_amp=1.0)`: single entry point used by 009/010/014 to flip all 4 IPs'
-  `on_sol_*` / correction knobs together and set the `sext_amp` sextupole-
-  amplification knob. (011 and 012 have their own inline copy/no-op instead of
-  importing this — minor duplication, not a bug.) Also `set_solenoid_offset`
-  (rigid x/y shift of the 4 main solenoids) and, added 2026-07-15,
-  `install_extra_sextupole(line, k2l=...)` — opt-in (no-op at `k2l=0.0`) thin
-  extra sextupole inserted into each IP's main solenoid at a fixed
-  SplineBoris slice boundary near s=-1.23 m from the IP; used by 009/010 via
-  their `--extra-sext-strength` CLI flag. See
-  `03_aperture_emittance_studies_009_014.md` for details.
 - `solenoid_params.py` — single source of truth for main/compensation
   solenoid geometry, imported by 004a/004b[_varsol]/004c/004d/009-015 (added
   2026-07-16, `--b0` CLI mechanism added 2026-07-24). `MAIN_SOLENOID_B0`
@@ -111,8 +105,7 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   `_build_emitt_cases`/`_build_pol_cases`), and 013 forwards its own `--b0`
   to all three subprocesses. This also exposed and fixed a real gap in
   `aperture_study_io.save_da_study`/`save_ma_study`, which had no `field_tag`
-  passthrough at all (unlike `save_emitt_study`) — see
-  `03_aperture_emittance_studies_009_014.md`.
+  passthrough at all (unlike `save_emitt_study`).
   **2026-08-03: `--max-transverse-order` added**, mirroring `--b0`/`field_tag`
   exactly. `order_tag(n)`/`add_max_order_argument()` in `solenoid_params.py`
   (default `n=4`, tag `''` at the default, `'_o2'` etc. otherwise) cap the
@@ -120,9 +113,8 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   element via `build_splineboris_line`'s `max_transverse_derivative_order_
   for_spline` (see `spline_boris_setup.py`) — this directly sets
   `element.multipole_order`, i.e. how many `bx`/`by` polynomial terms the
-  Boris pusher evaluates per step. Lower orders (below 2, the sextupole row
-  the 004b `sext_amp` knob scales) drop that multipole content in exchange
-  for cheaper tracking. SplineBoris-only — VariableSolenoid is linear-only
+  Boris pusher evaluates per step. Lower orders (below 2, the sextupole row)
+  drop that multipole content in exchange for cheaper tracking. SplineBoris-only — VariableSolenoid is linear-only
   and untouched by this flag. Field-extraction order in 004a
   (`MAX_TRANSVERSE_DERIVATIVE_ORDER`) stays fixed at 4 regardless (it's the
   cheap, one-time part; the spline-build order must stay `<=` it). Threaded
@@ -151,17 +143,11 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   `corrector_ds_start_for_b0(_args.b0)` the same way. If a new field-strength
   case is ever added, both dicts need a new entry or these functions raise
   `ValueError`.
-- `aperture_grid.py` — `initial_conditions_grid(study="MA", ...)`: polar grid
-  generator for momentum-acceptance initial conditions (used by 009 only; 010
-  has its own DA-specific grid builder inline).
-- `aperture_study_io.py` — save/reload/replot helpers for DA/MA/EMIT `.npz`
-  data + PDF figures. Used by 009, 010, 014, and replotted by 012. PDFs go to
-  `/home/simonfan/cernbox/Pictures/FCC_Solenoid_Studies` (outside the repo);
-  `.npz` raw data go to `examples/fcc_ee_solenoid/data/`. As of 2026-07-15,
-  `PLOT_DIR` is `Path.home() / "cernbox/Pictures/FCC_Solenoid_Studies"` (was
-  hardcoded to `/home/simonfan/...`, which broke on other machines/users —
-  same synced cernbox folder, just resolved via the current user's home dir
-  now).
+  `PLOT_DIR` now lives in `solenoid_params.py` (moved there 2026-10-02 when
+  `aperture_study_io.py` was deleted — 004d imported the whole module for that
+  one constant). It is `Path.home() / "cernbox/Pictures/FCC_Solenoid_Studies"`,
+  overridable via the `FCC_SOLENOID_PLOT_DIR` environment variable, which is
+  what the remote/headless box uses.
 
 ## Physical/engineering constants worth remembering
 
@@ -200,93 +186,44 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   `__pycache__/` sit in this directory — junk, not part of the pipeline.
 
 ## Note index
+
+Only three notes describe code that still exists on this branch; the rest are
+kept for their measurements.
+
 - `01_lattice_construction_000_004d.md` — 000a/000b/001a/001b/002/003/004a/004b
-  (x2)/004c/004d in detail.
-- `02_solenoid_model_checks_006_008.md` — 006/007/008 standalone validation
-  scripts.
-- `03_aperture_emittance_studies_009_014.md` — 009/010/011/012/013/014 +
-  `aperture_grid.py` + `aperture_study_io.py` + `lattice_knobs.py`.
-- `04_bz_ramp_coupling_amplification.md` — **REMOVED 2026-07-22** (files
-  `git rm`'d at user's request, no longer used; note kept for history only).
-  Was a Maxwell-consistent linear-Bz-ramp perturbation used to probe whether
-  the detector solenoid's x-y coupling is genuinely small or a fragile
-  cancellation, plus raw-coupling and phase-advance (`dmux`/`dmuy`) scan
-  findings.
-- `05_spin_polarization.md` — `015_spin_polarization.py`: radiative
-  spin-polarization buildup/depolarization study (Sokolov-Ternov `P_inf`/
-  `tau_pol` from Twiss `polarization_analysis=True`, `tau_depol` from a
-  linear fit of tracked polarization decay), structurally a sibling of
-  `014_emittance_evolution.py`. Not part of the 000-014 pipeline numbering.
-  **Also covers `018_emittance_and_polarization.py`** (2026-09-17), the
-  merge of 014+015 into a single tracking run, why spin costs nothing when
-  it is off, the `__bunchdiv<F>` provenance tag, the `--seed` determinism
-  path, and the measurement that the tracked `tau_depol` is noise-dominated
-  (SNR ~ 1).
-- `07_main_b_scale_scans.md` — the `main_b_scale` / per-side
-  `comp_b_scale_{side}_{ip}` knobs (new in 004b/004c, `--output-tag
-  mainscale` lattices) and the three scan scripts that use them:
-  `004h_main_b_scale_scan.py` (004f analogue, floats the per-side comp
-  knobs), `004i_comp_weight_sweep.py` (comp-knob-weight diagnostic), and
-  `004j_main_b_scale_suite.py` (combined 2 T + 3 T suite: emittance / tune
-  / chromaticity / `C^-` vs `main_b_scale`, plus IR/straight β /
-  coupled-β / dispersion / beam-size profiles + skew-corrector strengths;
-  plain skew-only unit-weight coupling re-solve). Also documents **which
-  knobs 004c/004f/004h/004j each vary** (the same ~84 skew + 24 orbit
-  knobs per IP in all four; only the solver settings and frozen-vs-raw
-  knob handling differ) and **what every line/shading on the 004j plots
-  means** — the grey dashed verticals on the IR figures mark the *orbit*
-  correctors, not the coupling skews, which is the easiest thing in this
-  study to misread.
-- `06_coupling_matching_convergence.md` — why `004f_comp_b_scale_scan.py`'s
-  per-scan-point coupling re-solve (84 skew-quad vary knobs vs. 12 targets)
-  is slow/sometimes fails to converge (ill-conditioned Jacobian, SVD
-  diagnosis), the `004g_coupling_svd_diagnostic.py` tool built to inspect
-  it, the `broyden=True` fix applied, and a ranked list of further options
-  for outright non-convergence (not yet applied). Note the `max_step` fix
-  recorded there as applied on 2026-09-03 was **backed out of 004j on
-  2026-09-05** in favour of a smaller finite-difference `step` + much
-  tighter tolerances — read that section's "Superseded 2026-09-05" note
-  before trusting the surrounding text. `004f`/`004g` themselves
-  are not otherwise documented in this pipeline overview yet.
+  (x2)/004c/004d in detail. **Current.** Its 004aa/004cc sections describe
+  deleted scripts.
+- `04_bz_ramp_coupling_amplification.md` — the linear-Bz-ramp perturbation used
+  to probe whether the detector solenoid's x-y coupling is genuinely small or a
+  fragile cancellation, plus raw-coupling and phase-advance scan findings. The
+  scripts were `git rm`'d 2026-07-22; the note is history only.
+- `06_coupling_matching_convergence.md` — why the per-scan-point coupling
+  re-solve (84 skew-quad vary knobs vs 12 targets) is ill-conditioned, the SVD
+  diagnosis, the `broyden=True` fix, and a ranked list of further options for
+  outright non-convergence. The `max_step` fix recorded there was **backed out
+  on 2026-09-05** in favour of a smaller finite-difference `step` plus tighter
+  tolerances — read that section's "Superseded 2026-09-05" note before trusting
+  the surrounding text. Describes 004f/004g/004j, all deleted.
+  **Never committed — this file is the only copy.**
+- `07_main_b_scale_scans.md` — the `main_b_scale` and per-side
+  `comp_b_scale_{side}_{ip}` knobs and the 004h/004i/004j scans that used them.
+  Also records which knobs 004c/004f/004h/004j each vary, and what every line
+  and shading on the 004j plots means. Knobs and scripts are all gone now.
+  **Never committed — this file is the only copy.**
 
-- `08_second_order_chromaticity_source.md` — (2026-09-15) why the 004c
-  corrected rings have Q''y ~ +1.5e4..1.8e4 (bare -149): the half-straight
-  optics match leaves the vertical phase advance QD0 -> sdy1 (vertical LCC
-  -I sextupole pair) free, and Q''y ~ 2.4e7 * (phase error) per side
-  (ipj left dominates). Includes the phase-trombone recipe, the IP-marker
-  phase pitfall, and how to read 004dd's mu''(s) (realised in the arcs, not
-  sourced there). sdm1 sextupoles are chromatically irrelevant.
-  **Its "Fix" section is superseded — see note 09.**
+Deleted 2026-10-02 (recoverable from git history):
+`02_solenoid_model_checks_006_008.md`,
+`03_aperture_emittance_studies_009_014.md`, `05_spin_polarization.md`.
 
-- `09_correcting_the_q2y_source.md` — (2026-09-16) the attempts to *correct*
-  the note-08 source, all of which failed, and the response-matrix/null-space
-  measurement of why: the −I pair needs both a phase and a strength condition,
-  the half-straight optics match constrains neither, and within the null space
-  of its existing targets the two trade against each other. Also: what 004cc
-  is now (IP_NAME selector, per-knob decomposition, W and QD0->sdy1 phase
-  printouts), how to target `wy_chrom` in a match and why it must be staged,
-  and a reference section on what the Montague W functions are.
-  **Its "one hypothesis checked and killed" section is wrong — see note 10.**
-
-- `10_conditioning_the_optics_match.md` — (2026-09-16/17) **the fix that
-  worked, and the end of this thread.** The Q''y problem was a *conditioning*
-  problem, not a physics one: the half-straight optics match is rank-deficient
-  (15 knobs, 8-9 targets, condition number 3.7e7) and `xdeps` defaults to
-  `rcond=1e-14`, so it inverted the near-null directions and landed on an
-  arbitrary null-space point each run — which is why Q''y flipped sign between
-  otherwise identical runs. Two solver changes, no new targets:
-  `OPTICS_RCOND = 1e-6` and a staged pass-1 solve (`sext` targets disabled,
-  then re-enabled). Took ipg left from max|k1| 4.5e-3 / phase error 2.6e-3 to
-  4.7e-5 / 5.3e-5, and made ring Q''y **predictable from the eight QD0->sdy1
-  phase errors to 0.2%** via note 08's 2.42e7 calibration. Also records four
-  measured dead ends (knob limits, `step=1e-6`, the `bety`-at-sdm1 target,
-  tighter tolerances), why "penalty is not quality", the diagnostics added to
-  004c (`max|knob|` column, `--ips`, figure 4's Q(δ) plot), and the fact that
-  **004cc still carries a value-shift bug** in its sextupole targets.
+Note `08_second_order_chromaticity_source.md` is referenced by the deleted 004cc
+but was never written. Its subject — the Q''y amplification the half-straight
+optics match produces by leaving the QD0 -> sdy1 vertical phase advance free —
+is still an open question on this branch.
 
 Removed 2026-07-15: the `kill_higher_order_{upstream,downstream}_{ip}` knob
 (zeroed sextupole-and-above multipole content for one half of one IP's main
-solenoid; was wired into 004b/`lattice_knobs.py`/009/010/013/014/004d) has
+solenoid; was wired into 004b, the since-deleted `lattice_knobs.py`,
+009/010/013/014 and 004d) has
 been stripped from all of those files at the user's request. It was never
 committed (added and removed within the same uncommitted working-tree
 session), so there is no git history to recover it from. Its note
