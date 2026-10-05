@@ -89,7 +89,9 @@ def twiss_line(line, particle_ref=None, method=None,
         freeze_energy=None,
         polarization=None,
         eneloss_and_damping=None,
-        steps_r_matrix=None,
+        steps_r_matrix=None, *,
+        with_progress=True,
+        chi=None, charge_ratio=None, mass_ratio=None,
     ):
     """
     Compute the Twiss parameters of the beam line. If no initial conditions
@@ -101,13 +103,32 @@ def twiss_line(line, particle_ref=None, method=None,
     method : {'6d', '4d'}, optional
         Method to be used for the computation. If '6d' the full 6D
         normal form is used. If '4d' the 4D normal form is used.
+    particle_ref : xpart.Particles, optional
+        Reference particle used to search for the closed orbit. If not provided,
+        ``line.particle_ref`` is used.
+    chi : float, optional
+        Relative charge-to-mass ratio ``q / q0 * mass0 / mass``. The particle
+        used for the Twiss calculation is a copy; ``particle_ref`` is not
+        modified. If provided alone, its ``charge_ratio`` is preserved and
+        ``mass_ratio`` is adjusted consistently.
+    charge_ratio : float, optional
+        Relative charge ``q / q0``. If provided alone, the ``mass_ratio`` of
+        ``particle_ref`` is preserved and ``chi`` is adjusted consistently.
+    mass_ratio : float, optional
+        Relative rest mass ``mass / mass0``. If provided alone, the
+        ``charge_ratio`` of ``particle_ref`` is preserved and ``chi`` is
+        adjusted consistently.
+    with_progress : bool, optional
+        Whether to show progress when temporary slicing is needed for ``at_s``.
+        Defaults to ``True``.
     start : str, optional
-        Name of the element at which the computation starts. If not provided,
-        the periodic solution is computed. Initial conditions must be provided if
-        ``start`` is provided.
+        Name of the element at which the computation starts. If ``start`` is
+        provided without ``end``, the computation covers one full turn from
+        that element. Initial conditions are not required for a periodic
+        solution, including when a custom ``start`` is provided.
     end : str, optional
         Name of the element at which the computation stops.
-    init : TwissInit object, optional
+    init : TwissInit or str, optional
         Initial values for the Twiss parameters. If ``init="periodic"`` is
         passed, the periodic solution for the selected range is computed.
         Instead of passing ``init``, initial conditions can be provided directly
@@ -146,7 +167,8 @@ def twiss_line(line, particle_ref=None, method=None,
         while computing twiss.
     reverse : bool, optional
         If True, the output is computed in the reversed reference frame, i.e.
-        s = -s, x = -x, y = y, zeta = -zeta, px=px, py=-py, delta=delta.
+        s -> line_length - s, x -> -x, y -> y, zeta -> -zeta,
+        px -> px, py -> -py, delta -> delta.
         Default is False.
     chrom : bool, optional
         If True, compute chromatic properties. Default is None, which means
@@ -167,7 +189,7 @@ def twiss_line(line, particle_ref=None, method=None,
         If True, for periodic twiss compute spin closed solution (n0);
         for open twiss, propagate spin components.
     polarization_analysis : bool, optional
-        If True, compute quantititis related to spin polarization.
+        If True, compute quantities related to spin polarization.
     delta_chrom : float, optional
         Momentum deviation for the chromaticity computation.
     steps_R_matrix : dict, optional
@@ -179,7 +201,7 @@ def twiss_line(line, particle_ref=None, method=None,
     matrix_stability_tol : float, optional
         Tolerance to be used to check the stability of the R matrix.
         If not provided, the default value is used.
-    step_W_sigma : float, optional.
+    step_W_sigma : float, optional
         Deviation in sigmas used for the propagation of the W matrix.
     nemitt_x : float, optional
         Horizontal emittance assumed for the computation of the deviation
@@ -188,7 +210,12 @@ def twiss_line(line, particle_ref=None, method=None,
         Vertical emittance assumed for the computation of the deviation
         used for the propagation of the W matrix.
     coupling_edw_teng : bool, optional
-        If True, Edwards-Teng coupling quantities are computed. Default is
+        If True, the Edwards-Teng coupling matrix is reconstructed. The
+        Edwards-Teng Twiss functions, normalization `g_edw_teng`, and linear
+        coupling RDTs are computed directly from `W_matrix` independently of
+        this option. Edwards-Teng quantities are exact for `method='4d'`. For
+        `method='6d'`, they can become inaccurate when the transverse 4D
+        transfer matrix has a significant symplectic deviation. Default is
         False.
     zero_at : str, optional
         Element name at which the s coordinate and the phase advances are set to
@@ -196,8 +223,8 @@ def twiss_line(line, particle_ref=None, method=None,
     compute_R_element_by_element : bool, optional
         If True, the element-by-element R matrices are computed and stored in
         the output table. Default is False.
-    num_turns: int, optional
-        If specified the periodic solution and the twiss table are computed
+    num_turns : int, optional
+        If specified, the periodic solution and the twiss table are computed
         on multiple turns.
     search_for_t_rev : bool, optional
         If True, the revolution period is searched for, otherwise the revolution
@@ -213,6 +240,9 @@ def twiss_line(line, particle_ref=None, method=None,
     co_search_settings : dict, optional
         Settings to be used by the optimizer for the closed orbit search. If not
         provided, the default values are used.
+    continue_on_closed_orbit_error : bool, optional
+        If True, the computation continues even if the closed orbit search
+        does not converge. Default is False.
     R_matrix : np.ndarray, optional
         R matrix to be used for the computation. If not provided, the R matrix is
         computed using finite differences.
@@ -222,6 +252,14 @@ def twiss_line(line, particle_ref=None, method=None,
     use_full_inverse : bool, optional
         If True, the full inverse of the W matrix is used. If False, the inverse is
         computed from the symplectic condition.
+    only_orbit : bool, optional
+        If True, only the closed orbit (or the trajectory for open twiss) is
+        computed and the lattice functions are not added to the table.
+        Default is False.
+    only_twiss_init : bool, optional
+        If True, only the ``TwissInit`` of the periodic solution is returned
+        instead of the full table. Can be used only in periodic mode.
+        Default is False.
 
     Returns
     -------
@@ -232,7 +270,7 @@ def twiss_line(line, particle_ref=None, method=None,
     -----
 
     Output fields depending on selected options (for detailed definitions and
-    explanations refer to the Xsuite Physics Guide (https://xsuite.readthedocs.io/en/latest/physicsguide.html):
+    explanations refer to the Xsuite Physics Guide (https://xsuite.readthedocs.io/en/latest/physicsguide.html)):
     Fields marked as "ebe" are element-by-element quantities.
 
     Default output fields:
@@ -250,7 +288,6 @@ def twiss_line(line, particle_ref=None, method=None,
         - `dx`, `dpx`, `dy`, `dpy`: dispersion functions (ebe)
         - `ddx`, `ddpx`, `ddy`, `ddpy`: second-order dispersion functions (ebe)
         - `dx_zeta`, `dpx_zeta`, `dy_zeta`, `dpy_zeta`: crab dispersion functions (ebe)
-        - `bets0`: longitudinal beta function at start ring.
         - `W_matrix`: linear normal-form matrix. (ebe)
         - `kin_px`, `kin_py`, `kin_ps`: kinetic momenta (different from `px`, `py`
           which are canonical momenta). (ebe)
@@ -260,12 +297,24 @@ def twiss_line(line, particle_ref=None, method=None,
         - `betx1`, `bety1`, `betx2`, `bety2`, `alfx1`, `alfy1`, `alfx2`,
           `alfy2`, `gamx1`, `gamy1`, `gamx2`, `gamy2`: Mais-Ripken coupled optics
           functions (ebe)
+        - `betx_edw_teng`, `bety_edw_teng`, `alfx_edw_teng`, `alfy_edw_teng`:
+          Edwards-Teng modal Twiss functions. Exact for `method='4d'`; for
+          `method='6d'`, they can become inaccurate when the transverse 4D
+          transfer matrix has a significant symplectic deviation. (ebe)
+        - `g_edw_teng`: Edwards-Teng coupling normalization. Exact for
+          `method='4d'`; for `method='6d'`, it can become inaccurate when the
+          transverse 4D transfer matrix has a significant symplectic deviation.
+          (ebe)
+        - `f1001`, `f1010`, `f0110`, `f0101`: matrix-equivalent linear coupling
+          RDTs obtained directly from `W_matrix`. Exact for `method='4d'`; for
+          `method='6d'`, they can become inaccurate when the transverse 4D
+          transfer matrix has a significant symplectic deviation. (ebe)
         - `wx_chrom`, `wy_chrom`, `bx_chrom`, `by_chrom`, `ax_chrom`, `ay_chrom`:
           chromatic functions, see physics guide for definitions (ebe)
-        - `particle_on_co`: particle on closed orbit or reference trajecory, placed
+        - `particle_on_co`: particle on closed orbit or reference trajectory, placed
           at the first element in the selected range.
         - `reference_frame`: reference frame used for the output (can be `proper`
-          or `reversed`)
+          or `reverse`)
         - `periodic`: True if periodic twiss, False if open twiss
         - `method`: method used for the computation (`4d` or `6d`)
     Output fields present only for periodic twiss:
@@ -275,10 +324,10 @@ def twiss_line(line, particle_ref=None, method=None,
         - `ddqx`, `ddqy`: second-order chromaticities
         - `line_length`: length of the beam line
         - `p0c`, `gamma0`, `beta0`: reference momentum and relativistic factors
-        -  `t_rev0`: reference revolution period
+        - `t_rev0`: reference revolution period
         - `slip_factor`: slip factor, i.e. eta = -(dfrev / frev) / ddelta
         - `momentum_compaction_factor`: momentum compaction factor (d C / C) / ddelta
-          where C the closed orbit path length
+          where C is the closed orbit path length
         - `slip_factor_dzeta_ddelta`: d (zeta) / ddelta
         - `bets0`: longitudinal beta function at start of the ring.
         - `c_minus`, `c_minus_re_0`, `c_minus_im_0`: closest tune approach coefficient
@@ -296,8 +345,12 @@ def twiss_line(line, particle_ref=None, method=None,
         - `dzeta`: longitudinal dispersion vs delta
     Output fields present when `strengths=True` (or `radiation_integrals=True`):
         - `k0l`–`k5l`, `k0sl`–`k5sl`: normal/skew multipole integrated strengths
+        - `ksoll`: integrated normalized longitudinal solenoid strength
+          (`ks * length` for uniform solenoids, endpoint-average strength
+          times length for VariableSolenoid, profile integral for BFieldExpansion)
         - `angle`, `rot_s_rad`, `hkick`, `vkick`, `ks`, `bs`, `length`,
-          `element_type`, `isthick`, `parent_name`, `prototype`: element properties
+          `element_type`, `isthick`, `parent_name`, `prototype`,
+          `base_prototype`: element properties
     Output fields present when `radiation_analysis=True`:
         - `energy_loss`: energy loss per turn [eV]
         - `damping_constants_turns`, `damping_constants_s`: damping constants in
@@ -311,7 +364,7 @@ def twiss_line(line, particle_ref=None, method=None,
         - `rad_int_i1x`, `rad_int_i1y`, `rad_int_i2`, `rad_int_i3`, `rad_int_i4`,
           `rad_int_i4x`, `rad_int_i4y`, `rad_int_i5x`, `rad_int_i5y`: radiation
           integrals (see physics guide for definitions)
-        - `rad_int_i1x_integrand`, `rad_int_i1y_integrand`, `rad_int_l2_integrand`,
+        - `rad_int_i1x_integrand`, `rad_int_i1y_integrand`, `rad_int_i2_integrand`,
           `rad_int_i3_integrand`, `rad_int_i4_integrand`, `rad_int_i4x_integrand`,
           `rad_int_i4y_integrand`, `rad_int_i5x_integrand`, `rad_int_i5y_integrand`:
           integrands of the radiation integrals (ebe)
@@ -353,7 +406,10 @@ def twiss_line(line, particle_ref=None, method=None,
           computations
     Output fields present when `coupling_edw_teng=True`:
         - `r11_edw_teng`, `r12_edw_teng`, `r21_edw_teng`, `r22_edw_teng`:
-          Elements of the Edwards-Teng coupling matrix (ebe)
+          elements of the Edwards-Teng coupling matrix. Exact for
+          `method='4d'`; for `method='6d'`, they can become inaccurate when the
+          transverse 4D transfer matrix has a significant symplectic deviation.
+          (ebe)
     Output fields present when `search_for_t_rev=True`:
         - `t_rev`: measured revolution period [s]
 
@@ -514,7 +570,7 @@ def _compute_base_twiss(twiss_config):
     end = twiss_config['end']
     reverse = twiss_config['reverse']
 
-    # validate `start`` and `end`` and handle `reverse``
+    # validate `start` and `end` and handle `reverse`
     if start is not None and end is not None:
         start_index = _element_ref_to_index(line, start)
         end_index = _element_ref_to_index(line, end)

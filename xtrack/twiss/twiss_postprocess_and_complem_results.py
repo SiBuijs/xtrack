@@ -134,12 +134,12 @@ def _add_periodic_solution_data_to_twiss_result(twiss_config, twiss_res):
             'qx': mux[-1], 'qy': muy[-1], 'qs': qs,
             'c_minus': c_minus,
             'c_minus_re_0': c_minus_re[0], 'c_minus_im_0': c_minus_im[0],
-            'c_minus_local': c_minus_local,
         })
 
         # Coupling columns
         twiss_res['c_minus_re'] = c_minus_re
         twiss_res['c_minus_im'] = c_minus_im
+        twiss_res['c_minus_local'] = c_minus_local
         twiss_res['c_r1'] = c_r1
         twiss_res['c_r2'] = c_r2
         twiss_res['c_phi1'] = c_phi1
@@ -276,8 +276,6 @@ def _add_edwards_teng_coupling_to_twiss_result(twiss_config, twiss_res):
 
     coupling_result = _get_coupling_elements_edwards_teng(
         W_matrix=twiss_res['W_matrix'],
-        mux=twiss_res['mux'],
-        muy=twiss_res['muy'],
         qx=twiss_res['qx'],
         qy=twiss_res['qy'])
     for key in coupling_result:

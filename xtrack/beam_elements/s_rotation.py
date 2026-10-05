@@ -6,7 +6,6 @@
 from ..base_element import BeamElement
 from ..general import DEPRECATION_INFO_PREP_1_0
 import numpy as np
-from ..survey import advance_element as survey_advance_element
 from warnings import warn
 import xobjects as xo
 from ._common import _angle_from_trig
@@ -42,13 +41,13 @@ class SRotation(BeamElement):
     ]
 
     _store_in_to_dict = ['angle']
-    _skip_in_to_dict = ['sin_z', 'cos_s']
+    _skip_in_to_dict = ['sin_z', 'cos_z']
 
     def __init__(self, angle=None, cos_z=None, sin_z=None, **kwargs):
         """
         If either angle or a sufficient number of trig values are given,
-        calculate the missing values from the others. If more than necessary
-        parameters are given, their consistency will be checked.
+        calculate the missing values from the others. If more parameters than
+        necessary are given, their consistency will be checked.
         """
 
         warn("SRotation is deprecated and will be removed in a future version. "
@@ -89,25 +88,6 @@ class SRotation(BeamElement):
         self.cos_z = np.cos(anglerad)
         self.sin_z = np.sin(anglerad)
 
-    def _propagate_survey(self, v, w, backtrack):
-
-        fback = 1
-        if backtrack:
-            fback = -1
-
-        rx, ry, rs = 0, 0, np.deg2rad(self.angle)
-
-        v, w = survey_advance_element(
-                    v               = v,
-                    w               = w,
-                    length          = 0,
-                    angle           = 0,
-                    tilt            = 0,
-                    ref_shift_x     = 0,
-                    ref_shift_y     = 0,
-                    ref_rot_x_rad   = fback * rx,
-                    ref_rot_y_rad   = -fback * ry,
-                    ref_rot_s_rad   = fback * rs,
-                )
-
-        return v, w
+    def track_frame(self, frame, backtrack=False):
+        sign = -1 if backtrack else 1
+        frame.rotate_s(sign * np.deg2rad(self.angle))

@@ -12,7 +12,6 @@ from ..internal_record import RecordIndex
 import copy
 from scipy.special import factorial
 import numpy as np
-from ..survey import advance_element as survey_advance_element
 from warnings import warn
 import xobjects as xo
 import xtrack as xt
@@ -29,10 +28,12 @@ from ._common import (
 )
 
 from .splineboris import Spline4, SplineBoris
+from .bfield_expansion import BFieldExpansion
 from .reference_energy_increase import ReferenceEnergyIncrease
 from .reference_energy_change import ReferenceEnergyChange
 from .marker import Marker
 from .drift import Drift
+from .device import Device
 from .drift_exact import DriftExact
 from .cavity import Cavity
 from .crab_cavity import CrabCavity
@@ -79,6 +80,7 @@ from .limit_ellipse import LimitEllipse
 from .limit_polygon import LimitPolygon
 from .limit_rect_ellipse import LimitRectEllipse
 from .longitudinal_limit_rect import LongitudinalLimitRect
+from ..synctime import SyncTime
 
 from .acdipole import ACDipole
 from .exciter import Exciter
@@ -95,7 +97,8 @@ from .slice_elements_edge import (
                              ThinSliceOctupoleEntry, ThinSliceOctupoleExit,
                              ThinSliceUniformSolenoidEntry,
                              ThinSliceUniformSolenoidExit)
-from .slice_elements_thick import (ThickSliceBend, ThickSliceRBend,
+from .slice_elements_thick import (ThickSliceDevice, ThickSliceBFieldExpansion,
+                                   ThickSliceBend, ThickSliceRBend,
                                    ThickSliceQuadrupole, ThickSliceSextupole,
                                    ThickSliceOctupole, ThickSliceUniformSolenoid,
                                    ThickSliceCavity, ThickSliceCrabCavity,

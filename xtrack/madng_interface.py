@@ -8,6 +8,8 @@ import xtrack as xt
 
 from xtrack.particles.particles import ptau2delta, dptau2ddelta
 
+from .general import _print
+
 NG_XS_MAP = {
     'beta11': 'betx',
     'beta22': 'bety',
@@ -109,7 +111,8 @@ def build_madng_model(line, sequence_name='seq', **kwargs):
     model : object
         Built MAD-NG model.
     """
-    print('Building MAD-NG model for line', line.name, 'with sequence name', sequence_name)
+    _print('Building MAD-NG model for line', line.name,
+           'with sequence name', sequence_name)
     if line.tracker is None:
         line.build_tracker()
     mng = line.to_madng(sequence_name=sequence_name, **kwargs)
@@ -220,6 +223,11 @@ def _tw_ng(line, rdts=(), normal_form=False,
         If ``True``, use Xsuite Twiss output structure and enrich it with MAD-NG data.
     X0 : object, optional
         Initial condition object for open Twiss calculations.
+    compute_chromatic_properties : bool, optional
+        If ``True``, also compute chromatic quantities (``chrom=true`` in MAD-NG).
+    coupling_edw_teng : bool, optional
+        If ``True``, also compute Edwards-Teng coupling quantities
+        (``coupling=true`` in MAD-NG).
     method : int, optional
         MAD-NG method identifier for Twiss/tracking calls.
     **tw_kwargs
@@ -508,12 +516,12 @@ class ActionTwissMadng(Action):
         self.line = line
         self.tw_kwargs = tw_kwargs
         self.tw_kwargs.update(kwargs)
-        self._alredy_prepared = False
+        self._already_prepared = False
         self.X0 = None
 
     def prepare(self, force=False):
 
-        if self._alredy_prepared and not force:
+        if self._already_prepared and not force:
             return
 
         init = self.tw_kwargs.get('init', None)
@@ -527,7 +535,7 @@ class ActionTwissMadng(Action):
             assert isinstance(init, xt.TwissTable)
             self.X0 = madng_get_init(self.line, at=xt.START)
 
-        self._alredy_prepared = True
+        self._already_prepared = True
 
     def run(self):
         return self.line.madng_twiss(xsuite_tw = False, X0=self.X0, **self.tw_kwargs)
@@ -820,7 +828,7 @@ class ActionTwissMadngTPSA(Action):
         """
         Execute the MAD-NG TPSA matching action.
         This method performs either a Twiss or Track operation in MAD-NG
-        depending if quantities can be calculated through tracking or not.
+        depending on whether the quantities can be calculated through tracking or not.
         It retrieves the results and constructs a TwissTable with the requested
         target quantities at the specified target locations.
 

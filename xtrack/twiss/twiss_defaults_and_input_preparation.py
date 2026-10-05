@@ -219,6 +219,26 @@ def _normalize_line_dependent_twiss_inputs(twiss_config):
         elif twiss_config['co_guess'] is None and hasattr(twiss_config['line'], 'particle_ref'):
             twiss_config['particle_ref'] = twiss_config['line'].particle_ref
 
+    species_ratios_provided = any(
+        twiss_config[name] is not None
+        for name in ('chi', 'charge_ratio', 'mass_ratio'))
+    if species_ratios_provided:
+        if (twiss_config['particle_on_co'] is not None
+                or twiss_config['co_guess'] is not None):
+            raise ValueError(
+                '``chi``, ``charge_ratio``, and ``mass_ratio`` cannot be used '
+                'together with ``particle_on_co`` or ``co_guess``. Set the '
+                'species ratios directly on the supplied particle instead.')
+        if twiss_config['particle_ref'] is None:
+            raise ValueError(
+                'A reference particle is required when specifying ``chi``, '
+                '``charge_ratio``, or ``mass_ratio``.')
+        twiss_config['particle_ref'] = _copy_particle_with_species_ratios(
+            particle=twiss_config['particle_ref'],
+            chi=twiss_config['chi'],
+            charge_ratio=twiss_config['charge_ratio'],
+            mass_ratio=twiss_config['mass_ratio'])
+
     if twiss_config['line'].iscollective and not twiss_config['include_collective']:
         _print(
             'The line has collective elements.\n'
@@ -238,6 +258,27 @@ def _normalize_line_dependent_twiss_inputs(twiss_config):
             and (twiss_config['delta0'] is not None or twiss_config['zeta0'] is not None)):
         raise ValueError(
             'delta0 and zeta0 cannot be provided for open twiss')
+
+
+def _copy_particle_with_species_ratios(
+        particle, chi=None, charge_ratio=None, mass_ratio=None):
+    """Copy a reference particle and consistently override species ratios."""
+
+    particle = particle.copy()
+    num_provided = sum(
+        value is not None for value in (chi, charge_ratio, mass_ratio))
+
+    if num_provided == 1:
+        if chi is not None:
+            charge_ratio = particle.charge_ratio[0]
+        elif charge_ratio is not None:
+            mass_ratio = particle.mass_ratio[0]
+        else:
+            charge_ratio = particle.charge_ratio[0]
+
+    particle._update_chi_charge_ratio(
+        chi=chi, charge_ratio=charge_ratio, mass_ratio=mass_ratio)
+    return particle
 
 
 def _resolve_twiss_range_endpoint(line, endpoint, reverse):
@@ -286,7 +327,8 @@ def _prepare_twiss_at_s_markers(twiss_config):
             tracker=twiss_config['line'].tracker,
             at_s=twiss_config['at_s'],
             marker_prefix='inserted_twiss_marker',
-            algorithm='insert'))
+            algorithm='insert',
+            with_progress=twiss_config['with_progress']))
     twiss_config['line'] = auxtracker.line
     twiss_config['at_elements'] = names_inserted_markers
     twiss_config['at_s'] = None
@@ -294,11 +336,11 @@ def _prepare_twiss_at_s_markers(twiss_config):
 
 
 def _build_auxiliary_tracker_with_extra_markers(
-        tracker, at_s, marker_prefix, algorithm='auto'):
+        tracker, at_s, marker_prefix, algorithm='auto', with_progress=True):
 
     import xtrack as xt  # Local import avoids circular imports.
 
-    assert algorithm in ['auto', 'insert', 'regen_all_drift']
+    assert algorithm in ['auto', 'insert', 'regen_all_drifts']
     if algorithm == 'auto':
         if len(at_s) < 10:
             algorithm = 'insert'
@@ -317,7 +359,7 @@ def _build_auxiliary_tracker_with_extra_markers(
         name = marker_prefix + f'{ii}'
         insertions.append(auxline.env.new(name, 'Marker', at=ss))
         names_inserted_markers.append(name)
-    auxline.insert(insertions)
+    auxline.insert(insertions, with_progress=with_progress)
 
     auxtracker = xt.Tracker(
         _buffer=tracker._buffer,
@@ -408,8 +450,8 @@ def _handle_deprecated_twiss_kwargs(
     if at_s is not None:
         warn('`at_s` keyword is deprecated and will be removed in future versions. \n'
         'The same functionality can be achieved making a shallow copy of the line '
-        '(e.g. `line_copy = line.copy(shallow=True)`), using the`line.cut_at_s(...)` '
-        ' functionality and then calling line_copy.twiss(...) on the cut line.'
+        '(e.g. `line_copy = line.copy(shallow=True)`), using the `line.cut_at_s(...)` '
+        'functionality and then calling line_copy.twiss(...) on the cut line.'
         + DEPRECATION_INFO_PREP_1_0,
         FutureWarning)
 
@@ -438,13 +480,13 @@ def _handle_deprecated_twiss_kwargs(
 
     if freeze_energy:
         warn('The `freeze_energy` keyword is deprecated and will be removed in future versions. \n'
-             'You can use twiss(method="4d", ...) to suppress the energy kick from RF cavities'
+             'You can use twiss(method="4d", ...) to suppress the energy kick from RF cavities.'
              + DEPRECATION_INFO_PREP_1_0,
              FutureWarning)
 
     if freeze_longitudinal:
         warn('The `freeze_longitudinal` keyword is deprecated and will be removed in future versions. \n'
-             'You can use twiss(method="4d", ...) to suppress the energy kick from RF cavities'
+             'You can use twiss(method="4d", ...) to suppress the energy kick from RF cavities.'
              + DEPRECATION_INFO_PREP_1_0,
              FutureWarning)
 

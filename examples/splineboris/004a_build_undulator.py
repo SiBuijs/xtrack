@@ -17,7 +17,7 @@ df_raw_data = pd.read_csv(
 
 # Use fitting procedure to extract field and derivatives on the reference
 # trajectory ("tube approach", B. Riemann & M. Aiba, IPAC2021 TUPAB238). This
-# class is taylored for this example data, use your own fitting procedure for
+# class is tailored for this example data, use your own fitting procedure for
 # other datasets.
 from xtrack._temp.splineboris.tube_fitter import TubeFitter
 from xtrack._temp.splineboris.splineboris_sequence import SplineBorisSequence

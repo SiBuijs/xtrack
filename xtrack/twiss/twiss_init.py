@@ -13,6 +13,7 @@ from .. import json as json_utils
 from ..table import Table
 from .twiss_defaults_and_input_preparation import (
     VARS_FOR_TWISS_INIT_GENERATION,
+    _copy_particle_with_species_ratios,
     _element_ref_to_index,
 )
 
@@ -190,7 +191,7 @@ class TwissInit:
 
         return cls.from_dict(dct)
 
-    def _finish_initialization(self, line, element_name):
+    def _finish_initialization(self, line, element_name, particle_ref=None):
 
         if (line is not None and 'reverse' in line.twiss_default
             and line.twiss_default['reverse']):
@@ -225,6 +226,7 @@ class TwissInit:
                 spin_z=self._temp_co_data.get('spin_z', 0),
                 delta=self._temp_co_data['delta'], zeta=self._temp_co_data['zeta'],
                 line=line,
+                particle_ref=particle_ref,
                 include_collective=True, # In fact it does not matter
             )
             particle_on_co.s = s_ele_twiss
@@ -476,7 +478,7 @@ def _W_phys2norm(x, px, y, py, zeta, pzeta, W_matrix, co_dict, nemitt_x=None, ne
     gemitt_zeta = np.ones(shape=np.shape(co_dict['beta0'])) if nemitt_zeta is None else (
         nemitt_zeta / co_dict['beta0'] / co_dict['gamma0'])
 
-    # Prepaing co arrray and gemitt array:
+    # Preparing co array and gemitt array:
     co = np.array([co_dict['x'], co_dict['px'], co_dict['y'], co_dict['py'],
                   co_dict['zeta'], co_dict['ptau'] / co_dict['beta0']])
     gemitt_values = np.array(
@@ -488,7 +490,7 @@ def _W_phys2norm(x, px, y, py, zeta, pzeta, W_matrix, co_dict, nemitt_x=None, ne
     for add_axis in range(-1, len(np.shape(x))-len(np.shape(gemitt_values))):
         gemitt_values = gemitt_values[:, np.newaxis]
 
-    # substracting closed orbit
+    # subtracting closed orbit
     XX = np.array([x, px, y, py, zeta, pzeta])
     XX -= co
 
@@ -604,7 +606,16 @@ def _build_twiss_init_from_inputs(twiss_config):
                 'init is provided')
             init._finish_initialization(
                 line=twiss_config['line'],
-                element_name=(init.element_name or twiss_config['start']))
+                element_name=(init.element_name or twiss_config['start']),
+                particle_ref=twiss_config['particle_ref'])
+
+        if any(twiss_config[name] is not None
+               for name in ('chi', 'charge_ratio', 'mass_ratio')):
+            init.particle_on_co = _copy_particle_with_species_ratios(
+                particle=init.particle_on_co,
+                chi=twiss_config['chi'],
+                charge_ratio=twiss_config['charge_ratio'],
+                mass_ratio=twiss_config['mass_ratio'])
 
         if init.reference_frame is None:
             init.reference_frame = {

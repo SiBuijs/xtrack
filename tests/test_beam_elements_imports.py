@@ -5,9 +5,10 @@ import xtrack.beam_elements as beam_elements
 EXPECTED_BEAM_ELEMENT_EXPORTS = {
     'copy', 'List', 'warn', 'np', 'Number', 'factorial', 'xo', 'xt',
     'BeamElement', 'RandomUniformAccurate', 'RandomExponential',
-    'RandomNormal', 'DEPRECATION_INFO_PREP_1_0', 'survey_advance_element',
+    'RandomNormal', 'DEPRECATION_INFO_PREP_1_0',
     'RecordIndex', 'DEFAULT_MULTIPOLE_ORDER',
     'SynchrotronRadiationRecord', 'Spline4', 'SplineBoris',
+    'BFieldExpansion', 'ThickSliceBFieldExpansion',
     'ReferenceEnergyIncrease', 'ReferenceEnergyChange', 'Marker', 'Drift',
     'DriftExact', 'Cavity', 'CrabCavity', 'XYShift', 'Translation', 'Elens',
     'NonLinearLens', 'Wire', 'Rotation', 'SRotation', 'XRotation',
