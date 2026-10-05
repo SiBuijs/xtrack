@@ -1,3 +1,4 @@
+import os
 import sys
 import xtrack as xt
 import numpy as np
@@ -64,7 +65,11 @@ def get_tube_fitter():
 
 # plt.show()
 
-OUT_DIR = Path('/home/simonfan/cernbox/Pictures/SLS_Undulator_Studies')
+# Default ~/cernbox/Pictures/SLS_Undulator_Studies (works on any machine/user),
+# overridable via the SLS_UNDULATOR_PLOT_DIR env var -- same as 012.
+OUT_DIR = Path(os.environ.get(
+    'SLS_UNDULATOR_PLOT_DIR',
+    Path.home() / 'cernbox' / 'Pictures' / 'SLS_Undulator_Studies'))
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Cached per-case scan/formula results, so that re-running just to tweak a
@@ -93,6 +98,10 @@ MODEL_LABELS = ('SB', 'MK')
 # ars11_uind_0210_1 / ars11_uind_0610_1 elements simulated below has NOT been
 # confirmed -- overlaid here purely as a shape/order-of-magnitude reference,
 # plotted directly on the same Delta Qx/Qy scale as the simulated curves.
+# The dtune_*_measured columns are closed-gap minus open-gap tunes, subtracted
+# point by point (verified against the raw open/closed-gap tune scans, also
+# digitized into this CSV as tune_{x,y}_{open,closed}_gap, absolute tunes
+# with the plot's offsets Qx = 39.37, Qy = 15.22 added back).
 MEASURED_TUNE_SHIFT_CSV = (
     Path(__file__).resolve().parent.parent.parent / 'test_data' / 'sls'
     / 'x11ma_gap11p5mm_tune_shift_digitized.csv'
@@ -784,6 +793,46 @@ def plot_case(data, place_label, model_label):
         fig.savefig(out_path, bbox_inches='tight')
         print(f"Saved {out_path}")
 
+
+def plot_measured_open_gap_drift():
+    """Measurement-only figure: the open-gap tune drift with bump amplitude
+    (bump orbit through the ring's own sextupoles, no undulator involved)
+    next to the undulator signal (closed minus open gap), both relative to
+    their own mean so the sizes of the two variations can be compared
+    directly. Point-by-point subtraction of the open gap (as done in the
+    dtune_*_measured columns) removes this drift; subtracting only the
+    open-gap mean would leave it in the measured Delta Q.
+    """
+    measured = load_measured_tune_shift()
+    if measured is None or 'tune_x_open_gap' not in measured:
+        return None
+    meas_x_um = np.asarray(measured['bump_amplitude_um'], dtype=float)
+
+    fig, axes = plt.subplots(2, 1, figsize=(9, 7), sharex=True)
+    for ax, plane in zip(axes, ('x', 'y')):
+        q_open = np.asarray(measured[f'tune_{plane}_open_gap'], dtype=float)
+        dq = np.asarray(measured[f'dtune_{plane}_measured'], dtype=float)
+        ax.plot(meas_x_um, q_open - q_open.mean(), marker='o', markersize=4,
+                color='tab:blue',
+                label=f'Open gap: $Q_{plane} - \\langle Q_{plane}\\rangle$')
+        ax.plot(meas_x_um, dq - dq.mean(), marker='d', markersize=4,
+                color='tab:purple',
+                label=f'Closed $-$ open: $\\Delta Q_{plane} - '
+                      f'\\langle\\Delta Q_{plane}\\rangle$')
+        ax.set_ylabel(f'Tune {plane} variation')
+        ax.grid(True, alpha=0.3)
+        ax.legend(fontsize=8)
+    axes[0].set_title('X11MA, gap = 11.5 mm: open-gap drift vs undulator signal')
+    axes[1].set_xlabel(r'Bump amplitude x [$\mu$m]')
+    fig.tight_layout()
+
+    out_path = OUT_DIR / 'x11ma_open_gap_drift.pdf'
+    fig.savefig(out_path, bbox_inches='tight')
+    print(f"Saved {out_path}")
+    return fig
+
+
+plot_measured_open_gap_drift()
 
 for place_label, wiggler_places in WIGGLER_CASES:
     for model_label in MODEL_LABELS:
