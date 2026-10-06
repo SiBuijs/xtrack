@@ -475,6 +475,107 @@ def get_case_data(place_label, wiggler_places, model_label):
     return data
 
 
+# Style of the fit-coefficient text boxes stacked under the legends.
+text_box_kwargs = dict(va='top', ha='left', fontsize=8, linespacing=1.4,
+                       bbox=dict(boxstyle='round', fc='white', alpha=0.85, edgecolor='0.7'))
+
+
+def legend_outside(ax):
+    # Anchor the legend to the top of the margin just outside the right
+    # edge of the axes, so it doesn't sit on top of the data. Figures
+    # using this get saved with bbox_inches='tight' and a
+    # subplots_adjust(right=...) so the legend stays on-canvas both on
+    # screen and in the PDF.
+    ax.legend(loc='upper left', bbox_to_anchor=(1.01, 1.0), fontsize=8)
+
+def stack_boxes_under_legend(ax, boxes):
+    # Stack coefficient text boxes down the right margin, starting just
+    # below the legend and left-aligned with it. The legend's (and each
+    # box's) rendered size is only known once the figure has been laid
+    # out and drawn, hence the canvas.draw() calls -- so this must run
+    # *after* tight_layout()/subplots_adjust(), otherwise the measured
+    # geometry refers to an axes about to change size.
+    fig = ax.get_figure()
+    fig.canvas.draw()
+    to_axes = ax.transAxes.inverted()
+
+    def frame_bbox(artist):
+        # The drawn rounded frame, not the text inside it -- so boxes are
+        # spaced and aligned frame-to-frame, like the legend.
+        patch = artist.get_bbox_patch()
+        return (patch or artist).get_window_extent().transformed(to_axes)
+
+    legend_bbox = ax.get_legend().get_window_extent().transformed(to_axes)
+    y = legend_bbox.y0
+    for text, kwargs in boxes:
+        y -= 0.04
+        artist = ax.text(1.01, y, text, transform=ax.transAxes, **kwargs)
+        fig.canvas.draw()
+        # ax.text() anchors the *text*, while the legend's bbox_to_anchor
+        # anchors its *frame*, so at the same x the rounded box overhangs
+        # to the left of the legend by its padding. Measure that and
+        # shift x by the difference to line the two frames up.
+        artist.set_x(artist.get_position()[0]
+                     + (legend_bbox.x0 - frame_bbox(artist).x0))
+        fig.canvas.draw()
+        y = frame_bbox(artist).y0
+
+
+def fit_box_text(plane, coef, prefix=''):
+    return (f'{prefix}'
+            f'$\\frac{{1}}{{2}}\\frac{{d^2\\Delta Q_{plane}}}{{dx^2}}$ = {coef[0]:.4e}\n'
+            f'$\\frac{{d\\Delta Q_{plane}}}{{dx}}$ = {coef[1]:.4e}\n'
+            f'$\\Delta Q_{plane}(0)$ = {coef[2]:.4e}')
+
+
+def tune_shift_comparison_figure(sim_series, x_meas, dq_meas, meas_label,
+                                 title, suptitle):
+    """Simulated vs measured Delta Q_x,y with a quadratic fit through each
+    and coefficient boxes in the right margin -- same layout as the main
+    tune-shift figure. sim_series is a list of (x, dq, label, color,
+    marker, fit_box_prefix), one per simulated curve; dq and dq_meas are
+    dicts keyed 'x'/'y', and labels may contain {p} for the plane.
+    """
+    fig, axes = plt.subplots(2, 1, figsize=(9, 9), sharex=True)
+    axes_boxes = []
+    for ax, plane in zip(axes, ('x', 'y')):
+        boxes = []
+        for x_sim, dq_sim, label, color, marker, box_prefix in sim_series:
+            coef_sim = np.polyfit(x_sim, dq_sim[plane], 2)
+            print(f"[{suptitle}: {title}] {label.format(p=plane)}: "
+                  f"ΔQ{plane} quadratic fit coefficients {coef_sim}")
+            ax.plot(x_sim, dq_sim[plane], marker=marker, markersize=4,
+                    color=color, label=label.format(p=plane))
+            ax.plot(x_sim, np.poly1d(coef_sim)(x_sim), linestyle='--',
+                    color='k', linewidth=1)
+            boxes.append((fit_box_text(plane, coef_sim, box_prefix),
+                          text_box_kwargs))
+        coef_meas = np.polyfit(x_meas, dq_meas[plane], 2)
+        ax.plot(x_meas, dq_meas[plane], marker='d', linestyle='none',
+                markersize=4, color='tab:purple',
+                label=meas_label.format(p=plane))
+        ax.plot(x_meas, np.poly1d(coef_meas)(x_meas), linestyle='--',
+                color='tab:red', label='Quadratic fit (measured)')
+        # one legend entry for all the simulated curves' fits
+        ax.plot([], [], linestyle='--', color='k', linewidth=1,
+                label='Quadratic fit')
+        boxes.append((fit_box_text(plane, coef_meas, 'measured fit:\n'),
+                      text_box_kwargs))
+        ax.set_ylabel(f'$\\Delta Q_{plane}$')
+        ax.grid(True, alpha=0.3)
+        legend_outside(ax)
+        axes_boxes.append(boxes)
+    axes[0].set_title(title)
+    axes[1].set_xlabel('Horizontal offset [m]')
+
+    fig.suptitle(suptitle)
+    fig.tight_layout()
+    fig.subplots_adjust(right=0.62)
+    for ax, boxes in zip(axes, axes_boxes):
+        stack_boxes_under_legend(ax, boxes)
+    return fig
+
+
 def plot_case(data, place_label, model_label):
     """Build and save the 3 figures for one case, purely from the dict
     returned by compute_case()/get_case_data() -- no line building, matching
@@ -487,46 +588,6 @@ def plot_case(data, place_label, model_label):
         for s_start, s_end in data['undulator_s_ranges']:
             ax.axvline(s_start, color='0.4', linestyle='--', linewidth=1)
             ax.axvline(s_end, color='0.4', linestyle='--', linewidth=1)
-
-    def legend_outside(ax):
-        # Anchor the legend to the top of the margin just outside the right
-        # edge of the axes, so it doesn't sit on top of the data. Figures
-        # using this get saved with bbox_inches='tight' and a
-        # subplots_adjust(right=...) so the legend stays on-canvas both on
-        # screen and in the PDF.
-        ax.legend(loc='upper left', bbox_to_anchor=(1.01, 1.0), fontsize=8)
-
-    def stack_boxes_under_legend(ax, boxes):
-        # Stack coefficient text boxes down the right margin, starting just
-        # below the legend and left-aligned with it. The legend's (and each
-        # box's) rendered size is only known once the figure has been laid
-        # out and drawn, hence the canvas.draw() calls -- so this must run
-        # *after* tight_layout()/subplots_adjust(), otherwise the measured
-        # geometry refers to an axes about to change size.
-        fig = ax.get_figure()
-        fig.canvas.draw()
-        to_axes = ax.transAxes.inverted()
-
-        def frame_bbox(artist):
-            # The drawn rounded frame, not the text inside it -- so boxes are
-            # spaced and aligned frame-to-frame, like the legend.
-            patch = artist.get_bbox_patch()
-            return (patch or artist).get_window_extent().transformed(to_axes)
-
-        legend_bbox = ax.get_legend().get_window_extent().transformed(to_axes)
-        y = legend_bbox.y0
-        for text, kwargs in boxes:
-            y -= 0.04
-            artist = ax.text(1.01, y, text, transform=ax.transAxes, **kwargs)
-            fig.canvas.draw()
-            # ax.text() anchors the *text*, while the legend's bbox_to_anchor
-            # anchors its *frame*, so at the same x the rounded box overhangs
-            # to the left of the legend by its padding. Measure that and
-            # shift x by the difference to line the two frames up.
-            artist.set_x(artist.get_position()[0]
-                         + (legend_bbox.x0 - frame_bbox(artist).x0))
-            fig.canvas.draw()
-            y = frame_bbox(artist).y0
 
     hor_off_list = data['hor_off_list']
     deltaqx_list = data['deltaqx_list']
@@ -640,8 +701,6 @@ def plot_case(data, place_label, model_label):
     # on top of the data. Collected per-axes here and only placed once the
     # figure has been laid out, since where they go depends on how tall the
     # legend turns out to be.
-    text_box_kwargs = dict(va='top', ha='left', fontsize=8, linespacing=1.4,
-                            bbox=dict(boxstyle='round', fc='white', alpha=0.85, edgecolor='0.7'))
     ax1_boxes = []
     ax2_boxes = []
 
@@ -787,105 +846,34 @@ def plot_case(data, place_label, model_label):
         stack_boxes_under_legend(ax1_m, ax1_m_boxes)
         stack_boxes_under_legend(ax2_m, ax2_m_boxes)
 
-    def tune_shift_comparison_figure(x_sim, dq_sim, sim_label,
-                                     x_meas, dq_meas, meas_label, title):
-        # Simulated vs measured Delta Q_x,y (dicts keyed 'x'/'y') with a
-        # quadratic fit through each, coefficient boxes in the right margin
-        # -- same layout as the main tune-shift figure.
-        fig, axes = plt.subplots(2, 1, figsize=(9, 9), sharex=True)
-        axes_boxes = []
-        for ax, plane, color, marker in zip(
-                axes, ('x', 'y'), ('tab:blue', 'tab:orange'), ('o', 's')):
-            coef_sim = np.polyfit(x_sim, dq_sim[plane], 2)
-            coef_meas = np.polyfit(x_meas, dq_meas[plane], 2)
-            print(f"[{title}] ΔQ{plane} quadratic fit coefficients: "
-                  f"sim {coef_sim}, measured {coef_meas}")
-
-            ax.plot(x_sim, dq_sim[plane], marker=marker, color=color,
-                    label=sim_label.format(p=plane))
-            ax.plot(x_sim, np.poly1d(coef_sim)(x_sim), linestyle='--',
-                    color='k', label='Quadratic fit')
-            ax.plot(x_meas, dq_meas[plane], marker='d', linestyle='none',
-                    markersize=4, color='tab:purple',
-                    label=meas_label.format(p=plane))
-            ax.plot(x_meas, np.poly1d(coef_meas)(x_meas), linestyle='--',
-                    color='tab:red', label='Quadratic fit (measured)')
-            ax.set_ylabel(f'$\\Delta Q_{plane}$')
-            ax.grid(True, alpha=0.3)
-            legend_outside(ax)
-            boxes = []
-            for prefix, coef in (('', coef_sim), ('measured fit:\n', coef_meas)):
-                boxes.append((
-                    f'{prefix}'
-                    f'$\\frac{{1}}{{2}}\\frac{{d^2\\Delta Q_{plane}}}{{dx^2}}$ = {coef[0]:.4e}\n'
-                    f'$\\frac{{d\\Delta Q_{plane}}}{{dx}}$ = {coef[1]:.4e}\n'
-                    f'$\\Delta Q_{plane}(0)$ = {coef[2]:.4e}',
-                    text_box_kwargs))
-            axes_boxes.append(boxes)
-        axes[0].set_title(title)
-        axes[1].set_xlabel('Horizontal offset [m]')
-
-        fig.suptitle(case_label)
-        fig.tight_layout()
-        fig.subplots_adjust(right=0.62)
-        for ax, boxes in zip(axes, axes_boxes):
-            stack_boxes_under_legend(ax, boxes)
-        return fig
-
-    # --- two more comparisons against the measurement, both needing the
-    #     absolute tunes (hence qx_0/qy_0, the Twiss tunes without undulator):
-    #   * tune_shift_vs_open_gap: Twiss Q_x,y with undulator minus the
-    #     *measured* open-gap Q_x,y at the same bump amplitude (instead of
-    #     minus the Twiss tune without undulator), next to the measured
-    #     closed-minus-open-gap shift;
-    #   * tune_shift_closed_gap_vs_model: the reverse -- the measured
-    #     closed-gap Q_x,y (closed-minus-open shift with the open gap added
-    #     back in) minus the Twiss tune without undulator, next to the
-    #     usual simulated shift (Twiss with minus without undulator).
-    #   Both are dominated by any offset between the model's bare tunes and
-    #   the machine's open-gap tunes (~0.01 in Qy).
-    fig_tune_shift_open_gap = None
+    # --- measured closed-gap Q_x,y (closed-minus-open shift with the open
+    #     gap added back in) minus the Twiss tune without undulator, next to
+    #     the usual simulated shift (Twiss with minus without undulator).
+    #     Needs the absolute tunes, hence qx_0/qy_0; dominated by any offset
+    #     between the model's bare tunes and the machine's open-gap tunes
+    #     (~0.01 in Qy). The opposite comparison (Twiss with undulator minus
+    #     measured open gap) is plot_models_combined(), SB and MK overlaid. ---
     fig_tune_shift_closed_gap = None
     if measured is not None and 'qx_0' not in data:
-        print("[tune_shift_vs_open_gap / tune_shift_closed_gap_vs_model] "
-              "cached data has no qx_0/qy_0 (computed before these plots "
-              "existed) -- rerun without --replot to produce them")
+        print("[tune_shift_closed_gap_vs_model] cached data has no "
+              "qx_0/qy_0 (computed before this plot existed) -- rerun "
+              "without --replot to produce it")
     elif measured is not None:
         q_0 = {'x': float(data['qx_0']), 'y': float(data['qy_0'])}
-        meas_q_open = {
-            plane: np.asarray(measured[f'tune_{plane}_open_gap'], dtype=float)
-            for plane in ('x', 'y')}
-        meas_dq = {'x': meas_dqx, 'y': meas_dqy}
-        sim_dq = {'x': deltaqx_list, 'y': deltaqy_list}
-        # Simulated tune shifts interpolated onto the measured bump
-        # amplitudes (exact when the scan was run at them, see hor_off_list
-        # in compute_case()); points outside the simulated range are dropped.
-        in_range = ((meas_x >= hor_off_list.min())
-                    & (meas_x <= hor_off_list.max()))
-        x_sim = meas_x[in_range]
-
-        dq_sim_vs_open = {
-            plane: (np.interp(x_sim, hor_off_list, sim_dq[plane]) + q_0[plane]
-                    - meas_q_open[plane][in_range])
-            for plane in ('x', 'y')}
-        fig_tune_shift_open_gap = tune_shift_comparison_figure(
-            x_sim, dq_sim_vs_open,
-            'Twiss $Q_{p}$ $-$ measured open-gap $Q_{p}$',
-            meas_x, meas_dq, 'Measurements (closed $-$ open gap)',
-            'Tune shift vs undulator horizontal offset '
-            '(relative to measured open-gap tune)')
-
         dq_meas_closed_vs_model = {
-            plane: meas_dq[plane] + meas_q_open[plane] - q_0[plane]
-            for plane in ('x', 'y')}
+            'x': meas_dqx + np.asarray(measured['tune_x_open_gap'], dtype=float) - q_0['x'],
+            'y': meas_dqy + np.asarray(measured['tune_y_open_gap'], dtype=float) - q_0['y'],
+        }
         fig_tune_shift_closed_gap = tune_shift_comparison_figure(
-            hor_off_list, sim_dq, 'Twiss (with $-$ without undulator)',
+            [(hor_off_list, {'x': deltaqx_list, 'y': deltaqy_list},
+              'Twiss (with $-$ without undulator)', 'tab:blue', 'o', '')],
             meas_x, dq_meas_closed_vs_model,
             'Measured closed-gap $Q_{p}$ $-$ Twiss $Q_{p}$ without undulator',
             'Tune shift vs undulator horizontal offset '
-            '(relative to Twiss tune without undulator)')
+            '(relative to Twiss tune without undulator)',
+            case_label)
 
-    # Save the figures for this case (3, or 6 when measured data is
+    # Save the figures for this case (1, or 3 when measured data is
     # available), named
     # "<place_label>_<model_label>_<what the figure shows>.pdf".
     figures = [
@@ -895,8 +883,6 @@ def plot_case(data, place_label, model_label):
         ]
     if fig_tune_shift_measured is not None:
         figures.append((fig_tune_shift_measured, 'tune_shift_measured'))
-    if fig_tune_shift_open_gap is not None:
-        figures.append((fig_tune_shift_open_gap, 'tune_shift_vs_open_gap'))
     if fig_tune_shift_closed_gap is not None:
         figures.append((fig_tune_shift_closed_gap, 'tune_shift_closed_gap_vs_model'))
     for fig, suffix in figures:
@@ -944,15 +930,106 @@ def plot_measured_open_gap_drift():
     return fig
 
 
+MODEL_STYLES = {'SB': ('SplineBoris', 'tab:blue', 'o'),
+                'MK': ('Multipole kick', 'tab:green', 's')}
+
+
+def plot_models_combined(place_label, case_datas, reference,
+                         zero_at_origin=False):
+    """Simulated tune shift for both undulator models (case_datas:
+    {model_label: data}) in one figure, next to the measured
+    closed-minus-open-gap shift. reference sets what the simulated Twiss
+    Q_x,y with undulator is taken relative to:
+      'open_gap': the *measured* open-gap Q_x,y at the same bump amplitude;
+      'model':    the Twiss Q_x,y without undulator (as in the main
+                  tune_shift figure).
+    With zero_at_origin, every curve is shifted by its own (linearly
+    interpolated) value at x = 0, so only the progression with offset is
+    compared, not the absolute level.
+    """
+    measured = load_measured_tune_shift()
+    if measured is None:
+        return None
+    if (reference == 'open_gap'
+            and any('qx_0' not in data for data in case_datas.values())):
+        print(f"[{place_label}_tune_shift_vs_open_gap] cached data has no "
+              "qx_0/qy_0 (computed before this plot existed) -- rerun "
+              "without --replot to produce it")
+        return None
+    meas_x = np.asarray(measured['bump_amplitude_m'], dtype=float)
+    meas_q_open = {plane: np.asarray(measured[f'tune_{plane}_open_gap'], dtype=float)
+                   for plane in ('x', 'y')}
+    meas_dq = {plane: np.asarray(measured[f'dtune_{plane}_measured'], dtype=float)
+               for plane in ('x', 'y')}
+
+    def shift_to_origin(x, dq):
+        if not zero_at_origin:
+            return dq
+        return {plane: dq[plane] - np.interp(0., x, dq[plane])
+                for plane in ('x', 'y')}
+
+    sim_series = []
+    for model_label, data in case_datas.items():
+        hor_off_list = data['hor_off_list']
+        # Simulated tunes interpolated onto the measured bump amplitudes
+        # (exact when the scan was run at them, see hor_off_list in
+        # compute_case()); points outside the simulated range are dropped.
+        in_range = ((meas_x >= hor_off_list.min())
+                    & (meas_x <= hor_off_list.max()))
+        x_sim = meas_x[in_range]
+        dq_twiss = {'x': np.interp(x_sim, hor_off_list, data['deltaqx_list']),
+                    'y': np.interp(x_sim, hor_off_list, data['deltaqy_list'])}
+        model_name, color, marker = MODEL_STYLES[model_label]
+        if reference == 'open_gap':
+            q_0 = {'x': float(data['qx_0']), 'y': float(data['qy_0'])}
+            dq_sim = {plane: (dq_twiss[plane] + q_0[plane]
+                              - meas_q_open[plane][in_range])
+                      for plane in ('x', 'y')}
+            label = (f'{model_name}: Twiss $Q_{{p}}$ $-$ '
+                     f'measured open-gap $Q_{{p}}$')
+        else:
+            dq_sim = dq_twiss
+            label = f'{model_name}: Twiss (with $-$ without undulator)'
+        sim_series.append((
+            x_sim, shift_to_origin(x_sim, dq_sim), label,
+            color, marker, f'{model_name} fit:\n'))
+
+    if reference == 'open_gap':
+        title = ('Tune shift vs undulator horizontal offset '
+                 '(relative to measured open-gap tune)')
+        suffix = 'tune_shift_vs_open_gap'
+    else:
+        title = ('Tune shift vs undulator horizontal offset '
+                 '(relative to Twiss tune without undulator)')
+        suffix = 'tune_shift_models'
+    if zero_at_origin:
+        title += ',\nshifted to $\\Delta Q(0) = 0$'
+        suffix += '_zeroed'
+    fig = tune_shift_comparison_figure(
+        sim_series, meas_x, shift_to_origin(meas_x, meas_dq),
+        'Measurements (closed $-$ open gap)', title, place_label)
+    out_path = OUT_DIR / f'{place_label}_{suffix}.pdf'
+    fig.savefig(out_path, bbox_inches='tight')
+    print(f"Saved {out_path}")
+    return fig
+
+
 plot_measured_open_gap_drift()
 
 for place_label, wiggler_places in WIGGLER_CASES:
+    case_datas = {}
     for model_label in MODEL_LABELS:
-        case_data = get_case_data(place_label, wiggler_places, model_label)
-        plot_case(case_data, place_label, model_label)
+        case_datas[model_label] = get_case_data(
+            place_label, wiggler_places, model_label)
+        plot_case(case_datas[model_label], place_label, model_label)
+    plot_models_combined(place_label, case_datas, 'open_gap')
+    plot_models_combined(place_label, case_datas, 'open_gap',
+                         zero_at_origin=True)
+    plot_models_combined(place_label, case_datas, 'model',
+                         zero_at_origin=True)
 
-# All figures across every case (3 or 4 figures -- the 4th only when
-# measured data is available -- x 2 models x 3 placements) are kept open
-# (not closed inside plot_case()) so they can all be reviewed interactively
-# here, in addition to having been saved as PDFs above.
+# All figures (per placement: the per-model ones from plot_case() plus the
+# SB/MK-combined ones from plot_models_combined()) are kept open so they can all
+# be reviewed interactively here, in addition to having been saved as PDFs
+# above.
 plt.show()

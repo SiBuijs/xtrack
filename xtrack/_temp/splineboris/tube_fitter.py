@@ -34,7 +34,6 @@ import io
 import math
 from pathlib import Path
 
-import numba
 import numpy as np
 import pandas as pd
 import scipy as sc
@@ -80,119 +79,108 @@ def _frame_indices(s_full: np.ndarray, frames: np.ndarray) -> np.ndarray:
     return np.array([int(np.argmin(np.abs(s_full - f))) for f in frames], dtype=int)
 
 
-@numba.njit(cache=True)
-def _accumulate_block_tridiagonal(
-    pt_ptr, basis_idx, beta_vals, x, y, bx, by,
-    p_bx, q_bx, idx_bx, p_by, q_by, idx_by,
-    D, E, r,
-):
-    """Scatter-add every raw point's contribution directly into the tube
-    fit's block-tridiagonal normal-equations accumulators -- no global
-    design matrix ever gets built. Tent's local support means a point's
-    design row is nonzero on at most 2 adjacent frames, so its contribution
-    is a small ``(<=2, n_pq)``-shaped update: diagonal blocks ``D[j]`` (and
-    ``E[j]``, the coupling between frames ``j`` and ``j + 1``, when 2 frames
-    are active) accumulate outer products of the point's local gradient
-    vectors; ``r[j]`` accumulates the corresponding RHS contribution.
+def _tent_intervals(
+    z: np.ndarray, knots: np.ndarray, n_frames: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Group raw points by the tent-basis interval they fall in. A degree-1
+    B-spline has at most 2 active basis functions per point -- frame ``k``
+    with weight ``b0`` and frame ``k + 1`` with weight ``b1`` -- so every
+    point belongs to exactly one interval ``k``.
 
-    Deliberately **not** ``parallel=True``: multiple points across the whole
-    dataset write into the same ``D[j]``/``E[j]``/``r[j]`` (every point near
-    frame ``j`` does), so unlike the old CSR-writing kernel this can't just
-    hand out disjoint output slices -- it has to run as a single serial pass.
+    Returns ``(order, bounds, b0, b1)``: ``order`` sorts the points by
+    interval, after which the points of interval ``k`` are the contiguous
+    slice ``bounds[k]:bounds[k + 1]``; ``b0``/``b1`` are already in sorted
+    order (``b1 = 0`` for points with only one active basis function).
     """
-    n_pts = pt_ptr.shape[0] - 1
-    m_bx = p_bx.shape[0]
-    m_by = p_by.shape[0]
-    g_bx = np.empty(m_bx)
-    g_by = np.empty(m_by)
-    for i in range(n_pts):
-        xi = x[i]
-        yi = y[i]
-        for t in range(m_bx):
-            p = p_bx[t]
-            q = q_bx[t]
-            g_bx[t] = -p * xi ** (p - 1) * yi ** q
-        for t in range(m_by):
-            p = p_by[t]
-            q = q_by[t]
-            g_by[t] = -q * xi ** p * yi ** (q - 1)
-        bxi = bx[i]
-        byi = by[i]
-
-        start, end = pt_ptr[i], pt_ptr[i + 1]
-        n_active = end - start
-        for a in range(n_active):
-            jj = start + a
-            j = basis_idx[jj]
-            beta = beta_vals[jj]
-            for t1 in range(m_bx):
-                i1 = idx_bx[t1]
-                r[j, i1] += beta * g_bx[t1] * bxi
-                for t2 in range(m_bx):
-                    D[j, i1, idx_bx[t2]] += beta * beta * g_bx[t1] * g_bx[t2]
-            for t1 in range(m_by):
-                i1 = idx_by[t1]
-                r[j, i1] += beta * g_by[t1] * byi
-                for t2 in range(m_by):
-                    D[j, i1, idx_by[t2]] += beta * beta * g_by[t1] * g_by[t2]
-            if a + 1 < n_active:
-                jj2 = start + a + 1
-                beta2 = beta_vals[jj2]
-                for t1 in range(m_bx):
-                    i1 = idx_bx[t1]
-                    for t2 in range(m_bx):
-                        E[j, i1, idx_bx[t2]] += beta * beta2 * g_bx[t1] * g_bx[t2]
-                for t1 in range(m_by):
-                    i1 = idx_by[t1]
-                    for t2 in range(m_by):
-                        E[j, i1, idx_by[t2]] += beta * beta2 * g_by[t1] * g_by[t2]
+    design = BSpline.design_matrix(z, knots, 1).tocsr()
+    ptr, idx, val = design.indptr, design.indices, design.data
+    first = idx[ptr[:-1]]
+    two = np.diff(ptr) == 2
+    if np.diff(ptr).max() > 2 or np.any(idx[ptr[:-1][two] + 1] != first[two] + 1):
+        raise RuntimeError("Unexpected tent-basis structure in design matrix")
+    b0 = val[ptr[:-1]]
+    b1 = np.zeros_like(b0)
+    b1[two] = val[ptr[:-1][two] + 1]
+    order = np.argsort(first, kind="stable")
+    bounds = np.searchsorted(first[order], np.arange(n_frames + 1))
+    return order, bounds, b0[order], b1[order]
 
 
-@numba.njit(parallel=True, cache=True)
-def _accumulate_residual_sumsq(
-    pt_ptr, basis_idx, beta_vals, x, y, bx, by,
-    p_bx, q_bx, idx_bx, p_by, q_by, idx_by,
-    x_sol,
+def _transverse_gradients(
+    x: np.ndarray, y: np.ndarray, pq: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Bx and By design rows, each ``(n_pts, n_pq)``: the (p, q) term of
+    ``B = -grad(x^p y^q)``, i.e. ``-p x^(p-1) y^q`` and ``-q x^p y^(q-1)``
+    (zero where p = 0 resp. q = 0). Powers come from a table built by
+    repeated multiplication -- much faster than ``x ** p`` with array
+    exponents."""
+    p, q = pq[:, 0], pq[:, 1]
+    n_pow = int(pq.max()) + 1
+    xp = np.ones((len(x), n_pow))
+    yp = np.ones((len(y), n_pow))
+    for e in range(1, n_pow):
+        xp[:, e] = xp[:, e - 1] * x
+        yp[:, e] = yp[:, e - 1] * y
+    g_bx = -p * xp[:, np.maximum(p - 1, 0)] * yp[:, q]
+    g_by = -q * xp[:, p] * yp[:, np.maximum(q - 1, 0)]
+    return g_bx, g_by
+
+
+def _accumulate_block_tridiagonal(
+    bounds, b0, b1, x, y, bx, by, pq, n_frames,
 ):
+    """Build the tube fit's block-tridiagonal normal equations directly
+    from the raw points -- no global design matrix ever gets built. Points
+    must be grouped by tent interval (see ``_tent_intervals``). The points
+    of interval ``k`` only touch frames ``k`` and ``k + 1``, so they
+    contribute ``G0^T G0`` to diagonal block ``D[k]``, ``G1^T G1`` to
+    ``D[k + 1]`` and ``G0^T G1`` to the coupling block ``E[k]``, where
+    ``G0``/``G1`` are their transverse design rows weighted by ``b0``/``b1``
+    -- a handful of small dense matrix products per interval. Memory stays
+    at O(points per interval * n_pq), never O(n_pts * n_pq).
+    """
+    n_pq = len(pq)
+    D = np.zeros((n_frames, n_pq, n_pq))
+    E = np.zeros((n_frames - 1, n_pq, n_pq))
+    r = np.zeros((n_frames, n_pq))
+    for k in range(n_frames):
+        s = slice(bounds[k], bounds[k + 1])
+        if s.start == s.stop:
+            continue
+        g_bx, g_by = _transverse_gradients(x[s], y[s], pq)
+        w0, w1 = b0[s, None], b1[s, None]
+        gx0, gy0 = w0 * g_bx, w0 * g_by
+        D[k] += gx0.T @ gx0 + gy0.T @ gy0
+        r[k] += gx0.T @ bx[s] + gy0.T @ by[s]
+        if k + 1 < n_frames:
+            gx1, gy1 = w1 * g_bx, w1 * g_by
+            D[k + 1] += gx1.T @ gx1 + gy1.T @ gy1
+            r[k + 1] += gx1.T @ bx[s] + gy1.T @ by[s]
+            E[k] += gx0.T @ gx1 + gy0.T @ gy1
+    return D, E, r
+
+
+def _accumulate_residual_sumsq(bounds, b0, b1, x, y, bx, by, pq, x_sol):
     """Evaluate the fitted field at every raw point directly from the
     solved ``x_sol`` (shape ``(n_frames, n_pq)``) and reduce into
-    sum-of-squares -- the direct-evaluation analogue of the old ``b_vec -
-    A @ x_sol`` matvec, without ever materializing ``A`` or a per-point
-    residual array. Safe to parallelize (unlike the accumulation kernel
-    above): every point only reduces into the 4 scalar accumulators below,
-    numba's well-supported reduction pattern, not a shared-array write."""
-    n_pts = pt_ptr.shape[0] - 1
-    m_bx = p_bx.shape[0]
-    m_by = p_by.shape[0]
-    sumsq_res_bx = 0.0
-    sumsq_res_by = 0.0
-    sumsq_bx = 0.0
-    sumsq_by = 0.0
-    for i in numba.prange(n_pts):
-        xi = x[i]
-        yi = y[i]
-        pred_bx = 0.0
-        pred_by = 0.0
-        for jj in range(pt_ptr[i], pt_ptr[i + 1]):
-            j = basis_idx[jj]
-            beta = beta_vals[jj]
-            for t in range(m_bx):
-                p = p_bx[t]
-                q = q_bx[t]
-                g = -p * xi ** (p - 1) * yi ** q
-                pred_bx += beta * g * x_sol[j, idx_bx[t]]
-            for t in range(m_by):
-                p = p_by[t]
-                q = q_by[t]
-                g = -q * xi ** p * yi ** (q - 1)
-                pred_by += beta * g * x_sol[j, idx_by[t]]
-        res_bx = bx[i] - pred_bx
-        res_by = by[i] - pred_by
-        sumsq_res_bx += res_bx * res_bx
-        sumsq_res_by += res_by * res_by
-        sumsq_bx += bx[i] * bx[i]
-        sumsq_by += by[i] * by[i]
-    return sumsq_res_bx, sumsq_res_by, sumsq_bx, sumsq_by
+    sum-of-squares, interval by interval (same grouping as
+    ``_accumulate_block_tridiagonal``) -- without ever materializing ``A``
+    or a full per-point residual array. Returns ``(sumsq_res_bx,
+    sumsq_res_by, sumsq_bx, sumsq_by)``."""
+    n_frames = x_sol.shape[0]
+    sums = np.zeros(4)
+    for k in range(n_frames):
+        s = slice(bounds[k], bounds[k + 1])
+        if s.start == s.stop:
+            continue
+        g_bx, g_by = _transverse_gradients(x[s], y[s], pq)
+        coeffs = b0[s, None] * x_sol[k]
+        if k + 1 < n_frames:
+            coeffs = coeffs + b1[s, None] * x_sol[k + 1]
+        res_bx = bx[s] - np.einsum("ij,ij->i", g_bx, coeffs)
+        res_by = by[s] - np.einsum("ij,ij->i", g_by, coeffs)
+        sums += (res_bx @ res_bx, res_by @ res_by, bx[s] @ bx[s], by[s] @ by[s])
+    return tuple(float(v) for v in sums)
 
 
 def _derivative_into_region(f: BSpline, s: float, eps: float) -> float:
@@ -942,42 +930,25 @@ class TubeFitter:
             x, y, z, bx, by = x[mask], y[mask], z[mask], bx[mask], by[mask]
 
         n_pts = len(x)
-        n_pq = len(self.pq_pairs)
-        k = 1
+
+        # Group the points by tent interval (<=2 active frames per point), so
+        # each interval's contribution is a contiguous slice -- the only
+        # per-point bookkeeping here is O(n_pts), not O(n_pts * n_pq).
+        order, bounds, b0, b1 = _tent_intervals(z, self.knots, self.n_frames)
+        x, y, bx, by = x[order], y[order], bx[order], by[order]
 
         b_vec = np.empty(2 * n_pts, dtype=float)
         b_vec[0::2] = bx
         b_vec[1::2] = by
 
-        # Sparse (point, active z-basis-function) structure, one call for the
-        # whole z array. CSR gives indptr/indices/data directly -- no
-        # assumption about how many nonzeros each row has. This is the only
-        # matrix built here: O(n_pts) nonzeros (<=2 active frames per point),
-        # not O(n_pts * n_pq) -- unlike the old global design matrix, its size
-        # doesn't grow with n_frames or n_pq.
-        design = BSpline.design_matrix(z, self.knots, k).tocsr()
+        pq = np.array(self.pq_pairs, dtype=int)
 
-        p_arr = np.array([p for p, _ in self.pq_pairs], dtype=np.int32)
-        q_arr = np.array([q for _, q in self.pq_pairs], dtype=np.int32)
-        pq_idx_arr = np.arange(n_pq, dtype=np.int32)
-
-        # Bx row: only (p, q) pairs with p > 0 contribute.
-        bx_mask = p_arr > 0
-        p_bx, q_bx, idx_bx = p_arr[bx_mask], q_arr[bx_mask], pq_idx_arr[bx_mask]
-        # By row: only (p, q) pairs with q > 0 contribute.
-        by_mask = q_arr > 0
-        p_by, q_by, idx_by = p_arr[by_mask], q_arr[by_mask], pq_idx_arr[by_mask]
-
-        # Block-tridiagonal normal-equations accumulators, scatter-added to
-        # directly from the raw points (see _accumulate_block_tridiagonal) --
-        # no global A matrix (of size O(n_pts * n_pq)) ever gets built.
-        D = np.zeros((self.n_frames, n_pq, n_pq), dtype=float)
-        E = np.zeros((self.n_frames - 1, n_pq, n_pq), dtype=float)
-        r = np.zeros((self.n_frames, n_pq), dtype=float)
-        _accumulate_block_tridiagonal(
-            design.indptr, design.indices, design.data, x, y, bx, by,
-            p_bx, q_bx, idx_bx, p_by, q_by, idx_by,
-            D, E, r,
+        # Block-tridiagonal normal-equations accumulators, built interval by
+        # interval directly from the raw points (see
+        # _accumulate_block_tridiagonal) -- no global A matrix (of size
+        # O(n_pts * n_pq)) ever gets built.
+        D, E, r = _accumulate_block_tridiagonal(
+            bounds, b0, b1, x, y, bx, by, pq, self.n_frames,
         )
 
         self._D = D
@@ -988,9 +959,9 @@ class TubeFitter:
         # Retained for _report_tube_fit_residual's second pass (direct
         # per-point evaluation of the fitted field, no A matrix needed there
         # either) -- all O(n_pts) or smaller, not O(n_pts * n_pq).
-        self._residual_design = (design.indptr, design.indices, design.data)
+        self._residual_design = (bounds, b0, b1)
         self._residual_xy = (x, y)
-        self._residual_pq = (p_bx, q_bx, idx_bx, p_by, q_by, idx_by)
+        self._residual_pq = pq
 
     def _solve(self) -> None:
         n_pq = len(self.pq_pairs)
@@ -1076,16 +1047,13 @@ class TubeFitter:
         approach ``_build_linear_system`` uses to avoid ever building a
         global ``A`` matrix), rather than a stored-matrix matvec.
         """
-        pt_ptr, basis_idx, beta_vals = self._residual_design
+        bounds, b0, b1 = self._residual_design
         x, y = self._residual_xy
-        p_bx, q_bx, idx_bx, p_by, q_by, idx_by = self._residual_pq
         bx = self._b_vec[0::2]
         by = self._b_vec[1::2]
 
         sumsq_res_bx, sumsq_res_by, sumsq_bx, sumsq_by = _accumulate_residual_sumsq(
-            pt_ptr, basis_idx, beta_vals, x, y, bx, by,
-            p_bx, q_bx, idx_bx, p_by, q_by, idx_by,
-            x_sol_flat,
+            bounds, b0, b1, x, y, bx, by, self._residual_pq, x_sol_flat,
         )
 
         n_pts = len(bx)

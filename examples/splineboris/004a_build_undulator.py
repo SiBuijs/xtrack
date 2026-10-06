@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import xtrack as xt
 import pandas as pd
@@ -7,7 +9,8 @@ import pandas as pd
 #################################################
 
 # Load the raw field map data from shared test_data
-field_map_path = "../../test_data/sls/simona_field_map.txt"
+script_dir = Path(__file__).resolve().parent
+field_map_path = script_dir.parents[1] / "test_data" / "sls" / "simona_field_map.txt"
 df_raw_data = pd.read_csv(
     field_map_path,
     sep=r"\s+",
@@ -114,7 +117,7 @@ opt.solve()
 # Save undulator to json file #
 ###############################
 
-undulator.to_json('sls_undulator.json')
+undulator.to_json(script_dir / 'sls_undulator.json')
 
 #############################################################################
 # Build a Multipole-based undulator (coarse thick-Multipole approximation, #
@@ -171,7 +174,7 @@ ax_orbit.set_ylabel('x [m]')
 ax_orbit.set_zlabel('y [m]')
 ax_orbit.set_title('Undulator trajectory: SplineBoris vs Multipole')
 ax_orbit.legend()
-fig_orbit.savefig('splineboris_undulator_trajectory.png', dpi=200,
+fig_orbit.savefig(script_dir / 'splineboris_undulator_trajectory.png', dpi=200,
                   bbox_inches='tight')
 
 #################################################################
@@ -229,7 +232,7 @@ ax_bs.set_xlabel('s [m]')
 ax_bx.set_title('Field on the SplineBoris undulator orbit (from Twiss x, y, s)')
 for ax in (ax_bx, ax_by, ax_bs):
     ax.grid()
-fig_field.savefig('splineboris_undulator_field_on_orbit.png', dpi=200,
+fig_field.savefig(script_dir / 'splineboris_undulator_field_on_orbit.png', dpi=200,
                    bbox_inches='tight')
 
 ##################################################################
@@ -287,7 +290,7 @@ ax_ibs.text(0.02, 0.95,
             f'$\\int B_s\\,ds\\,/\\,B_\\perp$ = {bs_over_bperp:.4e}',
             transform=ax_ibs.transAxes, **text_box_kwargs)
 
-fig_int.savefig('splineboris_undulator_integrated_field.png', dpi=200,
+fig_int.savefig(script_dir / 'splineboris_undulator_integrated_field.png', dpi=200,
                  bbox_inches='tight')
 
 ##################################################################
@@ -343,6 +346,6 @@ for ax_spin, (spin_key, plane_label) in zip(axes_spin, [
 
 axes_spin[-1].set_xlabel('s [m]')
 fig_spin.suptitle('Spin components along the undulator: SplineBoris vs Multipole')
-fig_spin.savefig('splineboris_undulator_spin.png', dpi=200, bbox_inches='tight')
+fig_spin.savefig(script_dir / 'splineboris_undulator_spin.png', dpi=200, bbox_inches='tight')
 
 plt.show()
