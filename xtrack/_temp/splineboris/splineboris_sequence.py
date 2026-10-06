@@ -153,6 +153,13 @@ class SplineBorisSequence:
         if n_regions <= 0:
             return [], []
 
+        # Raw-data point spacing, from the full span of the table. n_steps is
+        # derived from each element's length rather than from its (snapped)
+        # idx_start/idx_end, so region edges that fall between data points
+        # don't give neighbouring equal-length elements unequal step counts.
+        (s_min, idx_min), (s_max, idx_max) = boundary_pairs[0], boundary_pairs[-1]
+        ds_data = (s_max - s_min) / max(1, idx_max - idx_min)
+
         name_width = len(str(n_regions))
         elements = []
         names = []
@@ -164,8 +171,8 @@ class SplineBorisSequence:
         )
 
         for i in range(n_regions):
-            region_start, idx_start = boundary_pairs[i]
-            region_end, idx_end = boundary_pairs[i + 1]
+            region_start, _ = boundary_pairs[i]
+            region_end, _ = boundary_pairs[i + 1]
 
             if region_end <= region_start:
                 continue
@@ -228,7 +235,11 @@ class SplineBorisSequence:
             by_tuple = tuple(by_dict.get(order, zero_spline) for order in range(multipole_order))
             bx_tuple = tuple(bx_dict.get(order, zero_spline) for order in range(multipole_order))
 
-            n_steps = max(1, (idx_end - idx_start) * self.steps_per_point)
+            # ceil, so the step never exceeds ds_data / steps_per_point; the
+            # small tolerance keeps grid-aligned regions (FieldFitter) at
+            # exactly (idx_end - idx_start) * steps_per_point.
+            n_points = (region_end - region_start) / ds_data
+            n_steps = max(1, int(np.ceil(n_points * self.steps_per_point - 1e-6)))
 
             elem = SplineBoris(
                 bs=bs_spline,
