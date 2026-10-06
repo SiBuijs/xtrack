@@ -3,7 +3,8 @@ Global magnetic-field fitting via the tube approach (Riemann & Aiba, IPAC2021).
 
 Fits a scalar potential
     Omega_tilde(x, y, z) = sum_{j,p,q} Psi[j,p,q] * x^p * y^q * beta_j(z)
-with B-spline longitudinal basis functions beta_j(z), then converts multipole
+with tent (degree-1 B-spline) longitudinal basis functions beta_j(z) -- i.e.
+straight-line interpolation between frames -- then converts multipole
 coefficients to the same Hermite-quartic ``df_fit_pars`` format as ``FieldFitter``.
 
 Conventions (h = 0, straight frame, B = -grad Phi):
@@ -11,7 +12,7 @@ Conventions (h = 0, straight frame, B = -grad Phi):
     - C_{p,q}(z) = sum_j Psi[j,p,q] * beta_j(z)
     - b_m(z) = -(m-1)! * C_{m-1,1}(z)  ->  ``Bnorm``, derivative_x = m-1
     - a_m(z) = -m! * C_{m,0}(z)  ->  ``Bskew``, derivative_x = m-1  (uses Psi[:, m, 0])
-    - b_s(z): fitted independently (1D B-spline on on-axis Bs), exactly as
+    - b_s(z): fitted independently (1D tent fit to on-axis Bs), exactly as
       ``FieldFitter`` does. Only ``q=0`` (skew) and ``q=1`` (norm) rows of
       ``Psi`` are ever read on export -- any ``q>=2`` content the fit picks
       up (only possible when ``y_symmetry=False``) is fit freely, purely to
@@ -38,8 +39,7 @@ import numpy as np
 import pandas as pd
 import scipy as sc
 import xtrack as xt
-from scipy.interpolate import BSpline
-from scipy.sparse import lil_matrix
+from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import lsmr
 
 from xtrack.beam_elements.splineboris import Spline4, SplineBoris
@@ -79,30 +79,48 @@ def _frame_indices(s_full: np.ndarray, frames: np.ndarray) -> np.ndarray:
     return np.array([int(np.argmin(np.abs(s_full - f))) for f in frames], dtype=int)
 
 
+def _tent_interval_index(z: np.ndarray, frames: np.ndarray) -> np.ndarray:
+    """Interval ``k`` (``frames[k] <= z < frames[k + 1]``) each z falls in.
+    A z exactly on an interior frame belongs to the interval on its right;
+    ``z == frames[-1]`` belongs to the last interval."""
+    return np.clip(np.searchsorted(frames, z, side="right") - 1, 0, len(frames) - 2)
+
+
+def _tent_weights(
+    z: np.ndarray, frames: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Tent (degree-1 B-spline) basis at each z: only frames ``k`` and
+    ``k + 1`` are non-zero, with weights ``b0 = 1 - t`` and ``b1 = t``,
+    where ``t`` is the fractional position of z within interval ``k``.
+    Returns ``(k, b0, b1)``."""
+    k = _tent_interval_index(z, frames)
+    t = (z - frames[k]) / (frames[k + 1] - frames[k])
+    return k, 1.0 - t, t
+
+
+def _tent_slope(z: np.ndarray, frames: np.ndarray, coeffs: np.ndarray) -> np.ndarray:
+    """d/dz of the tent interpolant ``np.interp(z, frames, coeffs)``:
+    constant within each interval, taken from the interval on the right at
+    an interior frame (see ``_tent_interval_index``)."""
+    slopes = np.diff(coeffs) / np.diff(frames)
+    return slopes[_tent_interval_index(z, frames)]
+
+
 def _tent_intervals(
-    z: np.ndarray, knots: np.ndarray, n_frames: int
+    z: np.ndarray, frames: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Group raw points by the tent-basis interval they fall in. A degree-1
-    B-spline has at most 2 active basis functions per point -- frame ``k``
-    with weight ``b0`` and frame ``k + 1`` with weight ``b1`` -- so every
-    point belongs to exactly one interval ``k``.
+    """Group raw points by the tent interval they fall in -- each point
+    only touches frames ``k`` (weight ``b0``) and ``k + 1`` (weight
+    ``b1``) of its own interval ``k``.
 
     Returns ``(order, bounds, b0, b1)``: ``order`` sorts the points by
     interval, after which the points of interval ``k`` are the contiguous
     slice ``bounds[k]:bounds[k + 1]``; ``b0``/``b1`` are already in sorted
-    order (``b1 = 0`` for points with only one active basis function).
+    order.
     """
-    design = BSpline.design_matrix(z, knots, 1).tocsr()
-    ptr, idx, val = design.indptr, design.indices, design.data
-    first = idx[ptr[:-1]]
-    two = np.diff(ptr) == 2
-    if np.diff(ptr).max() > 2 or np.any(idx[ptr[:-1][two] + 1] != first[two] + 1):
-        raise RuntimeError("Unexpected tent-basis structure in design matrix")
-    b0 = val[ptr[:-1]]
-    b1 = np.zeros_like(b0)
-    b1[two] = val[ptr[:-1][two] + 1]
-    order = np.argsort(first, kind="stable")
-    bounds = np.searchsorted(first[order], np.arange(n_frames + 1))
+    k, b0, b1 = _tent_weights(z, frames)
+    order = np.argsort(k, kind="stable")
+    bounds = np.searchsorted(k[order], np.arange(len(frames)))
     return order, bounds, b0[order], b1[order]
 
 
@@ -143,20 +161,19 @@ def _accumulate_block_tridiagonal(
     D = np.zeros((n_frames, n_pq, n_pq))
     E = np.zeros((n_frames - 1, n_pq, n_pq))
     r = np.zeros((n_frames, n_pq))
-    for k in range(n_frames):
+    for k in range(n_frames - 1):
         s = slice(bounds[k], bounds[k + 1])
         if s.start == s.stop:
             continue
         g_bx, g_by = _transverse_gradients(x[s], y[s], pq)
         w0, w1 = b0[s, None], b1[s, None]
         gx0, gy0 = w0 * g_bx, w0 * g_by
+        gx1, gy1 = w1 * g_bx, w1 * g_by
         D[k] += gx0.T @ gx0 + gy0.T @ gy0
+        D[k + 1] += gx1.T @ gx1 + gy1.T @ gy1
+        E[k] += gx0.T @ gx1 + gy0.T @ gy1
         r[k] += gx0.T @ bx[s] + gy0.T @ by[s]
-        if k + 1 < n_frames:
-            gx1, gy1 = w1 * g_bx, w1 * g_by
-            D[k + 1] += gx1.T @ gx1 + gy1.T @ gy1
-            r[k + 1] += gx1.T @ bx[s] + gy1.T @ by[s]
-            E[k] += gx0.T @ gx1 + gy0.T @ gy1
+        r[k + 1] += gx1.T @ bx[s] + gy1.T @ by[s]
     return D, E, r
 
 
@@ -169,45 +186,30 @@ def _accumulate_residual_sumsq(bounds, b0, b1, x, y, bx, by, pq, x_sol):
     sumsq_res_by, sumsq_bx, sumsq_by)``."""
     n_frames = x_sol.shape[0]
     sums = np.zeros(4)
-    for k in range(n_frames):
+    for k in range(n_frames - 1):
         s = slice(bounds[k], bounds[k + 1])
         if s.start == s.stop:
             continue
         g_bx, g_by = _transverse_gradients(x[s], y[s], pq)
-        coeffs = b0[s, None] * x_sol[k]
-        if k + 1 < n_frames:
-            coeffs = coeffs + b1[s, None] * x_sol[k + 1]
+        coeffs = b0[s, None] * x_sol[k] + b1[s, None] * x_sol[k + 1]
         res_bx = bx[s] - np.einsum("ij,ij->i", g_bx, coeffs)
         res_by = by[s] - np.einsum("ij,ij->i", g_by, coeffs)
         sums += (res_bx @ res_bx, res_by @ res_by, bx[s] @ bx[s], by[s] @ by[s])
     return tuple(float(v) for v in sums)
 
 
-def _derivative_into_region(f: BSpline, s: float, eps: float) -> float:
-    """
-    Evaluate f' just inside s, toward +eps.
-
-    At a region boundary shared with a neighbouring region, f' is
-    one-sided/discontinuous (tent's C^0 kinks at each frame boundary), so
-    evaluating exactly at s is ambiguous. Nudging by eps *into* the
-    region being reconstructed picks the correct one-sided slope for that
-    region specifically, rather than blending it with the neighbouring
-    region's (generally different) slope on the far side.
-    """
-    fp = f.derivative()
-    return float(fp(s + eps))
-
-
-def _hermite_from_bspline(f: BSpline, s_left: float, s_right: float) -> tuple[float, ...]:
-    L = s_right - s_left
-    eps = 1e-6 * L
-    return (
-        float(f(s_left)),
-        _derivative_into_region(f, s_left, eps),
-        float(f(s_right)),
-        _derivative_into_region(f, s_right, -eps),
-        float(f.integrate(s_left, s_right)) / L,
-    )
+def _hermite_from_tent(
+    frames: np.ndarray, coeffs: np.ndarray
+) -> tuple[np.ndarray, ...]:
+    """Hermite params ``(val_start, der_start, val_end, der_end, mean)`` of
+    the tent interpolant on every region ``[frames[i], frames[i + 1]]``,
+    each an ``(n_regions,)`` array. Within a region the interpolant is a
+    straight line, so both end slopes are that region's own slope (the
+    kink at each frame belongs to the neighbouring region's slope on the
+    far side) and the mean is the average of the two end values."""
+    c_left, c_right = coeffs[:-1], coeffs[1:]
+    slope = (c_right - c_left) / np.diff(frames)
+    return c_left, slope, c_right, slope, 0.5 * (c_left + c_right)
 
 
 class TubeFitter:
@@ -276,10 +278,12 @@ class TubeFitter:
         ``check_trace_consistency()`` for diagnostics of how well that
         holds on a given dataset.
 
-    The longitudinal basis is a fixed tent (hat-function) B-spline: degree
-    1, 2 frames wide, C^0 (derivative discontinuous at frames --
-    ``_derivative_into_region`` picks the correct one-sided slope for each
-    region rather than blending across the kink).
+    The longitudinal basis is a fixed tent (hat-function, degree-1
+    B-spline) basis: one tent per frame, peaking there and reaching zero at
+    the neighbouring frames, so every ``C_pq(z)`` is the straight-line
+    interpolation of its frame values ``Psi[:, p, q]``
+    (``np.interp(z, frames, Psi[:, p, q])``). It is C^0: the slope jumps at
+    every frame, and each region's Hermite export uses its own slope.
     """
 
     def __init__(
@@ -312,7 +316,6 @@ class TubeFitter:
         self.component_to_fit: dict[tuple[str, int], bool] = {}
 
         self.frames: np.ndarray | None = None
-        self.knots: np.ndarray | None = None
         self.n_regions: int | None = None
         self.pq_pairs = _generate_pq_pairs(self.M, self.y_symmetry, self.fit_skew)
         self.pq_to_idx = {pq: i for i, pq in enumerate(self.pq_pairs)}
@@ -824,21 +827,20 @@ class TubeFitter:
 
     def _on_axis_multipole_from_psi(self, field: str, der: int) -> np.ndarray | None:
         """On-axis multipole series b_m or a_m evaluated from ``Psi`` at all ``s_full``."""
-        assert self.knots is not None and self.Psi is not None and self.s_full is not None
+        assert self.frames is not None and self.Psi is not None and self.s_full is not None
         assert self.pq_to_idx is not None
-        k = 1
         if field == "By":
             if (der, 1) not in self.pq_to_idx:
                 return None
-            f = BSpline(self.knots, -math.factorial(der) * self.Psi[:, der, 1], k)
+            coeffs = -math.factorial(der) * self.Psi[:, der, 1]
         elif field == "Bx":
             m = der + 1
             if (m, 0) not in self.pq_to_idx:
                 return None
-            f = BSpline(self.knots, -math.factorial(m) * self.Psi[:, m, 0], k)
+            coeffs = -math.factorial(m) * self.Psi[:, m, 0]
         else:
             raise ValueError(f"field must be 'Bx' or 'By', got {field!r}")
-        return f(self.s_full)
+        return np.interp(self.s_full, self.frames, coeffs)
 
     def _populate_on_axis_from_psi(self) -> None:
         """Fill higher-order on-axis Bx/By columns from tube multipoles (post-``_solve``)."""
@@ -854,16 +856,6 @@ class TubeFitter:
         z_min, z_max = float(self.s_full[0]), float(self.s_full[-1])
         self.frames = np.linspace(z_min, z_max, self.n_frames)
         self.n_regions = self.n_frames - 1
-        # Clamped knots for n_frames tent (degree-1) B-spline coefficients:
-        # 2 repeats at each end, interior knots coinciding with the frames
-        # themselves -- i.e. just the endpoints repeated once more than
-        # self.frames already provides.
-        self.knots = np.r_[z_min, self.frames, z_max]
-        if len(self.knots) != self.n_frames + 2:
-            raise RuntimeError(
-                f"Unexpected knot vector length {len(self.knots)}, "
-                f"expected {self.n_frames + 2}"
-            )
         self._check_frame_z_resolution()
 
     def _check_frame_z_resolution(self) -> None:
@@ -883,8 +875,7 @@ class TubeFitter:
         """
         assert self.frames is not None
         z_filtered = self._filtered_z_values()
-        bin_idx = np.searchsorted(self.frames, z_filtered, side="right") - 1
-        bin_idx = np.clip(bin_idx, 0, self.n_frames - 2)
+        bin_idx = _tent_interval_index(z_filtered, self.frames)
         counts = np.bincount(bin_idx, minlength=self.n_frames - 1)
         empty = np.flatnonzero(counts == 0)
         if len(empty) == 0:
@@ -914,7 +905,7 @@ class TubeFitter:
             return
 
         assert self.df_raw_data is not None
-        assert self.knots is not None
+        assert self.frames is not None
         assert self.pq_pairs is not None
 
         idx = self.df_raw_data.index
@@ -931,10 +922,10 @@ class TubeFitter:
 
         n_pts = len(x)
 
-        # Group the points by tent interval (<=2 active frames per point), so
+        # Group the points by tent interval (2 active frames per point), so
         # each interval's contribution is a contiguous slice -- the only
         # per-point bookkeeping here is O(n_pts), not O(n_pts * n_pq).
-        order, bounds, b0, b1 = _tent_intervals(z, self.knots, self.n_frames)
+        order, bounds, b0, b1 = _tent_intervals(z, self.frames)
         x, y, bx, by = x[order], y[order], bx[order], by[order]
 
         b_vec = np.empty(2 * n_pts, dtype=float)
@@ -1069,22 +1060,22 @@ class TubeFitter:
                   f"RMS = {rms:.3e} T ({rel * 100:.2f}% of field RMS)")
 
     def _fit_bs(self) -> None:
-        assert self.knots is not None
+        assert self.frames is not None
         assert self.s_full is not None
         assert self.df_on_axis_raw is not None
 
         bs_on_axis = self.df_on_axis_raw[("Bs", 0)].to_numpy(dtype=float)
-        k = 1
         n_pts = len(self.s_full)
-        n_cols = self.n_frames
 
-        A = lil_matrix((n_pts, n_cols), dtype=float)
-        for i_pt, z_i in enumerate(self.s_full):
-            design = BSpline.design_matrix(np.array([z_i]), self.knots, k).toarray()[0]
-            for j in np.nonzero(design)[0]:
-                A[i_pt, j] = design[j]
+        # Tent design matrix: row i has b0 at column k and b1 at k + 1.
+        k, b0, b1 = _tent_weights(self.s_full, self.frames)
+        rows = np.arange(n_pts)
+        A = csr_matrix(
+            (np.r_[b0, b1], (np.r_[rows, rows], np.r_[k, k + 1])),
+            shape=(n_pts, self.n_frames),
+        )
 
-        result = lsmr(A.tocsr(), bs_on_axis, atol=1e-10, btol=1e-10, maxiter=10000)
+        result = lsmr(A, bs_on_axis, atol=1e-10, btol=1e-10, maxiter=10000)
         self.Psi_bs = result[0]
 
     def check_trace_consistency(self) -> dict[str, np.ndarray | float]:
@@ -1111,7 +1102,7 @@ class TubeFitter:
                 "check_trace_consistency needs y_symmetry=False: Psi[0,2] "
                 "is excluded from the basis entirely when y_symmetry=True."
             )
-        assert self.knots is not None and self.Psi is not None and self.frames is not None
+        assert self.Psi is not None and self.frames is not None
         assert self.pq_to_idx is not None
         if (0, 2) not in self.pq_to_idx or (2, 0) not in self.pq_to_idx:
             raise RuntimeError(
@@ -1121,10 +1112,10 @@ class TubeFitter:
         if self.Psi_bs is None:
             self._fit_bs()
 
-        k = 1
-        psi_02 = BSpline(self.knots, self.Psi[:, 0, 2], k)(self.frames)
-        psi_20 = BSpline(self.knots, self.Psi[:, 2, 0], k)(self.frames)
-        bs_prime = BSpline(self.knots, self.Psi_bs, k).derivative(1)(self.frames)
+        # At the frames, the tent interpolant is just the frame values.
+        psi_02 = self.Psi[:, 0, 2].copy()
+        psi_20 = self.Psi[:, 2, 0].copy()
+        bs_prime = _tent_slope(self.frames, self.frames, self.Psi_bs)
         predicted_psi_02 = -psi_20 + 0.5 * bs_prime
 
         gap = psi_02 - predicted_psi_02
@@ -1148,38 +1139,23 @@ class TubeFitter:
 
     def _convert_to_hermite(self) -> None:
         assert self.frames is not None
-        assert self.knots is not None
-
-        k = 1
         assert self.Psi_bs is not None
-        f_bs = BSpline(self.knots, self.Psi_bs, k)
+
+        series = {}
+        for der in range(self.deg + 1):
+            m = der + 1
+            # b_m = -(m-1)! * C_{m-1,1}  ->  Psi[:, der, 1]
+            series[("Bnorm", der)] = -math.factorial(der) * self.Psi[:, der, 1]
+            if (m, 0) in self.pq_to_idx:
+                # a_m = -m! * C_{m,0}  (from d^{m-1} B_x / dx^{m-1} |_{x=y=0})
+                series[("Bskew", der)] = -math.factorial(m) * self.Psi[:, m, 0]
+        series[("Bs", 0)] = self.Psi_bs
 
         self._hermite = {}
-
-        for i_reg in range(self.n_regions):
-            s_left = float(self.frames[i_reg])
-            s_right = float(self.frames[i_reg + 1])
-
-            for der in range(self.deg + 1):
-                m = der + 1
-                # b_m = -(m-1)! * C_{m-1,1}  ->  Psi[:, der, 1]
-                f_norm = BSpline(
-                    self.knots, -math.factorial(der) * self.Psi[:, der, 1], k
-                )
-                self._hermite[("Bnorm", der, i_reg)] = _hermite_from_bspline(
-                    f_norm, s_left, s_right
-                )
-
-                if (m, 0) in self.pq_to_idx:
-                    # a_m = -m! * C_{m,0}  (from d^{m-1} B_x / dx^{m-1} |_{x=y=0})
-                    f_skew = BSpline(
-                        self.knots, -math.factorial(m) * self.Psi[:, m, 0], k
-                    )
-                    self._hermite[("Bskew", der, i_reg)] = _hermite_from_bspline(
-                        f_skew, s_left, s_right
-                    )
-
-            self._hermite[("Bs", 0, i_reg)] = _hermite_from_bspline(f_bs, s_left, s_right)
+        for (field, der), coeffs in series.items():
+            params = np.stack(_hermite_from_tent(self.frames, coeffs), axis=1)
+            for i_reg in range(self.n_regions):
+                self._hermite[(field, der, i_reg)] = tuple(params[i_reg].tolist())
 
     def _assign_to_fit_flags(self) -> None:
         """Set ``component_to_fit`` using the same relative scale test as FieldFitter."""
@@ -1252,8 +1228,7 @@ class TubeFitter:
                     idx_end = int(idx_extrema[i_reg + 1])
                     # s_start/s_end must be the TRUE frame positions -- the
                     # same ones used to compute self._hermite via
-                    # _hermite_from_bspline(f, frames[i_reg], frames[i_reg+1])
-                    # in _convert_to_hermite. Using the nearest-raw-sample
+                    # _hermite_from_tent(frames, ...) in _convert_to_hermite. Using the nearest-raw-sample
                     # snapped positions (s_full[idx_start/idx_end]) instead
                     # silently mismatches the L used to derive the Hermite
                     # derivative terms (c2, c4) from the L used to reconstruct
@@ -1301,12 +1276,11 @@ class TubeFitter:
         self.df_fit_pars.sort_index(inplace=True)
 
     def _fill_df_on_axis_fit(self) -> None:
-        assert self.knots is not None
+        assert self.frames is not None
         assert self.Psi is not None
         assert self.s_full is not None
         assert self.df_on_axis_fit is not None
 
-        k = 1
         n_z = len(self.s_full)
         for der in range(self.deg + 1):
             if self.component_to_fit.get(("Bnorm", der), False):
@@ -1323,8 +1297,7 @@ class TubeFitter:
 
         if self.component_to_fit.get(("Bs", 0), False):
             assert self.Psi_bs is not None
-            f_bs = BSpline(self.knots, self.Psi_bs, k)
-            self.df_on_axis_fit[("Bs", 0)] = f_bs(self.s_full)
+            self.df_on_axis_fit[("Bs", 0)] = np.interp(self.s_full, self.frames, self.Psi_bs)
         else:
             self.df_on_axis_fit[("Bs", 0)] = np.zeros(n_z)
 

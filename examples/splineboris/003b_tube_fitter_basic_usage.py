@@ -2,7 +2,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from scipy.interpolate import BSpline
 
 from xtrack._temp.splineboris.tube_fitter import TubeFitter
 
@@ -27,10 +26,10 @@ def reconstruct_fit_on_line(fitter, der=0, x=0.0, y=0.0):
 
         psi(x, y, s) = sum_{(p, q)} C_pq(s) x^p y^q,   B = -grad psi
 
-    where C_pq(s) is the degree-1 B-spline with coefficients
-    ``fitter.Psi[:, p, q]`` on ``fitter.knots``. The tube fit is global (it
-    uses the raw data at every transverse position, not just on axis), so
-    this is just the same fit sampled off axis and differentiated -- nothing
+    where C_pq(s) is the straight-line (tent) interpolation of the frame
+    values ``fitter.Psi[:, p, q]`` between ``fitter.frames``. The tube fit is
+    global (it uses the raw data at every transverse position, not just on
+    axis), so this is just the same fit sampled off axis and differentiated -- nothing
     is re-fitted. At x = y = 0 this reproduces TubeFitter's own on-axis
     multipole columns (``_on_axis_multipole_from_psi``) for Bx, By.
 
@@ -41,30 +40,34 @@ def reconstruct_fit_on_line(fitter, der=0, x=0.0, y=0.0):
     (it's constant in x).
     '''
     s = fitter.s_full
-    k = 1
+    frames = fitter.frames
+    # Interval of each s (an s exactly on a frame takes the slope on its right)
+    i_reg = np.clip(np.searchsorted(frames, s, side="right") - 1, 0, len(frames) - 2)
 
     bx = np.zeros_like(s)
     by = np.zeros_like(s)
     bs = np.zeros_like(s)
     for (p, q) in fitter.pq_pairs:
-        c = BSpline(fitter.knots, fitter.Psi[:, p, q], k)
+        coeffs = fitter.Psi[:, p, q]
+        c = np.interp(s, frames, coeffs)
+        dc_ds = (np.diff(coeffs) / np.diff(frames))[i_reg]
 
         # d^der/dx^der acts on the x^p factor in every term below (never on
         # y^q) -- Bx picks up an extra power of x from -d/dx itself, folded
         # into the falling factorial as fall(p, der+1) = p * fall(p-1, der).
         fall_x = _falling(p, der + 1)
         if fall_x:
-            bx -= fall_x * c(s) * x ** (p - 1 - der) * y ** q
+            bx -= fall_x * c * x ** (p - 1 - der) * y ** q
 
         fall_p = _falling(p, der)
         if fall_p and q >= 1:
-            by -= q * fall_p * c(s) * x ** (p - der) * y ** (q - 1)
+            by -= q * fall_p * c * x ** (p - der) * y ** (q - 1)
 
         if fall_p:
-            bs -= fall_p * c.derivative()(s) * x ** (p - der) * y ** q
+            bs -= fall_p * dc_ds * x ** (p - der) * y ** q
 
     if der == 0 and fitter.Psi_bs is not None:
-        bs = bs + BSpline(fitter.knots, fitter.Psi_bs, k)(s)
+        bs = bs + np.interp(s, frames, fitter.Psi_bs)
 
     return bx, by, bs
 
