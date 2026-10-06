@@ -39,8 +39,6 @@ import numpy as np
 import pandas as pd
 import scipy as sc
 import xtrack as xt
-from scipy.sparse import csr_matrix
-from scipy.sparse.linalg import lsmr
 
 from xtrack.beam_elements.splineboris import Spline4, SplineBoris
 from xtrack.beam_elements.splineboris_src.spline_B_field_eval_python import (
@@ -1065,18 +1063,19 @@ class TubeFitter:
         assert self.df_on_axis_raw is not None
 
         bs_on_axis = self.df_on_axis_raw[("Bs", 0)].to_numpy(dtype=float)
-        n_pts = len(self.s_full)
+        n = self.n_frames
 
-        # Tent design matrix: row i has b0 at column k and b1 at k + 1.
+        # Same tent normal equations as the tube fit, with one unknown per
+        # frame instead of n_pq: a point in interval k adds b0^2 / b1^2 to
+        # diagonals k / k+1 and b0*b1 to the coupling between them.
         k, b0, b1 = _tent_weights(self.s_full, self.frames)
-        rows = np.arange(n_pts)
-        A = csr_matrix(
-            (np.r_[b0, b1], (np.r_[rows, rows], np.r_[k, k + 1])),
-            shape=(n_pts, self.n_frames),
-        )
+        D = np.bincount(k, b0 * b0, n) + np.bincount(k + 1, b1 * b1, n)
+        E = np.bincount(k, b0 * b1, n - 1)
+        r = np.bincount(k, b0 * bs_on_axis, n) + np.bincount(k + 1, b1 * bs_on_axis, n)
 
-        result = lsmr(A, bs_on_axis, atol=1e-10, btol=1e-10, maxiter=10000)
-        self.Psi_bs = result[0]
+        self.Psi_bs = self._solve_block_tridiagonal(
+            D[:, None, None], E[:, None, None], r[:, None]
+        )[:, 0]
 
     def check_trace_consistency(self) -> dict[str, np.ndarray | float]:
         """
