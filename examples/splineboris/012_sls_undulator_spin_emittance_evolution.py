@@ -4,13 +4,13 @@ Tracks quantum-radiation emittance damping and radiative spin depolarization
 through the SLS ring for 7 cases: no undulator, a single SplineBoris-based
 undulator at either of two straight sections (``ars11_uind_0210_1`` /
 ``ars11_uind_0610_1``), both together, and the same 3 configurations built
-instead with ``TubeFitter.to_multipole_line()`` (a coarse thick-Multipole
-undulator model, see ``xtrack/_temp/splineboris/tube_fitter.py``).
+instead with ``LongitudinalFitter.to_multipole_line()`` (a coarse
+thick-Multipole undulator model, see
+``xtrack/_temp/splineboris/longitudinal_fitter.py``).
 
 The undulator itself is fit once from the shared SLS field map via
-``TubeFitter`` (the canonical fitter, see
-``examples/splineboris/claude_notes/tubefitter_canonical_and_upstream_merge.md``)
-and its orbit corrected with 4 thin dipole correctors, following the same
+``TubeFitter`` (on-axis multipoles at the tube frames) and
+``LongitudinalFitter`` (C3 quartic B-spline in s), and its orbit corrected with 4 thin dipole correctors, following the same
 recipe as ``009_sls_undulators_closed_spin_radiation.py``.
 
 ``test_data/sls/sls.madx`` has no RF cavities, so a synthetic one is added
@@ -71,7 +71,7 @@ import xpart as xp
 import xtrack as xt
 from scipy.optimize import curve_fit
 
-from xtrack._temp.splineboris.tube_fitter import TubeFitter
+from xtrack._temp.splineboris import TubeFitter, LongitudinalFitter
 
 # This script is developed against editable xtrack/xobjects/xsuite checkouts
 # that routinely run ahead of (or otherwise mismatch) the cached prebuilt
@@ -165,10 +165,23 @@ def _fit_undulator():
         n_frames=1701,          # Empirically found to give the 2e-4 residual tolerance
         distance_unit=1e-3,
         deg=MULTIPOLE_ORDER - 1,
-        field_tol=1e-3,
     )
     fitter.fit()
-    return fitter
+
+    # Longitudinal fit ("free" ends: the map ends are not field-free). 1701
+    # frames over 2.2 m are ~28 per 36 mm period, so 2 frames per element
+    # gives ~14 elements per period.
+    z, F, names = fitter.on_axis_multipoles()
+    lf = LongitudinalFitter(z[0], z[-1], points_per_element=2, end_condition="free",
+                            period=0.036)
+    lf.fit(z, F, names)
+    lf.fit(*fitter.on_axis_bs(), [("Bs", 0)])
+    return lf
+
+
+# Drop components whose scale max|f| * r_ref^n / n! is below field_tol times
+# the largest field (r_ref: the map's transverse half-width, 1 mm).
+FIELD_TOL = dict(field_tol=1e-3, r_ref=1e-3)
 
 
 CORRECTOR_KNOBS = (
@@ -260,16 +273,17 @@ def _correct_undulator_orbit(undulator_line, offset_x=0.0, corrector_values=None
 
 
 def _build_undulator_lines(offset_x=OFFSET_X, corrector_strategy=CORRECTOR_STRATEGY):
-    print("Fitting SLS undulator field map with TubeFitter...")
-    fitter = _fit_undulator()
+    print("Fitting SLS undulator field map with TubeFitter + LongitudinalFitter...")
+    lf = _fit_undulator()
 
     print("Building + correcting SplineBoris-based undulator line...")
-    line_sb = fitter.to_line(multipole_order=MULTIPOLE_ORDER, steps_per_point=1)
+    line_sb = lf.to_line(multipole_order=MULTIPOLE_ORDER, steps_per_point=1, **FIELD_TOL)
     line_sb.particle_ref = xt.Particles(mass0=xt.ELECTRON_MASS_EV, q0=1, p0c=E0)
     corrector_values = _correct_undulator_orbit(line_sb, offset_x=offset_x)
 
     print("Building + correcting Multipole-based undulator line...")
-    line_mult = fitter.to_multipole_line(multipole_order=MULTIPOLE_ORDER, p0c=E0, q0=1.0)
+    line_mult = lf.to_multipole_line(multipole_order=MULTIPOLE_ORDER, p0c=E0, q0=1.0,
+                                     **FIELD_TOL)
     line_mult.particle_ref = xt.Particles(mass0=xt.ELECTRON_MASS_EV, q0=1, p0c=E0)
     if corrector_strategy == "shared":
         _correct_undulator_orbit(line_mult, offset_x=offset_x, corrector_values=corrector_values)
@@ -309,7 +323,7 @@ def _load_sls_ring():
 def _insert_undulators(env, line, kind, places, undulator_lines):
     if not places:
         return
-    # The undulator line's elements live in TubeFitter's own implicit
+    # The undulator line's elements live in their own implicit
     # Environment (to_line()/to_multipole_line() don't take an `env`
     # argument) -- import them into the ring's env first so `line.insert()`
     # can resolve them, matching 004b_undulators_in_sls_ring.py's pattern.

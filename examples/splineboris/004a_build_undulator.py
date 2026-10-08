@@ -22,8 +22,7 @@ df_raw_data = pd.read_csv(
 # trajectory ("tube approach", B. Riemann & M. Aiba, IPAC2021 TUPAB238). This
 # class is tailored for this example data, use your own fitting procedure for
 # other datasets.
-from xtrack._temp.splineboris.tube_fitter import TubeFitter
-from xtrack._temp.splineboris.splineboris_sequence import SplineBorisSequence
+from xtrack._temp.splineboris import TubeFitter, LongitudinalFitter
 MULTIPOLE_ORDER = 4  # deg=2 -> Bx/By fit up to and including order 2
 
 # Rigid transverse misalignment applied to the undulator field elements
@@ -39,6 +38,8 @@ SPIN_X0 = 0.0
 SPIN_Y0 = 1.0
 SPIN_Z0 = 0.0
 
+UNDULATOR_PERIOD = 0.036  # [m], only used to warn if elements are too long
+
 fitter = TubeFitter(
     raw_data=df_raw_data,
     distance_unit=0.001, # dataset uses mm
@@ -46,6 +47,15 @@ fitter = TubeFitter(
     deg=MULTIPOLE_ORDER - 1,
 )
 fitter.fit()
+
+# Longitudinal fit (stage 2) of the on-axis components found by the tube fit:
+# a C3 quartic B-spline on uniform nodes, ~5 data points per element by
+# default. "free" ends: the map ends are not field-free.
+z, F, names = fitter.on_axis_multipoles()
+lf = LongitudinalFitter(z[0], z[-1], end_condition="free", period=UNDULATOR_PERIOD)
+lf.fit(z, F, names)
+lf.fit(*fitter.on_axis_bs(), [("Bs", 0)])
+print(f"{lf.n_elements} elements of {lf.delta * 1e3:.2f} mm")
 
 #######################################
 # Build Xsuite model of the undulator #
@@ -55,13 +65,11 @@ env = xt.Environment()
 env.set_particle_ref('positron', p0c=2.7e9)
 env.particle_ref.anomalous_magnetic_moment = ANOMALOUS_MAGNETIC_MOMENT
 
-# TubeFitter.to_line() builds a Line of SplineBoris elements directly from
-# the fit -- one element per longitudinal region (region grid shared across
-# all field components, so no boundary reconciliation is needed), one Boris
-# step per interval between adjacent field-map points. It lives in its own
-# implicit Environment, so import it into `env` to use it alongside the
+# LongitudinalFitter.to_line() builds a Line of SplineBoris elements, one per
+# knot interval, one Boris step per field-map plane spacing. It lives in its
+# own implicit Environment, so import it into `env` to use it alongside the
 # correctors built below.
-undulator_line = fitter.to_line(multipole_order=MULTIPOLE_ORDER, steps_per_point=1,
+undulator_line = lf.to_line(multipole_order=MULTIPOLE_ORDER, steps_per_point=1,
                                  shift_x=SHIFT_X, shift_y=SHIFT_Y)
 undulator = env.import_line(undulator_line, line_name='undulator')
 
@@ -119,23 +127,21 @@ opt.solve()
 
 undulator.to_json(script_dir / 'sls_undulator.json')
 
-#############################################################################
+###########################################################################
 # Build a Multipole-based undulator (coarse thick-Multipole approximation, #
-# TubeFitter.to_multipole_line()) from the same fit, reusing the SAME      #
-# (already matched) correctors rather than rematching independently -- so #
-# the comparison below isolates the field-model difference between        #
-# SplineBoris and Multipole instead of letting each model's own           #
-# correction reabsorb it (same rationale as the "shared" corrector        #
+# LongitudinalFitter.to_multipole_line()) from the same fit, reusing the   #
+# SAME (already matched) correctors rather than rematching independently, #
+# so the comparison below isolates the field-model difference between     #
+# SplineBoris and Multipole (same rationale as the "shared" corrector     #
 # strategy in 012_sls_undulator_spin_emittance_evolution.py).             #
-#############################################################################
+###########################################################################
 
-multipole_undulator_line = fitter.to_multipole_line(
+multipole_undulator_line = lf.to_multipole_line(
     multipole_order=MULTIPOLE_ORDER, p0c=2.7e9, field_at='midpoint',
     shift_x=SHIFT_X, shift_y=SHIFT_Y)
 undulator_mult = env.import_line(multipole_undulator_line, line_name='undulator_mult')
 
-# Same region grid as to_line() (shared across every field component), so
-# the two undulators have identical length -- the same corrector insertion
+# Same nodes as to_line(), so the two undulators have identical length -- the same corrector insertion
 # offsets apply unchanged.
 undulator_mult.insert([
     env.place('corr1', at=0.02),
@@ -182,40 +188,21 @@ fig_orbit.savefig(script_dir / 'splineboris_undulator_trajectory.png', dpi=200,
 # using the (x, y, s) trajectory from the SplineBoris Twiss.    #
 #################################################################
 
-# There's no ready-made "plot field along an arbitrary trajectory" method,
-# but SplineBorisSequence.get_field(x, y, s) (built directly from the same
-# fitter.df_fit_pars used by to_line()) is the closest built-in evaluator --
-# confirmed in examples/splineboris/claude_notes/tube_fitter_to_line.md to
-# reproduce to_line()'s field to ~1e-14 T. Field-only (no correctors), which
-# is what we want here: the correctors are discrete kicks, not part of the
-# smoothly-varying undulator field.
-field_seq = SplineBorisSequence(
-    fitter.df_fit_pars, multipole_order=MULTIPOLE_ORDER, steps_per_point=1,
-    shift_x=SHIFT_X, shift_y=SHIFT_Y)
-
-# field_seq.s_starts/s_ends keep the raw field-map's s convention (centered
-# on 0, e.g. -1.1..+1.1 m) -- df_fit_pars is built directly from the fitted
-# frames, which never get reset to a line-local origin. Twiss's s, in
-# contrast, always starts at 0 at the line's entrance. to_line() sidesteps
-# this (it only ever uses s_end - s_start, i.e. lengths, when chaining
-# elements), but looking a Twiss s up against field_seq.s_starts directly
-# needs this offset correction first.
-s_starts = np.asarray(field_seq.s_starts)
-s_offset = s_starts[0]
-s_raw = tw_undulator.s + s_offset
-
-# get_field() itself does a linear scan over all regions per call: look up
-# the region index for every trajectory point up front (searchsorted over
-# the sorted region boundaries) so each get_field() call below is O(1).
+# Evaluate the field of the SplineBoris elements themselves (no correctors:
+# they are discrete kicks, not part of the smoothly-varying undulator
+# field). The nodes keep the raw field map's s convention (centered on 0,
+# e.g. -1.1..+1.1 m), while Twiss s starts at 0 at the line's entrance.
+s_starts = lf.nodes[:-1]
+s_raw = tw_undulator.s + lf.nodes[0]
 region_idx = np.clip(
     np.searchsorted(s_starts, s_raw, side='right') - 1,
-    0, len(field_seq.elements) - 1)
+    0, lf.n_elements - 1)
 
 bx_on_orbit = np.empty(len(tw_undulator.s))
 by_on_orbit = np.empty(len(tw_undulator.s))
 bs_on_orbit = np.empty(len(tw_undulator.s))
 for i, i_reg in enumerate(region_idx):
-    elem = field_seq.elements[i_reg]
+    elem = undulator_line.elements[i_reg]
     s_local = np.clip(s_raw[i] - s_starts[i_reg], 0.0, elem.length)
     bx_on_orbit[i], by_on_orbit[i], bs_on_orbit[i] = elem.get_field(
         tw_undulator.x[i], tw_undulator.y[i], s_local)

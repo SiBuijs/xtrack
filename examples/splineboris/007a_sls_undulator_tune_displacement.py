@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 import matplotlib.pyplot as plt
 import scipy.constants as sc_const
-from xtrack._temp.splineboris.tube_fitter import TubeFitter
+from xtrack._temp.splineboris import TubeFitter, LongitudinalFitter
 
 
 multipole_order = 3
@@ -22,7 +22,7 @@ madx_file = Path(__file__).resolve().parent.parent.parent / 'test_data' / 'sls' 
 BASE_DIR = Path(__file__).resolve().parent
 
 # Raw field map data (shared test_data) -- ~1.8 GB, so loading and fitting it
-# is by far the slowest part of this script. Deferred to get_tube_fitter(),
+# is by far the slowest part of this script. Deferred to get_undulator_fit(),
 # called lazily from compute_case() only for cases that are actually being
 # (re)computed -- a `--replot` run where every case already has cached data
 # in DATA_DIR never touches this file at all.
@@ -33,12 +33,16 @@ distance_unit = 0.001
 
 n_frames = 4441
 
-_tube_fitter = None
+_undulator_fit = None
+
+# Drop components whose scale max|f| * r_ref^n / n! is below field_tol times
+# the largest field (r_ref: the map's transverse half-width).
+FIELD_TOL = dict(field_tol=1e-4, r_ref=2e-3)
 
 
-def get_tube_fitter():
-    global _tube_fitter
-    if _tube_fitter is None:
+def get_undulator_fit():
+    global _undulator_fit
+    if _undulator_fit is None:
         print("[TubeFitter] loading raw field map and fitting "
               "(this is the slow part, and independent of undulator "
               "placement/model, so it only happens once per run)...")
@@ -53,15 +57,20 @@ def get_tube_fitter():
             #residual_tol=1e-3,
             distance_unit=distance_unit,
             deg=multipole_order - 1,
-            field_tol=1e-4,
             #tube_radius=0.0005,
         )
         tf.fit()
-        _tube_fitter = tf
-    return _tube_fitter
+        # Longitudinal fit of the on-axis components ("free" ends: the map
+        # ends are not field-free; ~5 frames per element by default).
+        z, F, names = tf.on_axis_multipoles()
+        lf = LongitudinalFitter(z[0], z[-1], end_condition="free", period=0.036)
+        lf.fit(z, F, names)
+        lf.fit(*tf.on_axis_bs(), [("Bs", 0)])
+        _undulator_fit = lf
+    return _undulator_fit
 
 # for der in range(0, multipole_order):
-#     get_tube_fitter().plot_fields(der=der)
+#     get_undulator_fit().plot_fields(der=der)
 
 # plt.show()
 
@@ -123,7 +132,7 @@ def compute_case(place_label, wiggler_places, model_label):
     case_label = f'{place_label} ({model_label})'
     print("=" * 80)
 
-    tube_fitter = get_tube_fitter()
+    undulator_fit = get_undulator_fit()
 
     # Load SLS MADX file
     env = xt.load(str(madx_file))
@@ -135,9 +144,9 @@ def compute_case(place_label, wiggler_places, model_label):
     # Set particle reference
     line_sls.particle_ref = p0.copy()
 
-    # Build undulator -- SB uses TubeFitter.to_line() (one SplineBoris
+    # Build undulator -- SB uses LongitudinalFitter.to_line() (one SplineBoris
     # element per polynomial piece, full spatial field integration); MK uses
-    # TubeFitter.to_multipole_line() (one thick Multipole per region, a
+    # LongitudinalFitter.to_multipole_line() (one thick Multipole per region, a
     # coarser rigidity-normalized approximation). Either way it lives in its
     # own implicit Environment, so import it into its own `und_env` to add
     # correctors and match it (same build path as
@@ -147,10 +156,10 @@ def compute_case(place_label, wiggler_places, model_label):
     und_env.particle_ref = p0.copy()
 
     if model_label == 'SB':
-        undulator_line = tube_fitter.to_line(multipole_order=multipole_order)
+        undulator_line = undulator_fit.to_line(multipole_order=multipole_order, **FIELD_TOL)
     else:
-        undulator_line = tube_fitter.to_multipole_line(
-            multipole_order=multipole_order, p0c=E0, field_at='mean')
+        undulator_line = undulator_fit.to_multipole_line(
+            multipole_order=multipole_order, p0c=E0, field_at='mean', **FIELD_TOL)
     undulator = und_env.import_line(undulator_line, line_name='undulator')
 
     l_wig = undulator.get_length()
@@ -220,13 +229,13 @@ def compute_case(place_label, wiggler_places, model_label):
     # `undulator` line -- name-based (not isinstance-based) because for the
     # MK model both the field elements and the correctors are xt.Multipole,
     # so isinstance alone can't tell them apart. to_line()/to_multipole_line()
-    # name every region "tubefitter..." (import renaming only ever appends a
+    # name every element "splineboris_..."/"multipole_..." (import renaming only ever appends a
     # suffix), so this is robust to both models and to multiple placements.
     field_element_names = [
-        nn for nn in line_sls.element_names if nn.startswith('tubefitter')
+        nn for nn in line_sls.element_names if nn.startswith(('splineboris_', 'multipole_'))
         ]
     undulator_field_element_names = [
-        nn for nn in undulator.element_names if nn.startswith('tubefitter')
+        nn for nn in undulator.element_names if nn.startswith(('splineboris_', 'multipole_'))
         ]
 
     # s ranges (start, end) of the active undulators, for marking their
@@ -366,11 +375,11 @@ def compute_case(place_label, wiggler_places, model_label):
     # regardless of which model (SB/MK) is the primary undulator here -- for
     # the MK case it's effectively the same field model as the Twiss itself,
     # so the two are expected to agree closely.
-    multipole_line = tube_fitter.to_multipole_line(
-        multipole_order=multipole_order, p0c=E0, field_at='mean')
+    multipole_line = undulator_fit.to_multipole_line(
+        multipole_order=multipole_order, p0c=E0, field_at='mean', **FIELD_TOL)
     mult_table = multipole_line.get_table()
     # to_multipole_line() also brackets each region with thin xt.MultipoleEdge
-    # kicks (see tube_fitter.py) -- excluded here since K1(s)/K2(s)/K2_skew(s)
+    # kicks (see longitudinal_fitter.py) -- excluded here since K1(s)/K2(s)/K2_skew(s)
     # is a per-region (thick-body) quantity; the edge kicks are picked up by
     # the Twiss itself (via tw.qx/tw.qy or, in 007b, the phase advance) but
     # aren't part of this analytic deltaK1(s)*beta(s) integral.

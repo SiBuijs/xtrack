@@ -5,9 +5,7 @@ from scipy.constants import e as qe
 import pandas as pd
 import xtrack as xt
 from xtrack._temp.boris_and_solenoid_map.solenoid_field import SolenoidField
-from xtrack._temp.splineboris.field_fitter import FieldFitter
-from xtrack._temp.splineboris.splineboris_sequence import SplineBorisSequence
-from xtrack._temp.splineboris.tube_fitter import TubeFitter
+from xtrack._temp.splineboris import TubeFitter, LongitudinalFitter
 import matplotlib.pyplot as plt
 
 plt.rcParams.update({"font.size": 14})
@@ -48,125 +46,41 @@ bx, by, bz = sf.get_field(x_grid.ravel(), y_grid.ravel(), z_grid.ravel())
 
 df_raw_data = pd.DataFrame(
     np.column_stack([x_grid.ravel(), y_grid.ravel(), z_grid.ravel(), bx, by, bz]),
-    columns=["X", "Y", "Z", "Bskew", "Bnorm", "Bs"],
-).set_index(["X", "Y", "Z"])
-
-# TubeFitter expects raw Bx/By column names rather than FieldFitter's Bskew/Bnorm.
-df_raw_data_tube = pd.DataFrame(
-    np.column_stack([x_grid.ravel(), y_grid.ravel(), z_grid.ravel(), bx, by, bz]),
     columns=["X", "Y", "Z", "Bx", "By", "Bs"],
 ).set_index(["X", "Y", "Z"])
 
-fitter = FieldFitter(
-    raw_data=df_raw_data,
-    xy_point=(0, 0),
-    distance_unit=1,
-    min_region_size=10,
-    deg=multipole_order - 1,
-    field_tol=1e-4,
-)
-fitter.fit()
-df_fit_pars = fitter.df_fit_pars
-
-# # After fitter.fit()
-# s = fitter.s_full
-
-# def _get_series(df, field="Bs", der=0):
-#     try:
-#         return df[(field, der)].to_numpy()
-#     except KeyError:
-#         ref = df.iloc[:, 0].to_numpy()
-#         return np.zeros_like(ref)
-
-# bs_raw = _get_series(fitter.df_on_axis_raw, "Bs", der=0)
-# bs_fit = _get_series(fitter.df_on_axis_fit, "Bs", der=0)
-
-# fig, ax = plt.subplots(figsize=(10, 4), constrained_layout=True)
-# ax.plot(s, bs_raw, label=r"$B_s$ raw")
-# ax.plot(s, bs_fit, "--", label=r"$B_s$ fit")
-
-# # Optional: draw piece boundaries like fitter.plot_fields
-# try:
-#     lvl_field = np.asarray(fitter.df_fit_pars.index.get_level_values("field_component"))
-#     lvl_der = np.asarray(fitter.df_fit_pars.index.get_level_values("derivative_x")).astype(int)
-#     mask = (lvl_field == "Bs") & (lvl_der == 0)
-#     s_start_vals = np.asarray(fitter.df_fit_pars.index.get_level_values("s_start"))[mask].astype(float)
-#     s_end_vals = np.asarray(fitter.df_fit_pars.index.get_level_values("s_end"))[mask].astype(float)
-#     s_borders = np.unique(np.concatenate((s_start_vals, s_end_vals)))
-#     for sb in s_borders:
-#         ax.axvline(sb, color="k", linestyle="--", linewidth=1, alpha=0.25)
-# except Exception:
-#     pass
-
-# ax.set_title(f"Longitudinal field fit at (x, y) = {fitter.xy_point}")
-# ax.set_xlabel("s [m]")
-# ax.set_ylabel(r"$B_s$ [T]")
-# ax.grid(True, alpha=0.3)
-# ax.legend()
-# plt.show()
-# #exit()
-
-# Build solenoid using SplineBorisSequence - automatically creates one SplineBoris
-# element per polynomial piece with n_steps based on the data point count
-seq = SplineBorisSequence(
-    df_fit_pars=df_fit_pars,
-    multipole_order=multipole_order,
-    steps_per_point=1,  # one integration step per data point
-)
-
-# Evaluate the reconstructed field along the on-axis longitudinal direction
-x0, y0 = fitter.xy_point
-# Bx_eval = np.array([seq.evaluate_field(x0, y0, s)[0] for s in fitter.s_full])
-# By_eval = np.array([seq.evaluate_field(x0, y0, s)[1] for s in fitter.s_full])
-# Bs_eval = np.array([seq.evaluate_field(x0, y0, s)[2] for s in fitter.s_full])
-
-# # Compare the SplineBorisSequence field evaluation against the analytical solenoid field
-# Bx_ref, By_ref, Bs_ref = sf.get_field(
-#     x0 * np.ones_like(fitter.s_full),
-#     y0 * np.ones_like(fitter.s_full),
-#     fitter.s_full,
-# )
-
-# fig, (ax1, ax2, ax3) = plt.subplots(3, figsize=(10, 6), constrained_layout=True)
-# for ax, comp_eval, comp_ref, label in zip(
-#     [ax1, ax2, ax3],
-#     [Bx_eval, By_eval, Bs_eval],
-#     [Bx_ref, By_ref, Bs_ref],
-#     [r"$B_x$", r"$B_y$", r"$B_s$"],
-# ):
-#     ax.plot(fitter.s_full, comp_ref, label="Analytical")
-#     ax.plot(fitter.s_full, comp_eval, "--", label="SplineBorisSequence")
-#     ax.set_ylabel(f"{label} [T]")
-#     ax.legend()
-#     ax.grid(True, alpha=0.3)
-
-# ax1.set_title(f"On-axis field at (x, y) = ({x0}, {y0})")
-# ax3.set_xlabel("s [m]")
-# plt.show()
-
-# Get the Line of SplineBoris elements
-line_splineboris = seq.to_line()
-line_splineboris.config.XTRACK_MULTIPOLE_NO_SYNRAD = False  # enable spin tracking
-line_splineboris.build_tracker()
-
-# --- TubeFitter ---
-# n_frames=2000 matches the validated tests/test_splineboris.py fixture for
-# this exact field map (interval=30, dx=dy=1mm, multipole_order=2).
+# Stage 1: on-axis multipoles at the tube frames.
 tube_fitter = TubeFitter(
-    raw_data=df_raw_data_tube,
+    raw_data=df_raw_data,
     n_frames=2000,
     distance_unit=1,
     deg=multipole_order - 1,
-    field_tol=1e-4,
 )
 tube_fitter.fit()
+z, F, names = tube_fitter.on_axis_multipoles()
+z_bs, bs = tube_fitter.on_axis_bs()
 
-# TubeFitter's regions are already aligned across field components, so
-# to_line() builds the SplineBoris line directly (see
-# examples/splineboris/claude_notes/tube_fitter_to_line.md).
-line_tubefitter = tube_fitter.to_line(multipole_order=multipole_order, steps_per_point=1)
-line_tubefitter.config.XTRACK_MULTIPOLE_NO_SYNRAD = False  # enable spin tracking
-line_tubefitter.build_tracker()
+# Stage 2, twice: coarse elements (default, ~5 frames per element) and fine
+# elements (2 frames per element), to see how the element length affects
+# tracking. The field is negligible at both map ends ("zero" end condition).
+N_ELEMENTS_COARSE = 400
+N_ELEMENTS_FINE = 1000
+
+
+def build_line(n_elements):
+    lf = LongitudinalFitter(0, interval, n_elements=n_elements)
+    lf.fit(z, F, names)
+    lf.fit(z_bs, bs, [("Bs", 0)])
+    line = lf.to_line(multipole_order=multipole_order, steps_per_point=1)
+    line.config.XTRACK_MULTIPOLE_NO_SYNRAD = False  # enable spin tracking
+    line.build_tracker()
+    return line
+
+
+line_splineboris = build_line(N_ELEMENTS_COARSE)
+line_fine = build_line(N_ELEMENTS_FINE)
+LABEL_COARSE = f"SplineBoris E={N_ELEMENTS_COARSE}"
+LABEL_FINE = f"SplineBoris E={N_ELEMENTS_FINE}"
 
 # --- TRUE REFERENCE: BorisSpatialIntegrator with same analytical field ---
 # This is the gold standard - uses the same full 3D field directly
@@ -208,9 +122,9 @@ p_varsol = p0.copy()
 line_varsol.track(p_varsol, turn_by_turn_monitor='ONE_TURN_EBE')
 mon_varsol = line_varsol.record_last_track
 
-p_tubefitter = p0.copy()
-line_tubefitter.track(p_tubefitter, turn_by_turn_monitor='ONE_TURN_EBE')
-mon_tubefitter = line_tubefitter.record_last_track
+p_fine = p0.copy()
+line_fine.track(p_fine, turn_by_turn_monitor='ONE_TURN_EBE')
+mon_fine = line_fine.record_last_track
 
 # Use mon_varsol as mon_ref for plotting
 mon_ref = mon_varsol
@@ -233,8 +147,8 @@ for i in range(n_part):
     s_ref, x_ref, y_ref = z_boris[:, i], x_boris[:, i], y_boris[:, i]
     print(f"--- particle {i} (delta={delta[i]}) ---")
     for label, mon in (
-        ("SplineBoris (FieldFitter)", mon_splineboris),
-        ("TubeFitter", mon_tubefitter),
+        (LABEL_COARSE, mon_splineboris),
+        (LABEL_FINE, mon_fine),
         ("VariableSolenoid", mon_varsol),
     ):
         x_i = np.interp(s_ref, mon.s[i, :], mon.x[i, :])
@@ -257,7 +171,7 @@ for i in range(n_part):
             mon_splineboris.x[i, :] * 1e3, 
             mon_splineboris.y[i, :] * 1e3, 
             '-', color=colors[i], linewidth=2, alpha=0.7,
-            label=f'SplineBoris p{i}')
+            label=f'{LABEL_COARSE} p{i}')
     # Boris integrator (dotted - this is the TRUE reference)
     ax.plot(z_boris[:, i],
             x_boris[:, i] * 1e3,
@@ -270,17 +184,17 @@ for i in range(n_part):
             mon_ref.y[i, :] * 1e3,
             '--', color=colors[i], alpha=0.5, linewidth=1.5,
             label=f'VarSol p{i}')
-    # TubeFitter/SplineBoris tracks (dash-dot lines)
-    ax.plot(mon_tubefitter.s[i, :],
-            mon_tubefitter.x[i, :] * 1e3,
-            mon_tubefitter.y[i, :] * 1e3,
+    # Fine-element SplineBoris tracks (dash-dot lines)
+    ax.plot(mon_fine.s[i, :],
+            mon_fine.x[i, :] * 1e3,
+            mon_fine.y[i, :] * 1e3,
             '-.', color=colors[i], alpha=0.8, linewidth=1.5,
-            label=f'TubeFitter p{i}')
+            label=f'{LABEL_FINE} p{i}')
 
 ax.set_xlabel('s [m]')
 ax.set_ylabel('x [mm]')
 ax.set_zlabel('y [mm]')
-ax.set_title('SplineBoris (solid) vs Boris (dotted) vs VarSol (dashed) vs TubeFitter (dash-dot)')
+ax.set_title(f'{LABEL_COARSE} (solid) vs Boris (dotted) vs VarSol (dashed) vs {LABEL_FINE} (dash-dot)')
 ax.legend(loc='upper left')
 ax.view_init(elev=20, azim=-60)
 fig.tight_layout()
@@ -292,13 +206,13 @@ fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 for i in range(n_part):
     # x vs s
     axes[0, i].plot(mon_splineboris.s[i, :], mon_splineboris.x[i, :] * 1e3, '-',
-                    label='SplineBoris', linewidth=2, alpha=0.7)
+                    label=LABEL_COARSE, linewidth=2, alpha=0.7)
     axes[0, i].plot(z_boris[:, i], x_boris[:, i] * 1e3, ':',
                     label='Boris (ref)', linewidth=2)
     axes[0, i].plot(mon_ref.s[i, :], mon_ref.x[i, :] * 1e3, '--',
                     label='VarSol', alpha=0.7)
-    axes[0, i].plot(mon_tubefitter.s[i, :], mon_tubefitter.x[i, :] * 1e3, '-.',
-                    label='TubeFitter', alpha=0.7)
+    axes[0, i].plot(mon_fine.s[i, :], mon_fine.x[i, :] * 1e3, '-.',
+                    label=LABEL_FINE, alpha=0.7)
     axes[0, i].set_xlabel('s [m]')
     axes[0, i].set_ylabel('x [mm]')
     axes[0, i].set_title(f'Particle {i} (delta={delta[i]}): x vs s')
@@ -307,13 +221,13 @@ for i in range(n_part):
 
     # y vs s
     axes[1, i].plot(mon_splineboris.s[i, :], mon_splineboris.y[i, :] * 1e3, '-',
-                    label='SplineBoris', linewidth=2, alpha=0.7)
+                    label=LABEL_COARSE, linewidth=2, alpha=0.7)
     axes[1, i].plot(z_boris[:, i], y_boris[:, i] * 1e3, ':',
                     label='Boris (ref)', linewidth=2)
     axes[1, i].plot(mon_ref.s[i, :], mon_ref.y[i, :] * 1e3, '--',
                     label='VarSol', alpha=0.7)
-    axes[1, i].plot(mon_tubefitter.s[i, :], mon_tubefitter.y[i, :] * 1e3, '-.',
-                    label='TubeFitter', alpha=0.7)
+    axes[1, i].plot(mon_fine.s[i, :], mon_fine.y[i, :] * 1e3, '-.',
+                    label=LABEL_FINE, alpha=0.7)
     axes[1, i].set_xlabel('s [m]')
     axes[1, i].set_ylabel('y [mm]')
     axes[1, i].set_title(f'Particle {i} (delta={delta[i]}): y vs s')

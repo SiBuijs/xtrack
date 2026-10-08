@@ -1,7 +1,7 @@
 """
 Spin tracking with undulators and radiation.
 
-This script loads the SLS MADX file, builds undulator using SplineBorisSequence,
+This script loads the SLS MADX file, builds undulator using TubeFitter + LongitudinalFitter,
 computes twiss with spin tracking and radiation, and displays results.
 """
 
@@ -10,8 +10,7 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from xtrack._temp.splineboris.field_fitter import FieldFitter
-from xtrack._temp.splineboris.splineboris_sequence import SplineBorisSequence
+from xtrack._temp.splineboris import TubeFitter, LongitudinalFitter
 
 
 multipole_order = 3
@@ -38,40 +37,35 @@ df_raw_data = pd.read_csv(
     field_map_path,
     sep=r"\s+",
     header=None,
-    names=["X", "Y", "Z", "Bskew", "Bnorm", "Bs"],
+    names=["X", "Y", "Z", "Bx", "By", "Bs"],
 ).set_index(["X", "Y", "Z"])
 
 # Distance unit in meters (the dataset uses mm, so 1 mm = 0.001 m)
 distance_unit = 0.001
 
-field_fitter = FieldFitter(
+# Stage 1: on-axis multipoles at the tube frames (one frame per 2 map planes).
+tube_fitter = TubeFitter(
     raw_data=df_raw_data,
-    xy_point=(0, 0),
+    n_frames=1101,
     distance_unit=distance_unit,
-    min_region_size=10,
-    deg=multipole_order-1,
+    deg=multipole_order - 1,
 )
+tube_fitter.fit()
 
-field_fitter.fit()
+# Stage 2: C3 quartic B-spline in s ("free" ends: the map ends are not
+# field-free). 2 frames per element gives ~16 elements per 36 mm period.
+z, F, names = tube_fitter.on_axis_multipoles()
+lf = LongitudinalFitter(z[0], z[-1], points_per_element=2, end_condition="free",
+                        period=0.036)
+lf.fit(z, F, names)
+lf.fit(*tube_fitter.on_axis_bs(), [("Bs", 0)])
 
-# Save fit parameters if needed
-# field_fitter.save_fit_pars(
-#     BASE_DIR
-#     / "test_data" / "sls"
-#     / "undulator_fit_pars.csv"
-# )
-
-# Build undulator using SplineBorisSequence - automatically creates one SplineBoris
-# element per polynomial piece with n_steps based on the data point count
-seq = SplineBorisSequence(
-    df_fit_pars=field_fitter.df_fit_pars,
-    multipole_order=multipole_order,
-    steps_per_point=1,
-)
-
-# Get the Line of SplineBoris elements (pass env for insert support)
-piecewise_undulator = seq.to_line(env=env)
-l_wig = seq.length
+# Line of SplineBoris elements, one per knot interval, imported into env for
+# insert support
+piecewise_undulator = env.import_line(
+    lf.to_line(multipole_order=multipole_order, steps_per_point=1),
+    line_name='undulator')
+l_wig = piecewise_undulator.get_length()
 
 piecewise_undulator.build_tracker()
 

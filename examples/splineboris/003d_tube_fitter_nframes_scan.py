@@ -12,7 +12,7 @@ fit-quality target?
 TubeFitter's own residual print (see tube_fit_residual_rms, added in
 _report_tube_fit_residual) already tells us the tube fit is genuinely
 overdetermined -- but how much of that comes from n_frames being generous
-(2200 in 003c, ~1 per z grid point) versus actually needed? This script
+(~1 per z grid point) versus actually needed? This script
 answers that by passing residual_tol to TubeFitter, which internally
 searches for the smallest n_frames whose relative residual (RMS residual /
 RMS field, same metric as the fit() printout) drops below a target
@@ -40,10 +40,9 @@ fitter = TubeFitter(
     raw_data=df_raw_data,
     distance_unit=dz,
     deg=deg,
-    field_tol=1e-3,
     y_symmetry=False,
     residual_tol=TARGET_REL_RESIDUAL,
 )
-rel_bskew, rel_bnorm = fitter.n_frames_search_trace[fitter.n_frames]
+rel_bx, rel_by = fitter.n_frames_search_trace[fitter.n_frames]
 print(f"\nn_frames selected: {fitter.n_frames} "
-      f"(Bskew={rel_bskew * 100:.2f}%, Bnorm={rel_bnorm * 100:.2f}%)")
+      f"(Bx={rel_bx * 100:.2f}%, By={rel_by * 100:.2f}%)")

@@ -3,9 +3,10 @@ import pandas as pd
 import xtrack as xt
 import matplotlib.pyplot as plt
 
-from xtrack._temp.splineboris.tube_fitter import TubeFitter
+from xtrack._temp.splineboris import TubeFitter, LongitudinalFitter
 
 MULTIPOLE_ORDER = 3
+UNDULATOR_PERIOD = 0.036  # [m], only used to warn if elements are too long
 
 SHIFT_Y = 0.0  # [m]
 N_SHIFT_X = 31
@@ -38,6 +39,15 @@ fitter = TubeFitter(
 )
 fitter.fit()
 
+# Longitudinal fit of the on-axis components ("free" ends: the map ends are
+# not field-free). 1701 frames over 2.2 m are ~28 per period, so 2 frames per
+# element gives ~14 elements per period (at least 12 are needed).
+z, F, names = fitter.on_axis_multipoles()
+lf = LongitudinalFitter(z[0], z[-1], points_per_element=2, end_condition="free",
+                        period=UNDULATOR_PERIOD)
+lf.fit(z, F, names)
+lf.fit(*fitter.on_axis_bs(), [("Bs", 0)])
+
 
 def _build_undulator_lines(shift_x):
     # Build + correct the two standalone undulator models (SplineBoris and
@@ -49,7 +59,7 @@ def _build_undulator_lines(shift_x):
     und_env = xt.Environment()
     und_env.set_particle_ref('positron', p0c=2.7e9)
 
-    undulator_line = fitter.to_line(multipole_order=MULTIPOLE_ORDER, steps_per_point=1,
+    undulator_line = lf.to_line(multipole_order=MULTIPOLE_ORDER, steps_per_point=1,
                                      shift_x=shift_x, shift_y=SHIFT_Y)
     undulator = und_env.import_line(undulator_line, line_name='undulator')
 
@@ -86,7 +96,7 @@ def _build_undulator_lines(shift_x):
     )
     opt.solve()
 
-    multipole_undulator_line = fitter.to_multipole_line(
+    multipole_undulator_line = lf.to_multipole_line(
         multipole_order=MULTIPOLE_ORDER, p0c=2.7e9, field_at='midpoint',
         shift_x=shift_x, shift_y=SHIFT_Y)
     undulator_mult = und_env.import_line(multipole_undulator_line, line_name='undulator_mult')
