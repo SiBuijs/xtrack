@@ -22,4 +22,5 @@ test_data/sls/simona_field_map.txt
 examples/fcc_ee_solenoid/data/
 examples/splineboris/results/
 examples/splineboris/data/
+examples/splineboris/data_007b/
 xtrack/beam_elements/borissolenoid_src/
