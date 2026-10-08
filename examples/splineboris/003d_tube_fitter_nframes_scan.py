@@ -28,13 +28,13 @@ TARGET_REL_RESIDUAL = 0.001  # fraction of field RMS -- the convergence target
 dz = 0.001
 deg = 2
 
-file_path = Path(__file__).resolve().parent.parent.parent / "test_data" / "sls" / "undulator_field_map.txt"
+file_path = Path(__file__).resolve().parent.parent.parent / "test_data" / "sls" / "simona_field_map.txt"
 df_raw_data = pd.read_csv(
     file_path, sep=r"\s+", header=None,
     names=["X", "Y", "Z", "Bx", "By", "Bs"],
 ).set_index(["X", "Y", "Z"])
 
-print(f"Target: worst-case relative residual <= {TARGET_REL_RESIDUAL * 100:.1f}%\n")
+print(f"Target: worst-case relative residual <= {TARGET_REL_RESIDUAL:.2e}\n")
 
 fitter = TubeFitter(
     raw_data=df_raw_data,
@@ -45,4 +45,4 @@ fitter = TubeFitter(
 )
 rel_bx, rel_by = fitter.n_frames_search_trace[fitter.n_frames]
 print(f"\nn_frames selected: {fitter.n_frames} "
-      f"(Bx={rel_bx * 100:.2f}%, By={rel_by * 100:.2f}%)")
+      f"(Bx={rel_bx:.2e}, By={rel_by:.2e})")

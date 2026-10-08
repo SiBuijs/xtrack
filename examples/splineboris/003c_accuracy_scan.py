@@ -25,7 +25,7 @@ map. Two effects show up:
 PERIOD = 0.036  # [m]
 DEG = 2
 ELEMENTS_PER_PERIOD = [6, 9, 12, 18, 24, 36]
-N_FRAMES_LIST = [550, 1100, 2200]
+N_FRAMES_LIST = [550, 1100, 2201]  # 2201: one frame per map plane
 END_CONDITION = "free"  # this map is not field-free at its ends
 
 file_path = Path(__file__).resolve().parent.parent.parent / "test_data" / "sls" / "undulator_field_map.txt"

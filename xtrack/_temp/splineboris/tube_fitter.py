@@ -1,27 +1,27 @@
 """
 Global magnetic-field fitting via the tube approach (Riemann & Aiba, IPAC2021).
 
-Fits a scalar potential
+Stage 1 of the SplineBoris field-map pipeline (the multipole finder). Fits a
+scalar potential
     Omega_tilde(x, y, z) = sum_{j,p,q} Psi[j,p,q] * x^p * y^q * beta_j(z)
 with tent (degree-1 B-spline) longitudinal basis functions beta_j(z) -- i.e.
-straight-line interpolation between frames -- then converts multipole
-coefficients to the same Hermite-quartic ``df_fit_pars`` format as ``FieldFitter``.
+straight-line interpolation between frames -- and returns the on-axis
+components at the frame positions z_j, as data points for the longitudinal
+fit (stage 2, ``LongitudinalFitter``).
 
 Conventions (h = 0, straight frame, B = -grad Phi):
     - Minus sign is applied in the sparse system rows for Bx and By.
-    - C_{p,q}(z) = sum_j Psi[j,p,q] * beta_j(z)
-    - b_m(z) = -(m-1)! * C_{m-1,1}(z)  ->  ``Bnorm``, derivative_x = m-1
-    - a_m(z) = -m! * C_{m,0}(z)  ->  ``Bskew``, derivative_x = m-1  (uses Psi[:, m, 0])
-    - b_s(z): fitted independently (1D tent fit to on-axis Bs), exactly as
-      ``FieldFitter`` does. Only ``q=0`` (skew) and ``q=1`` (norm) rows of
-      ``Psi`` are ever read on export -- any ``q>=2`` content the fit picks
-      up (only possible when ``y_symmetry=False``) is fit freely, purely to
-      keep it from biasing the exported ``q=0``/``q=1`` columns, and is
-      itself discarded. This mirrors the Van der Schueren potential's own
-      Cauchy data (phi_0, phi_1 only): the downstream Table-1 field
-      evaluator regenerates all q>=2 structure from (a_n, b_n, b_s) alone,
-      Maxwell-consistent by construction, so the tube fit does not need to
-      reproduce it or enforce div(B) = 0 itself -- see
+    - ("By", n)(z_j) = d^n B_y/dx^n (0, 0, z_j) = -n! * Psi[j, n, 1]
+    - ("Bx", n)(z_j) = d^n B_x/dx^n (0, 0, z_j) = -(n+1)! * Psi[j, n+1, 0]
+    - ("Bs", 0): not part of the tube fit; ``on_axis_bs()`` returns the
+      map's own on-axis B_s on its planes. Only ``q=0`` and ``q=1`` rows of
+      ``Psi`` are passed on -- any ``q>=2`` content the fit picks up (only
+      possible when ``y_symmetry=False``) is fit freely, purely to keep it
+      from biasing the ``q=0``/``q=1`` columns, and is itself discarded.
+      This mirrors the Van der Schueren potential's own Cauchy data (phi_0,
+      phi_1 only): the downstream Table-1 field evaluator regenerates all
+      q>=2 structure from the on-axis components alone, Maxwell-consistent
+      by construction -- see
       examples/splineboris/claude_notes/tube_schueren_integration.md. Use
       ``check_trace_consistency()`` (a diagnostic, not a correction) to see
       how well that assumption holds on a given dataset.
@@ -33,17 +33,9 @@ from __future__ import annotations
 import contextlib
 import io
 import math
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import scipy as sc
-import xtrack as xt
-
-from xtrack.beam_elements.splineboris import Spline4, SplineBoris
-from xtrack.beam_elements.splineboris_src.spline_B_field_eval_python import (
-    hermite_to_polynomial,
-)
 
 _REQUIRED_COLUMNS = ("Bx", "By", "Bs")
 _INDEX_NAMES = ("X", "Y", "Z")
@@ -73,10 +65,6 @@ def _generate_pq_pairs(M: int, y_symmetry: bool, fit_skew: bool) -> list[tuple[i
     return pairs
 
 
-def _frame_indices(s_full: np.ndarray, frames: np.ndarray) -> np.ndarray:
-    return np.array([int(np.argmin(np.abs(s_full - f))) for f in frames], dtype=int)
-
-
 def _tent_interval_index(z: np.ndarray, frames: np.ndarray) -> np.ndarray:
     """Interval ``k`` (``frames[k] <= z < frames[k + 1]``) each z falls in.
     A z exactly on an interior frame belongs to the interval on its right;
@@ -94,14 +82,6 @@ def _tent_weights(
     k = _tent_interval_index(z, frames)
     t = (z - frames[k]) / (frames[k + 1] - frames[k])
     return k, 1.0 - t, t
-
-
-def _tent_slope(z: np.ndarray, frames: np.ndarray, coeffs: np.ndarray) -> np.ndarray:
-    """d/dz of the tent interpolant ``np.interp(z, frames, coeffs)``:
-    constant within each interval, taken from the interval on the right at
-    an interior frame (see ``_tent_interval_index``)."""
-    slopes = np.diff(coeffs) / np.diff(frames)
-    return slopes[_tent_interval_index(z, frames)]
 
 
 def _tent_intervals(
@@ -196,20 +176,6 @@ def _accumulate_residual_sumsq(bounds, b0, b1, x, y, bx, by, pq, x_sol):
     return tuple(float(v) for v in sums)
 
 
-def _hermite_from_tent(
-    frames: np.ndarray, coeffs: np.ndarray
-) -> tuple[np.ndarray, ...]:
-    """Hermite params ``(val_start, der_start, val_end, der_end, mean)`` of
-    the tent interpolant on every region ``[frames[i], frames[i + 1]]``,
-    each an ``(n_regions,)`` array. Within a region the interpolant is a
-    straight line, so both end slopes are that region's own slope (the
-    kink at each frame belongs to the neighbouring region's slope on the
-    far side) and the mean is the average of the two end values."""
-    c_left, c_right = coeffs[:-1], coeffs[1:]
-    slope = (c_right - c_left) / np.diff(frames)
-    return c_left, slope, c_right, slope, 0.5 * (c_left + c_right)
-
-
 class TubeFitter:
     """
     Fit 3D magnetic field maps using the tube approach with B-splines in z.
@@ -220,22 +186,23 @@ class TubeFitter:
         ``pd.DataFrame`` with MultiIndex ``('X', 'Y', 'Z')`` and columns
         ``('Bx', 'By', 'Bs')``.
     n_frames :
-        Number of uniformly spaced longitudinal frames (B-spline control points).
-        Number of Hermite regions is ``n_frames - 1``. Mutually exclusive with
+        Number of uniformly spaced longitudinal frames (tent peaks). One
+        frame per map plane avoids the slight smoothing that coarser tent
+        frames apply to the on-axis components. Mutually exclusive with
         ``residual_tol`` (specifying both raises ``ValueError``). If neither
         is given, defaults to ``DEFAULT_N_FRAMES`` (clamped to the valid
         ``[2, dof_ceiling]`` range) -- a reasonable middle ground, not tuned
         to any particular fit-quality target.
     residual_tol :
         If given (and ``n_frames`` is not), search for the smallest
-        ``n_frames`` whose worst-case relative tube-fit residual (Bskew/Bnorm,
+        ``n_frames`` whose worst-case relative tube-fit residual (Bx/By,
         the relative version of ``tube_fit_residual_rms``) is <= this value,
         and use that. The search fits the tube system repeatedly (geometric
         doubling to bracket the transition, then integer bisection: ~log2 of
         the search range), so it can take a while for large datasets -- once
         you know a good value, prefer passing a fixed ``n_frames`` instead.
         Every evaluated ``n_frames`` is recorded in
-        ``self.n_frames_search_trace`` (``{n_frames: (rel_bskew, rel_bnorm)}``)
+        ``self.n_frames_search_trace`` (``{n_frames: (rel_bx, rel_by)}``)
         and plotted automatically via ``plot_n_frames_search()`` once the
         search finishes (call it again yourself to re-plot). If the target
         isn't reachable even at the DOF ceiling ``n_frames`` (a genuine
@@ -255,33 +222,22 @@ class TubeFitter:
         basis. If False, only (1, 0) is used (on-axis B_x dipole only).
     y_symmetry :
         If True, assume machine-plane (y-parity) symmetry: only use
-        (p, q) with odd q for the normal (By) multipoles, so Bnorm terms are
-        forced even in y and Bnorm/Bskew are decoupled accordingly. If False
-        (default), also include even-q pairs, allowing a field with no
-        assumed y-parity. Only the q=0 (skew) and q=1 (norm) rows are ever
-        exported, regardless of this setting -- any q>=2 content fitted
-        when ``y_symmetry=False`` is fit freely, purely to keep real even-q
-        structure in the data from biasing the exported q=0/q=1 (a_n, b_n)
-        columns, and is otherwise discarded (see
+        (p, q) with odd q (plus the (p, 0) terms), so the ("By", n) and
+        ("Bx", n) components are decoupled accordingly. If False (default),
+        also include even-q pairs, allowing a field with no assumed
+        y-parity. Only the q=0 and q=1 rows are ever passed on, regardless
+        of this setting -- any q>=2 content fitted when ``y_symmetry=False``
+        is fit freely, purely to keep real even-q structure in the data
+        from biasing the q=0/q=1 columns, and is otherwise discarded (see
         examples/splineboris/claude_notes/tube_schueren_integration.md).
-    field_tol :
-        Relative tolerance for marking a field component as ``to_fit`` in
-        ``df_fit_pars`` (same logic as ``FieldFitter``). ``Bs`` is always
-        fit independently from on-axis data (``_fit_bs``, a plain 1D
-        B-spline), exactly like ``FieldFitter`` -- the downstream Schueren/
-        Table-1 field evaluator regenerates all q>=2 structure (including
-        the y^2 term tying transverse curvature to ``Bs'(z)``) from
-        (a_n, b_n, b_s) alone, Maxwell-consistent by construction, so
-        ``TubeFitter`` itself never needs to enforce div(B) = 0 -- see
-        ``check_trace_consistency()`` for diagnostics of how well that
-        holds on a given dataset.
 
     The longitudinal basis is a fixed tent (hat-function, degree-1
     B-spline) basis: one tent per frame, peaking there and reaching zero at
     the neighbouring frames, so every ``C_pq(z)`` is the straight-line
     interpolation of its frame values ``Psi[:, p, q]``
-    (``np.interp(z, frames, Psi[:, p, q])``). It is C^0: the slope jumps at
-    every frame, and each region's Hermite export uses its own slope.
+    (``np.interp(z, frames, Psi[:, p, q])``). Only the frame values are
+    passed on (``on_axis_multipoles()``); the longitudinal shape of the
+    exported field is fitted separately by ``LongitudinalFitter``.
     """
 
     def __init__(
@@ -293,7 +249,6 @@ class TubeFitter:
         tube_radius: float | None = None,
         fit_skew: bool = True,
         y_symmetry: bool = False,
-        field_tol: float = 1e-3,
         residual_tol: float | None = None,
     ):
         if n_frames is not None and residual_tol is not None:
@@ -309,24 +264,15 @@ class TubeFitter:
         self.tube_radius = tube_radius
         self.fit_skew = bool(fit_skew)
         self.y_symmetry = bool(y_symmetry)
-        self.field_tol = float(field_tol)
-        self.xy_point = (0.0, 0.0)
-        self.component_to_fit: dict[tuple[str, int], bool] = {}
 
         self.frames: np.ndarray | None = None
-        self.n_regions: int | None = None
         self.pq_pairs = _generate_pq_pairs(self.M, self.y_symmetry, self.fit_skew)
         self.pq_to_idx = {pq: i for i, pq in enumerate(self.pq_pairs)}
 
         self.s_full: np.ndarray | None = None
         self.Psi: np.ndarray | None = None
-        self.Psi_bs: np.ndarray | None = None
-        self._hermite: dict[tuple[str, int, int], tuple[float, ...]] | None = None
 
         self.df_raw_data: pd.DataFrame | None = None
-        self.df_on_axis_raw: pd.DataFrame | None = None
-        self.df_on_axis_fit: pd.DataFrame | None = None
-        self.df_fit_pars: pd.DataFrame | None = None
         self.n_frames_search_trace: dict[int, tuple[float, float]] | None = None
         # Set by _search_n_frames (via _adopt_trial_system) when residual_tol
         # is given -- lets the first _build_linear_system() call adopt the
@@ -352,226 +298,35 @@ class TubeFitter:
         self.n_frames = resolved_n_frames
 
     def fit(self) -> None:
-        """Run the full tube-approach fit and populate ``df_fit_pars``."""
+        """Run the tube fit, populating ``Psi``."""
         if self.df_raw_data is None:
             raise RuntimeError("Raw data must be provided before calling fit().")
-        self._set_df_on_axis()
         self._setup_frames()
         self._build_linear_system()
         self._solve()
-        self._populate_on_axis_from_psi()
-        self._fit_bs()
-        self._convert_to_hermite()
-        self._assign_to_fit_flags()
-        self._populate_df_fit_pars()
-        self._fill_df_on_axis_fit()
 
-    def save_fit_pars(self, file_path: str | Path) -> None:
-        """Save ``df_fit_pars`` to CSV."""
-        if self.df_fit_pars is None:
-            raise RuntimeError("Call fit() before save_fit_pars().")
-        self.df_fit_pars.to_csv(file_path, index=True)
+    def on_axis_multipoles(self) -> tuple[np.ndarray, np.ndarray, list[tuple[str, int]]]:
+        """Stage-1 output: ``(z, F, names)`` with ``z`` the frame positions,
+        ``F[j, i]`` the value of component ``names[i]`` (``("By", n)`` or
+        ``("Bx", n)``, see module docstring) at ``z[j]``. Components whose
+        (p, q) pair is not in the basis are left out."""
+        if self.Psi is None:
+            raise RuntimeError("Call fit() before on_axis_multipoles().")
+        names, columns = [], []
+        for n in range(self.deg + 1):
+            if (n, 1) in self.pq_to_idx:
+                names.append(("By", n))
+                columns.append(-math.factorial(n) * self.Psi[:, n, 1])
+            if (n + 1, 0) in self.pq_to_idx:
+                names.append(("Bx", n))
+                columns.append(-math.factorial(n + 1) * self.Psi[:, n + 1, 0])
+        return self.frames.copy(), np.column_stack(columns), names
 
-    def to_line(
-        self,
-        multipole_order: int,
-        steps_per_point: int = 1,
-        shift_x: float = 0.0,
-        shift_y: float = 0.0,
-        radiation_flag: int = 0,
-    ) -> xt.Line:
-        """Build an ``xt.Line`` of ``SplineBoris`` elements from ``df_fit_pars``.
-
-        Unlike ``FieldFitter`` (whose regions come from independent
-        peak-finding per field/derivative and can straddle each other),
-        every ``(field_component, derivative_x)`` in ``df_fit_pars`` here
-        shares the same region grid (``self.frames``), so no boundary
-        reconciliation across fields is needed -- each region's 5 stored
-        Hermite params map directly onto a ``Spline4`` (``param_index``
-        0..4 == val_start, der_start, val_end, der_end, mean), with no
-        ``hermite_to_polynomial`` round-trip. See
-        ``examples/splineboris/claude_notes/`` for the reasoning
-        (``SplineBorisSequence`` remains the right tool for ``FieldFitter``
-        output).
-
-        Parameters
-        ----------
-        multipole_order :
-            Number of multipole orders (``Bx``/``By`` derivative slots) per
-            ``SplineBoris`` element. Orders at or beyond what was fit
-            (``self.deg + 1``) are filled with a zero ``Spline4``.
-        steps_per_point :
-            Multiplier for integration steps per raw data point.
-        shift_x, shift_y :
-            Transverse shift [m] passed through to every element.
-        radiation_flag :
-            Radiation flag passed through to every element.
-        """
-        if self.df_fit_pars is None:
-            raise RuntimeError("Call fit() before to_line().")
-        if multipole_order <= 0:
-            raise ValueError("multipole_order must be a positive integer")
-
-        zero_spline = Spline4(
-            val_start=0.0, der_start=0.0, val_end=0.0, der_end=0.0, mean=0.0
-        )
-
-        df = self.df_fit_pars.reset_index()
-        regions: dict[tuple[float, float], dict] = {}
-        for (s_start, s_end, fc, der), grp in df.groupby(
-            ["s_start", "s_end", "field_component", "derivative_x"], sort=True
-        ):
-            region = regions.setdefault((s_start, s_end), {
-                "idx_start": int(grp["idx_start"].iloc[0]),
-                "idx_end": int(grp["idx_end"].iloc[0]),
-                "by": {}, "bx": {}, "bs": zero_spline,
-            })
-            grp_sorted = grp.sort_values("param_index")
-            spline = Spline4(*grp_sorted["param_value"].to_numpy(dtype=float))
-            der = int(der)
-            if fc == "Bs":
-                region["bs"] = spline
-            elif fc == "Bnorm":
-                region["by"][der] = spline
-            elif fc == "Bskew":
-                region["bx"][der] = spline
-
-        elements = []
-        names = []
-        name_width = len(str(self.n_regions - 1)) if self.n_regions > 1 else 1
-        for i_reg, (s_start, s_end) in enumerate(sorted(regions)):
-            region = regions[(s_start, s_end)]
-            by_tuple = tuple(region["by"].get(o, zero_spline) for o in range(multipole_order))
-            bx_tuple = tuple(region["bx"].get(o, zero_spline) for o in range(multipole_order))
-            n_steps = max(1, (region["idx_end"] - region["idx_start"]) * steps_per_point)
-
-            elements.append(SplineBoris(
-                bs=region["bs"],
-                by=by_tuple,
-                bx=bx_tuple,
-                length=float(s_end - s_start),
-                n_steps=n_steps,
-                shift_x=shift_x,
-                shift_y=shift_y,
-                radiation_flag=radiation_flag,
-            ))
-            names.append(f"tubefitter_{i_reg:0{name_width}d}")
-
-        return xt.Line(elements=elements, element_names=names)
-
-    def to_multipole_line(
-        self,
-        multipole_order: int,
-        p0c: float,
-        q0: float = 1.0,
-        field_at: str = "mean",
-        shift_x: float = 0.0,
-        shift_y: float = 0.0,
-    ) -> xt.Line:
-        """Build an ``xt.Line`` of thick ``Multipole`` elements from ``df_fit_pars``.
-
-        Uses the same region grid as ``to_line()``, but replaces each
-        region's ``SplineBoris`` (full spatial field integration) with a
-        single ``Multipole`` -- a rigidity-normalized multipole kick over
-        that region's length.
-
-        Each ``knl``/``ksl`` order is derived from the corresponding
-        ``Bnorm``/``Bskew`` Hermite field value (see ``field_at``),
-        ``Bnorm``/``Bskew`` already being the on-axis multipole coefficients
-        ``d^n By/dx^n`` and ``d^n Bx/dx^n``, via the same relation
-        ``xt.Multipole`` itself uses (see
-        ``track_magnet_kick.h::evaluate_field_from_strengths``):
-        ``knl[n] = length / brho0 * field(d^n By/dx^n)``,
-        ``ksl[n] = length / brho0 * field(d^n Bx/dx^n)``, with
-        ``brho0 = p0c / (clight * q0)``.
-
-        This discards everything ``to_line()`` keeps beyond a single field
-        value per region: longitudinal field variation within a region
-        (except at the sampled point), the remaining boundary-derivative
-        (Hermite) terms, and the on-axis solenoid field ``Bs`` (no multipole
-        equivalent, dropped with a warning if significant) -- so it is a
-        coarse approximation, useful as a quick comparison baseline against
-        the full ``SplineBoris`` line rather than a faithful field model.
-
-        Parameters
-        ----------
-        multipole_order :
-            Number of multipole orders (``knl``/``ksl`` length) per element.
-            Orders at or beyond what was fit (``self.deg + 1``) are zero.
-        p0c :
-            Reference momentum times c [eV], used to compute the reference
-            rigidity ``brho0``.
-        q0 :
-            Reference charge [elementary charges]. Default 1.0.
-        field_at :
-            Which field value along each region is used to derive
-            ``knl``/``ksl``. ``"mean"`` (default) -- the region-averaged
-            field (Hermite ``param_index=4``, a true integral over the
-            region divided by its length). ``"midpoint"`` -- the field
-            value at the region's longitudinal midpoint, reconstructed from
-            the full Hermite quartic via ``hermite_to_polynomial`` (the same
-            reconstruction ``to_line()``'s ``SplineBoris`` elements use
-            internally to evaluate the field at any point within a region).
-        shift_x, shift_y :
-            Transverse shift [m] passed through to every ``Multipole``
-            element (same meaning as ``to_line()``'s ``shift_x``/``shift_y``).
-        """
-        if self.df_fit_pars is None:
-            raise RuntimeError("Call fit() before to_multipole_line().")
-        if multipole_order <= 0:
-            raise ValueError("multipole_order must be a positive integer")
-        if field_at not in ("mean", "midpoint"):
-            raise ValueError(f"field_at must be 'mean' or 'midpoint', got {field_at!r}")
-
-        brho0 = p0c / (sc.constants.c * q0)
-
-        if self.component_to_fit.get(("Bs", 0), False):
-            print(
-                "[TubeFitter] to_multipole_line(): the fitted Bs (solenoid) "
-                "field component has no Multipole equivalent and is dropped."
-            )
-
-        df = self.df_fit_pars.reset_index()
-        df = df[df["field_component"] != "Bs"]
-
-        regions: dict[tuple[float, float], dict] = {}
-        for (s_start, s_end, fc, der), grp in df.groupby(
-            ["s_start", "s_end", "field_component", "derivative_x"], sort=True
-        ):
-            region = regions.setdefault((s_start, s_end), {"knl": {}, "ksl": {}})
-            if field_at == "mean":
-                value = float(grp.loc[grp["param_index"] == 4, "param_value"].iloc[0])
-            else:
-                coeffs = grp.sort_values("param_index")["param_value"].to_numpy(dtype=float)
-                length = float(s_end - s_start)
-                poly = hermite_to_polynomial(0.0, length, coeffs)
-                value = float(poly(0.5 * length))
-            der = int(der)
-            if fc == "Bnorm":
-                region["knl"][der] = value
-            elif fc == "Bskew":
-                region["ksl"][der] = value
-
-        elements = []
-        names = []
-        name_width = len(str(self.n_regions - 1)) if self.n_regions > 1 else 1
-        for i_reg, (s_start, s_end) in enumerate(sorted(regions)):
-            region = regions[(s_start, s_end)]
-            length = float(s_end - s_start)
-            knl = [region["knl"].get(o, 0.0) * length / brho0 for o in range(multipole_order)]
-            ksl = [region["ksl"].get(o, 0.0) * length / brho0 for o in range(multipole_order)]
-
-            elements.append(xt.Multipole(
-                knl=knl,
-                ksl=ksl,
-                length=length,
-                isthick=True,
-                shift_x=shift_x,
-                shift_y=shift_y,
-            ))
-            names.append(f"tubefitter_mult_{i_reg:0{name_width}d}")
-
-        return xt.Line(elements=elements, element_names=names)
+    def on_axis_bs(self) -> tuple[np.ndarray, np.ndarray]:
+        """``(z, Bs)``: the map's own on-axis B_s on its planes (not part of
+        the tube fit)."""
+        df_on = self.df_raw_data.xs((0.0, 0.0), level=["X", "Y"]).sort_index()
+        return df_on.index.to_numpy(dtype=float), df_on["Bs"].to_numpy(dtype=float)
 
     # ------------------------------------------------------------------
     # Data setup
@@ -661,7 +416,7 @@ class TubeFitter:
         return n_z
 
     def _trial_relative_residual(self, n_frames: int) -> tuple[float, float, "TubeFitter"]:
-        """Fit a throwaway TubeFitter at n_frames, return its (Bskew, Bnorm)
+        """Fit a throwaway TubeFitter at n_frames, return its (Bx, By)
         relative tube-fit residuals plus the fitted trial itself -- so the
         winning trial's expensive work (``_build_linear_system``) can be
         adopted by ``_search_n_frames`` instead of being thrown away and
@@ -676,17 +431,16 @@ class TubeFitter:
                 tube_radius=self.tube_radius,
                 fit_skew=self.fit_skew,
                 y_symmetry=self.y_symmetry,
-                field_tol=self.field_tol,
             )
             trial.fit()
         b = trial._b_vec
         n_bxby = trial._n_bx_by_rows
         rels = {}
-        for field, rows in (("Bskew", slice(0, n_bxby, 2)), ("Bnorm", slice(1, n_bxby, 2))):
+        for field, rows in (("Bx", slice(0, n_bxby, 2)), ("By", slice(1, n_bxby, 2))):
             rms = trial.tube_fit_residual_rms[field]
             field_rms = float(np.sqrt(np.mean(b[rows] ** 2)))
             rels[field] = rms / field_rms if field_rms > 0 else 0.0
-        return rels["Bskew"], rels["Bnorm"], trial
+        return rels["Bx"], rels["By"], trial
 
     def _search_n_frames(self, residual_tol: float) -> int:
         """
@@ -711,9 +465,9 @@ class TubeFitter:
         def meets(n: int) -> bool:
             nonlocal best_trial
             if n not in cache:
-                rel_bskew, rel_bnorm, trial = self._trial_relative_residual(n)
-                cache[n] = (rel_bskew, rel_bnorm)
-                print(f"[TubeFitter]   n_frames={n:5d}  Bskew={rel_bskew * 100:6.2f}%  Bnorm={rel_bnorm * 100:6.2f}%")
+                rel_bx, rel_by, trial = self._trial_relative_residual(n)
+                cache[n] = (rel_bx, rel_by)
+                print(f"[TubeFitter]   n_frames={n:5d}  Bx={rel_bx:.2e}  By={rel_by:.2e}")
                 passes = max(cache[n]) <= residual_tol
                 if passes and (best_trial is None or n < best_trial[0]):
                     best_trial = (n, trial)
@@ -727,14 +481,14 @@ class TubeFitter:
 
         print(
             f"[TubeFitter] Searching for smallest n_frames with relative "
-            f"residual <= {residual_tol * 100:.3g}% in [{n_min}, {n_max}]..."
+            f"residual <= {residual_tol:.2e} in [{n_min}, {n_max}]..."
         )
         if not meets(n_max):
             self.n_frames_search_trace = dict(cache)
             print(
                 f"[TubeFitter] WARNING: residual_tol={residual_tol} not reachable "
                 f"even at the DOF ceiling n_frames={n_max} (relative residual="
-                f"{max(cache[n_max]) * 100:.2f}%). Falling back to "
+                f"{max(cache[n_max]):.2e}). Falling back to "
                 f"n_frames={n_max} (the best achievable)."
             )
             self.plot_n_frames_search(target=residual_tol, selected=n_max)
@@ -757,7 +511,7 @@ class TubeFitter:
                 lo = mid
 
         self.n_frames_search_trace = dict(cache)
-        print(f"[TubeFitter] Selected n_frames={hi} (relative residual={max(cache[hi]) * 100:.3f}%)")
+        print(f"[TubeFitter] Selected n_frames={hi} (relative residual={max(cache[hi]):.2e})")
         self.plot_n_frames_search(target=residual_tol, selected=hi)
         assert best_trial is not None and best_trial[0] == hi
         self._adopt_trial_system(best_trial[1])
@@ -768,9 +522,9 @@ class TubeFitter:
         tridiagonal system, so the subsequent (always-required) explicit
         ``fit()`` call can adopt it in ``_build_linear_system`` instead of
         redoing that ~O(n_pts) accumulation pass from scratch. Everything
-        downstream of it in ``fit()`` (the solve, Hermite conversion,
-        to_fit flags, ...) is cheap and still runs normally, so it keeps
-        printing its usual diagnostics."""
+        downstream of it in ``fit()`` (the solve and residual report) is
+        cheap and still runs normally, so it keeps printing its usual
+        diagnostics."""
         self._cached_system = (
             trial._D, trial._E, trial._r,
             trial._residual_design, trial._residual_xy, trial._residual_pq,
@@ -780,7 +534,7 @@ class TubeFitter:
     def plot_n_frames_search(self, target: float | None = None, selected: int | None = None) -> None:
         """
         Plot the residual_tol search trace (``self.n_frames_search_trace``):
-        Bskew/Bnorm relative residual vs every ``n_frames`` evaluated during
+        Bx/By relative residual vs every ``n_frames`` evaluated during
         the search. Called automatically at the end of a ``residual_tol``
         search (whether or not the target was reached); call it again
         yourself if you want to re-plot it later.
@@ -794,66 +548,40 @@ class TubeFitter:
             )
 
         ns = sorted(self.n_frames_search_trace)
-        bskew = [self.n_frames_search_trace[n][0] * 100 for n in ns]
-        bnorm = [self.n_frames_search_trace[n][1] * 100 for n in ns]
+        bx_rel = [self.n_frames_search_trace[n][0] for n in ns]
+        by_rel = [self.n_frames_search_trace[n][1] for n in ns]
 
         fig, ax = plt.subplots(figsize=(9, 5.5), constrained_layout=True)
-        ax.plot(ns, bskew, "o-", color="tab:blue", label="Bskew")
-        ax.plot(ns, bnorm, "o-", color="tab:orange", label="Bnorm")
+        ax.plot(ns, bx_rel, "o-", color="tab:blue", label="Bx")
+        ax.plot(ns, by_rel, "o-", color="tab:orange", label="By")
         if target is not None:
-            ax.axhline(target * 100, color="k", linestyle="--", linewidth=1,
-                       label=f"target ({target * 100:.2g}%)")
+            ax.axhline(target, color="k", linestyle="--", linewidth=1,
+                       label=f"target ({target:.2e})")
         if selected is not None:
             ax.axvline(selected, color="tab:green", linestyle=":", linewidth=1.5,
                        label=f"n_frames = {selected}")
         ax.set_xscale("log")
         ax.set_yscale("log")
         ax.set_xlabel("n_frames")
-        ax.set_ylabel("Tube fit residual (% of field RMS)")
+        ax.set_ylabel("Tube fit residual / field RMS")
         ax.set_title("TubeFitter n_frames search (residual_tol)")
         ax.grid(True, which="both", alpha=0.3)
         ax.legend()
         plt.show()
 
-    def _set_df_on_axis(self) -> None:
-        x0, y0 = self.xy_point
-        df_on = self.df_raw_data.xs((x0, y0), level=["X", "Y"]).sort_index().copy(deep=True)
-        df_on.columns = pd.MultiIndex.from_tuples([(col, 0) for col in df_on.columns])
-        self.df_on_axis_raw = df_on
-        self.df_on_axis_fit = self.df_on_axis_raw.copy(deep=True)
-        self.df_on_axis_fit.loc[:, :] = 0.0
-
-    def _on_axis_multipole_from_psi(self, field: str, der: int) -> np.ndarray | None:
-        """On-axis multipole series b_m or a_m evaluated from ``Psi`` at all ``s_full``."""
-        assert self.frames is not None and self.Psi is not None and self.s_full is not None
-        assert self.pq_to_idx is not None
-        if field == "By":
-            if (der, 1) not in self.pq_to_idx:
-                return None
-            coeffs = -math.factorial(der) * self.Psi[:, der, 1]
-        elif field == "Bx":
-            m = der + 1
-            if (m, 0) not in self.pq_to_idx:
-                return None
-            coeffs = -math.factorial(m) * self.Psi[:, m, 0]
-        else:
-            raise ValueError(f"field must be 'Bx' or 'By', got {field!r}")
-        return np.interp(self.s_full, self.frames, coeffs)
-
-    def _populate_on_axis_from_psi(self) -> None:
-        """Fill higher-order on-axis Bx/By columns from tube multipoles (post-``_solve``)."""
-        assert self.df_on_axis_raw is not None
-        for der in range(1, self.deg + 1):
-            for field in ("Bx", "By"):
-                series = self._on_axis_multipole_from_psi(field, der)
-                if series is not None:
-                    self.df_on_axis_raw[(field, der)] = series
-
     def _setup_frames(self) -> None:
         assert self.s_full is not None
         z_min, z_max = float(self.s_full[0]), float(self.s_full[-1])
-        self.frames = np.linspace(z_min, z_max, self.n_frames)
-        self.n_regions = self.n_frames - 1
+        frames = np.linspace(z_min, z_max, self.n_frames)
+        # Frames that coincide with a map plane up to rounding take the
+        # plane's exact z -- otherwise a plane a few ulp left of its frame
+        # lands in the interval before it (e.g. one frame per plane).
+        i = np.clip(np.searchsorted(self.s_full, frames), 1, len(self.s_full) - 1)
+        nearest = np.where(frames - self.s_full[i - 1] < self.s_full[i] - frames,
+                           self.s_full[i - 1], self.s_full[i])
+        snap = np.abs(nearest - frames) <= 1e-9 * (z_max - z_min)
+        frames[snap] = nearest[snap]
+        self.frames = frames
         self._check_frame_z_resolution()
 
     def _check_frame_z_resolution(self) -> None:
@@ -1048,53 +776,37 @@ class TubeFitter:
         n_pts = len(bx)
         self.tube_fit_residual_rms = {}
         for field, sumsq_res, sumsq_sig in (
-            ("Bskew", sumsq_res_bx, sumsq_bx), ("Bnorm", sumsq_res_by, sumsq_by),
+            ("Bx", sumsq_res_bx, sumsq_bx), ("By", sumsq_res_by, sumsq_by),
         ):
             rms = float(np.sqrt(sumsq_res / n_pts))
             field_rms = float(np.sqrt(sumsq_sig / n_pts))
             rel = rms / field_rms if field_rms > 0 else 0.0
             self.tube_fit_residual_rms[field] = rms
             print(f"[TubeFitter] {field} tube fit residual (der=0): "
-                  f"RMS = {rms:.3e} T ({rel * 100:.2f}% of field RMS)")
+                  f"RMS = {rms:.3e} T ({rel:.2e} of field RMS)")
 
-    def _fit_bs(self) -> None:
-        assert self.frames is not None
-        assert self.s_full is not None
-        assert self.df_on_axis_raw is not None
-
-        bs_on_axis = self.df_on_axis_raw[("Bs", 0)].to_numpy(dtype=float)
-        n = self.n_frames
-
-        # Same tent normal equations as the tube fit, with one unknown per
-        # frame instead of n_pq: a point in interval k adds b0^2 / b1^2 to
-        # diagonals k / k+1 and b0*b1 to the coupling between them.
-        k, b0, b1 = _tent_weights(self.s_full, self.frames)
-        D = np.bincount(k, b0 * b0, n) + np.bincount(k + 1, b1 * b1, n)
-        E = np.bincount(k, b0 * b1, n - 1)
-        r = np.bincount(k, b0 * bs_on_axis, n) + np.bincount(k + 1, b1 * bs_on_axis, n)
-
-        self.Psi_bs = self._solve_block_tridiagonal(
-            D[:, None, None], E[:, None, None], r[:, None]
-        )[:, 0]
-
-    def check_trace_consistency(self) -> dict[str, np.ndarray | float]:
+    def check_trace_consistency(self, bs_prime=None) -> dict[str, np.ndarray | float]:
         """
         Fit-quality diagnostic: compare the freely-fit ``Psi[0,2](z)`` trace
         term against the div(B) = 0 prediction ``-Psi[2,0](z) + Bs'(z)/2``.
 
         Not needed for correct SplineBoris export -- only ``q=0``/``q=1``
         rows are ever exported, and the downstream Table-1 field evaluator
-        regenerates ``q=2`` content from ``(a_n, b_n, b_s)`` alone,
+        regenerates ``q=2`` content from the on-axis components alone,
         Maxwell-consistent by construction. This is purely a sanity check
         that the tube's own (unused) ``q=2`` fit -- and by extension its
         resolution of the field's z-structure -- is consistent with the
         physical field: a large gap means the Bx/By data isn't finely
         resolved enough in z (raise ``n_frames``, shrink ``tube_radius``,
         or check grid sampling), independent of whether that shows up in
-        the exported (a_n, b_n, b_s) themselves.
+        the on-axis components themselves.
 
         Requires ``y_symmetry=False``, so ``(0, 2)`` -- fit freely from
         Bx/By data, like every other coefficient -- is in the basis.
+
+        ``bs_prime`` is a callable giving dBs/ds at given z (e.g. the
+        derivative of a ``LongitudinalFitter`` spline); by default it is the
+        finite-difference slope of the map's on-axis Bs.
         """
         if self.y_symmetry:
             raise RuntimeError(
@@ -1108,21 +820,23 @@ class TubeFitter:
                 "check_trace_consistency needs both (0,2) and (2,0) in the "
                 "fitted basis -- construct with deg>=1."
             )
-        if self.Psi_bs is None:
-            self._fit_bs()
+        if bs_prime is None:
+            z_bs, bs = self.on_axis_bs()
+            bs_prime_frames = np.interp(self.frames, z_bs, np.gradient(bs, z_bs))
+        else:
+            bs_prime_frames = np.asarray(bs_prime(self.frames), dtype=float)
 
         # At the frames, the tent interpolant is just the frame values.
         psi_02 = self.Psi[:, 0, 2].copy()
         psi_20 = self.Psi[:, 2, 0].copy()
-        bs_prime = _tent_slope(self.frames, self.frames, self.Psi_bs)
-        predicted_psi_02 = -psi_20 + 0.5 * bs_prime
+        predicted_psi_02 = -psi_20 + 0.5 * bs_prime_frames
 
         gap = psi_02 - predicted_psi_02
         scale = max(np.max(np.abs(psi_02)), np.max(np.abs(predicted_psi_02)), 1e-30)
         relative_rms = float(np.sqrt(np.mean(gap ** 2)) / scale)
         print(
             f"[TubeFitter] trace consistency check: Psi[0,2] vs "
-            f"-Psi[2,0]+Bs'/2 gap RMS = {relative_rms * 100:.3f}% of scale"
+            f"-Psi[2,0]+Bs'/2 gap RMS = {relative_rms:.2e} of scale"
         )
         return {
             "z": self.frames.copy(),
@@ -1131,353 +845,3 @@ class TubeFitter:
             "gap": gap,
             "relative_rms": relative_rms,
         }
-
-    # ------------------------------------------------------------------
-    # Hermite conversion and output tables
-    # ------------------------------------------------------------------
-
-    def _convert_to_hermite(self) -> None:
-        assert self.frames is not None
-        assert self.Psi_bs is not None
-
-        series = {}
-        for der in range(self.deg + 1):
-            m = der + 1
-            # b_m = -(m-1)! * C_{m-1,1}  ->  Psi[:, der, 1]
-            series[("Bnorm", der)] = -math.factorial(der) * self.Psi[:, der, 1]
-            if (m, 0) in self.pq_to_idx:
-                # a_m = -m! * C_{m,0}  (from d^{m-1} B_x / dx^{m-1} |_{x=y=0})
-                series[("Bskew", der)] = -math.factorial(m) * self.Psi[:, m, 0]
-        series[("Bs", 0)] = self.Psi_bs
-
-        self._hermite = {}
-        for (field, der), coeffs in series.items():
-            params = np.stack(_hermite_from_tent(self.frames, coeffs), axis=1)
-            for i_reg in range(self.n_regions):
-                self._hermite[(field, der, i_reg)] = tuple(params[i_reg].tolist())
-
-    def _assign_to_fit_flags(self) -> None:
-        """Set ``component_to_fit`` using the same relative scale test as FieldFitter."""
-        assert self.df_on_axis_raw is not None
-        assert self.df_raw_data is not None
-        assert self.pq_to_idx is not None
-
-        col_map = {"Bskew": "Bx", "Bnorm": "By", "Bs": "Bs"}
-        abs_max = 0.0
-        for col in ("Bx", "By", "Bs"):
-            try:
-                abs_max = max(abs_max, float(np.max(np.abs(self.df_on_axis_raw[(col, 0)].values))))
-            except KeyError:
-                pass
-        if abs_max == 0.0:
-            abs_max = 1.0
-
-        x_max = float(np.max(np.abs(self.df_raw_data.index.get_level_values("X"))))
-        self.component_to_fit = {}
-
-        for field in ("Bskew", "Bnorm", "Bs"):
-            ders = [0] if field == "Bs" else list(range(self.deg + 1))
-            for der in ders:
-                in_basis = True
-                if field == "Bskew":
-                    in_basis = (der + 1, 0) in self.pq_to_idx
-                elif field == "Bnorm":
-                    in_basis = (der, 1) in self.pq_to_idx
-
-                try:
-                    series = self.df_on_axis_raw[(col_map[field], der)].values
-                except KeyError:
-                    self.component_to_fit[(field, der)] = False
-                    continue
-
-                field_der_max = float(np.max(np.abs(series)))
-                relative_max = field_der_max / math.factorial(der) * (x_max ** der)
-                significant = relative_max >= self.field_tol * abs_max
-                self.component_to_fit[(field, der)] = bool(in_basis and significant)
-                print(
-                    f"{field} der={der} -> to_fit={str(self.component_to_fit[(field, der)]):<5} "
-                    f"(rel_max={relative_max:.3e}, tol={self.field_tol * abs_max:.3e})"
-                )
-
-    def _populate_df_fit_pars(self) -> None:
-        assert self.s_full is not None
-        assert self.frames is not None
-        assert self.n_regions is not None
-        assert self._hermite is not None
-
-        idx_extrema = _frame_indices(self.s_full, self.frames)
-        index_width = len(str(self.n_regions - 1)) if self.n_regions > 1 else 1
-        rows: list[dict] = []
-
-        for field in ("Bskew", "Bnorm", "Bs"):
-            ders = [0] if field == "Bs" else list(range(self.deg + 1))
-
-            for der in ders:
-                to_fit = self.component_to_fit.get((field, der), False)
-                if field == "Bskew":
-                    prefix = f"Bskew_{der}"
-                elif field == "Bnorm":
-                    prefix = f"Bnorm_{der}"
-                else:
-                    prefix = "Bs"
-                pars = [f"{prefix}_{s}" for s in xt.SplineBoris._SB_HERMITE_SUFFIXES]
-
-                for i_reg in range(self.n_regions):
-                    idx_start = int(idx_extrema[i_reg])
-                    idx_end = int(idx_extrema[i_reg + 1])
-                    # s_start/s_end must be the TRUE frame positions -- the
-                    # same ones used to compute self._hermite via
-                    # _hermite_from_tent(frames, ...) in _convert_to_hermite. Using the nearest-raw-sample
-                    # snapped positions (s_full[idx_start/idx_end]) instead
-                    # silently mismatches the L used to derive the Hermite
-                    # derivative terms (c2, c4) from the L used to reconstruct
-                    # them downstream (hermite_to_polynomial scales those
-                    # terms by L) -- see
-                    # examples/splineboris/claude_notes/tube_hermite_export_boundary_bug.md.
-                    s_start = float(self.frames[i_reg])
-                    s_end = float(self.frames[i_reg + 1])
-                    region_name = f"Poly_{i_reg:0{index_width}d}"
-
-                    if to_fit and (field, der, i_reg) in self._hermite:
-                        hermite = self._hermite[(field, der, i_reg)]
-                    else:
-                        hermite = (0.0, 0.0, 0.0, 0.0, 0.0)
-
-                    for param_index, (name, val) in enumerate(zip(pars, hermite)):
-                        rows.append({
-                            "field_component": field,
-                            "derivative_x": der,
-                            "region_name": region_name,
-                            "s_start": s_start,
-                            "s_end": s_end,
-                            "idx_start": idx_start,
-                            "idx_end": idx_end,
-                            "param_index": param_index,
-                            "param_name": name,
-                            "param_value": val,
-                            "to_fit": to_fit,
-                        })
-
-        self.df_fit_pars = pd.DataFrame(rows)
-        self.df_fit_pars.set_index(
-            [
-                "field_component",
-                "derivative_x",
-                "region_name",
-                "s_start",
-                "s_end",
-                "idx_start",
-                "idx_end",
-                "param_index",
-            ],
-            inplace=True,
-        )
-        self.df_fit_pars.sort_index(inplace=True)
-
-    def _fill_df_on_axis_fit(self) -> None:
-        assert self.frames is not None
-        assert self.Psi is not None
-        assert self.s_full is not None
-        assert self.df_on_axis_fit is not None
-
-        n_z = len(self.s_full)
-        for der in range(self.deg + 1):
-            if self.component_to_fit.get(("Bnorm", der), False):
-                series = self._on_axis_multipole_from_psi("By", der)
-                self.df_on_axis_fit[("By", der)] = series if series is not None else np.zeros(n_z)
-            else:
-                self.df_on_axis_fit[("By", der)] = np.zeros(n_z)
-
-            if self.component_to_fit.get(("Bskew", der), False):
-                series = self._on_axis_multipole_from_psi("Bx", der)
-                self.df_on_axis_fit[("Bx", der)] = series if series is not None else np.zeros(n_z)
-            else:
-                self.df_on_axis_fit[("Bx", der)] = np.zeros(n_z)
-
-        if self.component_to_fit.get(("Bs", 0), False):
-            assert self.Psi_bs is not None
-            self.df_on_axis_fit[("Bs", 0)] = np.interp(self.s_full, self.frames, self.Psi_bs)
-        else:
-            self.df_on_axis_fit[("Bs", 0)] = np.zeros(n_z)
-
-    # ------------------------------------------------------------------
-    # Plotting (Bx / By / Bs on-axis columns)
-    # ------------------------------------------------------------------
-
-    def plot_fields(self, der: int = 0) -> None:
-        import matplotlib.pyplot as plt
-
-        if self.df_on_axis_raw is None or self.df_on_axis_fit is None:
-            raise RuntimeError("`df_on_axis_raw` and `df_on_axis_fit` must be set before plotting.")
-
-        s = self.s_full
-
-        def get_series(df, field, d):
-            try:
-                return df[(field, d)].to_numpy()
-            except KeyError:
-                ref = df.iloc[:, 0].to_numpy()
-                return np.zeros_like(ref)
-
-        fig, (ax1, ax2, ax3) = plt.subplots(3, figsize=(10, 4), constrained_layout=True)
-        raw_label = "Measured on axis" if der == 0 else "Tube multipoles"
-        fit_label = "Fit" if der == 0 else "Exported (to_fit)"
-        ax1.plot(s, get_series(self.df_on_axis_raw, "Bx", der), label=raw_label)
-        ax1.plot(s, get_series(self.df_on_axis_fit, "Bx", der), label=fit_label, linestyle="--")
-        ax2.plot(s, get_series(self.df_on_axis_raw, "By", der), label=raw_label)
-        ax2.plot(s, get_series(self.df_on_axis_fit, "By", der), label=fit_label, linestyle="--")
-        ax3.plot(s, get_series(self.df_on_axis_raw, "Bs", der), label=raw_label)
-        ax3.plot(s, get_series(self.df_on_axis_fit, "Bs", der), label=fit_label, linestyle="--")
-
-        def _borders_for_field(field_component: str):
-            if self.df_fit_pars is None:
-                return []
-            try:
-                lvl_field = np.asarray(self.df_fit_pars.index.get_level_values("field_component"))
-                lvl_der = np.asarray(self.df_fit_pars.index.get_level_values("derivative_x")).astype(int)
-                mask = (lvl_field == field_component) & (lvl_der == int(der))
-                if not np.any(mask):
-                    return []
-                s_start_vals = np.asarray(self.df_fit_pars.index.get_level_values("s_start"))[mask].astype(float)
-                s_end_vals = np.asarray(self.df_fit_pars.index.get_level_values("s_end"))[mask].astype(float)
-                return np.unique(np.concatenate((s_start_vals, s_end_vals)))
-            except Exception:
-                return []
-
-        for field_ax, ax, fc in [("Bx", ax1, "Bskew"), ("By", ax2, "Bnorm"), ("Bs", ax3, "Bs")]:
-            for s_border in _borders_for_field(fc):
-                ax.axvline(x=s_border, color="k", linestyle="--", linewidth=1, alpha=0.3)
-
-        if der == 2:
-            x_label = r"$\frac{d^2 B_x}{d x^2}$"
-            y_label = r"$\frac{d^2 B_y}{d x^2}$"
-            s_label = r"$\frac{d^2 B_s}{d x^2}$"
-        elif der == 1:
-            x_label = r"$\frac{d B_x}{d x}$"
-            y_label = r"$\frac{d B_y}{d x}$"
-            s_label = r"$\frac{d B_s}{d x}$"
-        else:
-            x_label = r"$B_x$"
-            y_label = r"$B_y$"
-            s_label = r"$B_s$"
-
-        ax1.set_title(f"Magnetic Field at (X, Y) = {self.xy_point}")
-        ax1.set_ylabel(f"Horizontal Field, {x_label} [T]")
-        ax2.set_ylabel(f"Vertical Field, {y_label} [T]")
-        ax3.set_ylabel(f"Longitudinal Field, {s_label} [T]")
-        ax3.set_xlabel(r"Longitudinal Position, $s$ [m]")
-        ax1.legend(loc="lower right")
-        ax2.legend(loc="lower right")
-        ax3.legend(loc="upper right")
-        ax1.grid()
-        ax2.grid()
-        ax3.grid()
-        plt.show()
-
-    def plot_integrated_fields(self) -> None:
-        import matplotlib.pyplot as plt
-
-        if self.df_on_axis_raw is None or self.df_on_axis_fit is None:
-            raise RuntimeError("`df_on_axis_raw` and `df_on_axis_fit` must be set before plotting.")
-
-        s = self.s_full
-        Bx_raw = self.df_on_axis_raw[("Bx", 0)].to_numpy()
-        By_raw = self.df_on_axis_raw[("By", 0)].to_numpy()
-        try:
-            Bs_raw = self.df_on_axis_raw[("Bs", 0)].to_numpy()
-        except KeyError:
-            Bs_raw = np.zeros_like(Bx_raw)
-
-        Bx_fit = self.df_on_axis_fit[("Bx", 0)].to_numpy()
-        By_fit = self.df_on_axis_fit[("By", 0)].to_numpy()
-        try:
-            Bs_fit = self.df_on_axis_fit[("Bs", 0)].to_numpy()
-        except KeyError:
-            Bs_fit = np.zeros_like(Bx_fit)
-
-        fig, (ax1, ax2, ax3) = plt.subplots(3, figsize=(10, 4), constrained_layout=True)
-        ax1.plot(s, sc.integrate.cumulative_trapezoid(Bx_raw, x=s, initial=0), label="Raw Data")
-        ax1.plot(s, sc.integrate.cumulative_trapezoid(Bx_fit, x=s, initial=0), label="Fit", linestyle="--")
-        ax2.plot(s, sc.integrate.cumulative_trapezoid(By_raw, x=s, initial=0), label="Raw Data")
-        ax2.plot(s, sc.integrate.cumulative_trapezoid(By_fit, x=s, initial=0), label="Fit", linestyle="--")
-        ax3.plot(s, sc.integrate.cumulative_trapezoid(Bs_raw, x=s, initial=0), label="Raw Data")
-        ax3.plot(s, sc.integrate.cumulative_trapezoid(Bs_fit, x=s, initial=0), label="Fit", linestyle="--")
-
-        ax1.set_title(f"Integrated Magnetic Field at (X, Y) = {self.xy_point}")
-        ax1.set_ylabel(r"Integrated Horizontal Field, $\int B_x \, ds$ [T·m]")
-        ax2.set_ylabel(r"Integrated Vertical Field, $\int B_y \, ds$ [T·m]")
-        ax3.set_ylabel(r"Integrated Longitudinal Field, $\int B_s \, ds$ [T·m]")
-        ax3.set_xlabel(r"Longitudinal Position, $s$ [m]")
-        ax1.legend(loc="lower right")
-        ax2.legend(loc="lower right")
-        ax3.legend(loc="upper right")
-        ax1.grid()
-        ax2.grid()
-        ax3.grid()
-        plt.show()
-
-
-def _constant_dipole_sign_check() -> None:
-    """Verify Bnorm der=0 endpoints match a uniform By = B0 field."""
-    B0 = 0.5
-    xs = np.linspace(-0.002, 0.002, 3)
-    ys = np.linspace(-0.002, 0.002, 3)
-    zs = np.linspace(0.0, 1.0, 21)
-    xg, yg, zg = np.meshgrid(xs, ys, zs, indexing="ij")
-    df = pd.DataFrame(
-        {
-            "X": xg.ravel(),
-            "Y": yg.ravel(),
-            "Z": zg.ravel(),
-            "Bx": np.zeros(xg.size),
-            "By": np.full(xg.size, B0),
-            "Bs": np.zeros(xg.size),
-        }
-    ).set_index(["X", "Y", "Z"])
-
-    fitter = TubeFitter(df, n_frames=8, distance_unit=1.0, deg=2)
-    fitter.fit()
-
-    sub = fitter.df_fit_pars.loc[("Bnorm", 0)].reset_index()
-    c1 = sub.loc[sub["param_index"] == 0, "param_value"].iloc[0]
-    c3 = sub.loc[sub["param_index"] == 2, "param_value"].iloc[0]
-    if not (np.isclose(c1, B0, rtol=1e-2) and np.isclose(c3, B0, rtol=1e-2)):
-        raise AssertionError(
-            f"Constant dipole sign check failed: "
-            f"expected val_start/val_end ~ {B0}, got c1={c1}, c3={c3}"
-        )
-    print(
-        f"Constant dipole sign check passed: "
-        f"Bnorm_0 val_start={c1:.6f}, val_end={c3:.6f} (B0={B0})"
-    )
-
-
-if __name__ == "__main__":
-    _constant_dipole_sign_check()
-
-    dz = 0.001
-    file_path = Path(__file__).resolve().parents[2] / "test_data" / "sls" / "simona_field_map.txt"
-    df_raw = pd.read_csv(
-        file_path,
-        sep="\t",
-        header=None,
-        names=["X", "Y", "Z", "Bx", "By", "Bs"],
-        dtype=float,
-    ).set_index(["X", "Y", "Z"])
-
-    deg = 2
-    fitter = TubeFitter(
-        raw_data=df_raw,
-        n_frames=550,
-        distance_unit=dz,
-        deg=deg,
-        tube_radius=0.001,
-    )
-    print("\n=== Fitting ===")
-    fitter.fit()
-    print(
-        f"Fit complete: {fitter.n_regions} regions, "
-        f"{len(fitter.pq_pairs)} (p,q) pairs per frame"
-    )
-    for der in range(deg + 1):
-        fitter.plot_fields(der=der)
