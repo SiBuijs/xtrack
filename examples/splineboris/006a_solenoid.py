@@ -19,7 +19,7 @@ n_steps = 5000
 # Make initial particles
 delta = np.array([0, 4])
 p0 = xt.Particles(mass0=xt.ELECTRON_MASS_EV, q0=1,
-                energy0=45.6e6,  # 45.6 MeV
+                energy0=45.6e6,  # 45.6 GeV (e.g. FCC-ee Z-pole)
                 x=1e-3,  # Start slightly off-axis
                 px=-1e-3*(1+delta),
                 y=1e-3,

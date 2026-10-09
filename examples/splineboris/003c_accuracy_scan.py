@@ -28,7 +28,7 @@ ELEMENTS_PER_PERIOD = [6, 9, 12, 18, 24, 36]
 N_FRAMES_LIST = [550, 1100, 2201]  # 2201: one frame per map plane
 END_CONDITION = "free"  # this map is not field-free at its ends
 
-file_path = Path(__file__).resolve().parent.parent.parent / "test_data" / "sls" / "undulator_field_map.txt"
+file_path = Path(__file__).resolve().parent.parent.parent / "test_data" / "sls" / "simona_field_map.txt"
 df_raw_data = pd.read_csv(
     file_path, sep=r"\s+", header=None,
     names=["X", "Y", "Z", "Bx", "By", "Bs"],
