@@ -322,9 +322,19 @@ class LongitudinalFitter:
                 else:
                     ax.plot(z, f, ".", ms=2, label="Data")
                     ax.plot(s, spl(s), "-", lw=1, label="Fit")
-            label = f"d^{der} {fc}/dx^{der}" if der else fc
-            unit = "T" + (f"/m^{der}" if der else "")
-            ax.set_ylabel(f"int {label} ds [{unit} m]" if integrated else f"{label} [{unit}]")
+            comp = rf"B_{fc[1]}"
+            if der == 0:
+                label = comp
+            elif der == 1:
+                label = rf"\partial {comp}/\partial x"
+            else:
+                label = rf"\partial^{{{der}}} {comp}/\partial x^{{{der}}}"
+            if integrated:
+                label = rf"\int {label}\,\mathrm{{d}}s"
+            p = der - integrated  # unit is T/m^p
+            unit = "T" if p == 0 else (r"T$\,$m" if p == -1 else
+                                       ("T/m" if p == 1 else rf"T/m$^{{{p}}}$"))
+            ax.set_ylabel(rf"${label}$ [{unit}]")
             ax.grid()
             ax.legend(loc="upper right")
         axes[-1].set_xlabel("s [m]")
