@@ -43,7 +43,8 @@ lf = LongitudinalFitter(z[0], z[-1], points_per_element=3, end_condition="free")
 lf.fit(z, F, names)
 lf.fit(*fitter.on_axis_bs(), [("Bs", 0)])
 
-lf.plot_fields(der=0)
+for der in range(deg):
+    lf.plot_fields(der=der)
 
 # The map is symmetric in y, so all By_n vanish; field_tol drops them (and
 # any other component below 1e-4 of the largest field at r_ref = 10 mm).
