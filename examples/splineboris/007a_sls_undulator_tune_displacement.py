@@ -6,7 +6,11 @@ from pathlib import Path
 import pandas as pd
 import matplotlib.pyplot as plt
 import scipy.constants as sc_const
+from scipy.integrate import cumulative_trapezoid
 from xtrack._temp.splineboris import TubeFitter, LongitudinalFitter
+
+# Placement cases to simulate/plot (keys of WIGGLER_CASES below).
+CASES = ['ars11_uind_0610_1']#, 'ars11_uind_0210_1']#, 'both']
 
 
 multipole_order = 3
@@ -89,15 +93,16 @@ DATA_DIR = Path(__file__).resolve().parent / 'data'
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 REPLOT = '--replot' in sys.argv
 
-# Three placement cases (only ars11_uind_0210_1, only ars11_uind_0610_1,
-# both) x two undulator models (SB = SplineBoris, from to_line(); MK =
-# Multipole Kick, from to_multipole_line()) -- compute_case()/plot_case()
-# below build and analyse one such case end to end and save its 3 figures.
-WIGGLER_CASES = [
-    ('ars11_uind_0210_1', ['ars11_uind_0210_1']),
-    ('ars11_uind_0610_1', ['ars11_uind_0610_1']),
-    ('both', ['ars11_uind_0210_1', 'ars11_uind_0610_1']),
-]
+# Three possible placement cases (only ars11_uind_0210_1, only
+# ars11_uind_0610_1, both -- the ones run are selected by CASES at the top)
+# x two undulator models (SB = SplineBoris, from to_line(); MK = Multipole
+# Kick, from to_multipole_line()) -- compute_case() below builds and
+# analyses one such (placement, model) case end to end.
+WIGGLER_CASES = {
+    'ars11_uind_0210_1': ['ars11_uind_0210_1'],
+    'ars11_uind_0610_1': ['ars11_uind_0610_1'],
+    'both': ['ars11_uind_0210_1', 'ars11_uind_0610_1'],
+}
 MODEL_LABELS = ('SB', 'MK')
 
 # Digitized reference measurement (blue "Measurements" diamonds from a plot
@@ -306,6 +311,76 @@ def compute_case(place_label, wiggler_places, model_label):
           f"(Twiss-orbit-interpolated equivalent: "
           f"{x_deflection_twiss_check * 1e6:.3f} um)")
 
+    # Linear focusing on the wiggling orbit, straight from the 3D field --
+    # SB only (the MK model is 2D thick multipoles, for which the multipole
+    # deltaK1 formula further below is exact). Derivation in
+    # claude_notes/undulator_linear_focusing_derivation.md: from the
+    # paraxial Lorentz force
+    #   x'' = (y' B_s - B_y) / B rho,   y'' = (B_x - x' B_s) / B rho,
+    # linearized about the closed orbit (x_w, y_w), keeping only the
+    # diagonal terms (the rest only couple, shifting the tunes at 2nd order):
+    #   K_x = (dB_y/dx - y_w' dB_s/dx) / B rho
+    #   K_y = (x_w' dB_s/dy - dB_x/dy) / B rho      (y'' + K_y y = 0 etc.)
+    # with all gradients on the orbit. Besides K1 and the feed-downs this
+    # includes the undulator's natural focusing: the B_s terms (Guignard's
+    # M x' term on a wiggling orbit) and the 3D d^2B_x/ds^2 part of dB_y/dx
+    # at y_w != 0, which a 2D multipole expansion misses (for this
+    # elliptical map it moves the <B_x^2> focusing from x to y).
+    # The field is SplineBoris.get_field() -- the same Maxwell-consistent
+    # expansion the tracking uses, shift_x included -- on n_sub + 1 points
+    # per element. The orbit oscillates on the undulator period, which the
+    # Twiss rows don't resolve, so x_w', y_w' (and from them x_w, y_w) are
+    # integrated through each element from its Twiss entrance values
+    # (x_w' = x_k' - int B_y ds / B rho). Gradients by central differences
+    # (exact: the field is polynomial in x, y). Computed per offset inside
+    # the scan below, as element-mean strengths (the SplineBoris elements
+    # share their nodes with the to_multipole_line() regions).
+    field_K_included = model_label == 'SB'
+    brho0 = p0.rigidity0[0]
+    n_sub = 20
+    u_sub = np.linspace(0, 1, n_sub + 1)
+    und_table = undulator.get_table()
+    und_s_entry = np.array([und_table['s', nn]
+                            for nn in undulator_field_element_names])
+    d_fd = 1e-4   # finite-difference step for the field gradients [m]
+    K_x_scan = []    # per offset: (n_placements, n_elements), full K_x
+    K_y_scan = []
+    Ks_x_scan = []   # same, B_s terms only (for reference)
+    Ks_y_scan = []
+
+    def field_focusing(tw, s_start_und):
+        n_el = len(undulator_field_element_names)
+        K_x, K_y, Ks_x, Ks_y = (np.zeros(n_el) for _ in range(4))
+        for k, nn in enumerate(undulator_field_element_names):
+            el = undulator[nn]
+            s_loc = el.length * u_sub
+            s_glob = s_start_und + und_s_entry[k] + s_loc
+            # orbit slope through the element, from the field along the
+            # (coarse) Twiss orbit, then the orbit itself from the slope
+            Bx, By, _ = el.get_field(np.interp(s_glob, tw.s, tw.x),
+                                     np.interp(s_glob, tw.s, tw.y), s_loc)
+            xp = (np.interp(s_glob[0], tw.s, tw.px)
+                  - cumulative_trapezoid(By, s_loc, initial=0) / brho0)
+            yp = (np.interp(s_glob[0], tw.s, tw.py)
+                  + cumulative_trapezoid(Bx, s_loc, initial=0) / brho0)
+            x = np.interp(s_glob[0], tw.s, tw.x) + cumulative_trapezoid(xp, s_loc, initial=0)
+            y = np.interp(s_glob[0], tw.s, tw.y) + cumulative_trapezoid(yp, s_loc, initial=0)
+
+            dB_dx = (np.array(el.get_field(x + d_fd, y, s_loc))
+                     - np.array(el.get_field(x - d_fd, y, s_loc))) / (2 * d_fd)
+            dB_dy = (np.array(el.get_field(x, y + d_fd, s_loc))
+                     - np.array(el.get_field(x, y - d_fd, s_loc))) / (2 * d_fd)
+            dBy_dx, dBs_dx = dB_dx[1], dB_dx[2]
+            dBx_dy, dBs_dy = dB_dy[0], dB_dy[2]
+
+            def mean(f):
+                return np.trapezoid(f, s_loc) / el.length / brho0
+            Ks_x[k] = mean(-yp * dBs_dx)
+            Ks_y[k] = mean(xp * dBs_dy)
+            K_x[k] = mean(dBy_dx) + Ks_x[k]
+            K_y[k] = mean(-dBx_dy) + Ks_y[k]
+        return K_x, K_y, Ks_x, Ks_y
+
     for dx in hor_off_list:   # dx in meters
         # apply horizontal offset to all undulator slices (standalone line
         # and the copy inserted in the ring)
@@ -339,6 +414,12 @@ def compute_case(place_label, wiggler_places, model_label):
         deltaqy_list.append(tw.qy - qy_0)
         orbit_scan_x.append(tw.x)
         orbit_scan_y.append(tw.y)
+        if field_K_included:
+            kk = [field_focusing(tw, s0) for s0, _ in undulator_s_ranges]
+            K_x_scan.append([k[0] for k in kk])
+            K_y_scan.append([k[1] for k in kk])
+            Ks_x_scan.append([k[2] for k in kk])
+            Ks_y_scan.append([k[3] for k in kk])
         betx_scan.append(tw.betx)
         bety_scan.append(tw.bety)
         betx2_scan.append(tw.betx2)
@@ -404,13 +485,18 @@ def compute_case(place_label, wiggler_places, model_label):
     # the unperturbed beta) rather than from delta K(s) itself.
     deltaqx_formula_pert_list = []
     deltaqy_formula_pert_list = []
-    for dx, x_orbit, y_orbit, betx_pert, bety_pert in zip(
-            hor_off_list, orbit_scan_x, orbit_scan_y, betx_scan, bety_scan):
+    # The B_s terms alone (SB, unperturbed beta), for reference.
+    deltaqx_bs_list = []
+    deltaqy_bs_list = []
+    for i_dx, (dx, x_orbit, y_orbit, betx_pert, bety_pert) in enumerate(zip(
+            hor_off_list, orbit_scan_x, orbit_scan_y, betx_scan, bety_scan)):
         integral_x = 0.0
         integral_y = 0.0
         integral_x_pert = 0.0
         integral_y_pert = 0.0
-        for s_start_und, _ in undulator_s_ranges:
+        integral_x_bs = 0.0
+        integral_y_bs = 0.0
+        for i_und, (s_start_und, _) in enumerate(undulator_s_ranges):
             s_global = s_start_und + mult_s_mid
             x_local = (np.interp(s_global, orbit_scan_s, x_orbit) - dx
                        + x_deflection_baseline)
@@ -419,15 +505,28 @@ def compute_case(place_label, wiggler_places, model_label):
             # and y_local is just the actual orbit position.
             y_local = np.interp(s_global, orbit_scan_s, y_orbit)
             deltaK1 = mult_K1 + mult_K2 * x_local - mult_K2_skew * y_local
+            # Focusing strengths in the deltaK1 convention (x: +K_x, y:
+            # -K_y, the y integral gets an overall minus sign below). For SB
+            # the full 3D-field K_x, K_y replace deltaK1 entirely.
+            if field_K_included:
+                Kx_eff = K_x_scan[i_dx][i_und]
+                Ky_eff = -K_y_scan[i_dx][i_und]
+                Ks_x = Ks_x_scan[i_dx][i_und]
+                Ks_y = Ks_y_scan[i_dx][i_und]
+            else:
+                Kx_eff = Ky_eff = deltaK1
+                Ks_x = Ks_y = np.zeros_like(mult_length)
             betx_at_s = np.interp(s_global, tw_no_undulator.s, tw_no_undulator.betx)
             bety_at_s = np.interp(s_global, tw_no_undulator.s, tw_no_undulator.bety)
-            integral_x += np.sum(deltaK1 * betx_at_s * mult_length)
-            integral_y += np.sum(deltaK1 * bety_at_s * mult_length)
+            integral_x += np.sum(Kx_eff * betx_at_s * mult_length)
+            integral_y += np.sum(Ky_eff * bety_at_s * mult_length)
+            integral_x_bs += np.sum(Ks_x * betx_at_s * mult_length)
+            integral_y_bs += np.sum(Ks_y * bety_at_s * mult_length)
 
             betx_pert_at_s = np.interp(s_global, orbit_scan_s, betx_pert)
             bety_pert_at_s = np.interp(s_global, orbit_scan_s, bety_pert)
-            integral_x_pert += np.sum(deltaK1 * betx_pert_at_s * mult_length)
-            integral_y_pert += np.sum(deltaK1 * bety_pert_at_s * mult_length)
+            integral_x_pert += np.sum(Kx_eff * betx_pert_at_s * mult_length)
+            integral_y_pert += np.sum(Ky_eff * bety_pert_at_s * mult_length)
         # Sign convention (deltaQx = +1/4pi * oint K1 betax ds, deltaQy =
         # -1/4pi * oint K1 betay ds) empirically verified: inserted a small
         # known-K1L thin Multipole into line_sls and compared the resulting
@@ -437,6 +536,14 @@ def compute_case(place_label, wiggler_places, model_label):
         deltaqy_formula_list.append(-integral_y / (4 * np.pi))
         deltaqx_formula_pert_list.append(integral_x_pert / (4 * np.pi))
         deltaqy_formula_pert_list.append(-integral_y_pert / (4 * np.pi))
+        deltaqx_bs_list.append(integral_x_bs / (4 * np.pi))
+        deltaqy_bs_list.append(integral_y_bs / (4 * np.pi))
+    if field_K_included:
+        i0 = np.argmin(np.abs(hor_off_list))
+        print(f"[B_s focusing] at dx = {hor_off_list[i0] * 1e6:.1f} um: "
+              f"ΔQx = {deltaqx_bs_list[i0]:.3e}, ΔQy = {deltaqy_bs_list[i0]:.3e}; "
+              f"ΔQy quadratic fit coefficients "
+              f"{np.polyfit(hor_off_list, deltaqy_bs_list, 2)}")
 
     # tw_no_undulator carries a different element grid (no undulator
     # slices), so interpolate it onto the scan's (shared, undulator-
@@ -467,6 +574,9 @@ def compute_case(place_label, wiggler_places, model_label):
         deltaqx_formula_pert_list=np.array(deltaqx_formula_pert_list),
         deltaqy_formula_pert_list=np.array(deltaqy_formula_pert_list),
         undulator_s_ranges=np.array(undulator_s_ranges),
+        field_K_included=field_K_included,
+        deltaqx_bs_list=np.array(deltaqx_bs_list),
+        deltaqy_bs_list=np.array(deltaqy_bs_list),
     )
 
 
@@ -538,14 +648,16 @@ def fit_box_text(plane, coef, prefix=''):
 
 
 def tune_shift_comparison_figure(sim_series, x_meas, dq_meas, meas_label,
-                                 title, suptitle):
+                                 title, suptitle, extra_meas=()):
     """Simulated vs measured Delta Q_x,y with a quadratic fit through each
     and coefficient boxes in the right margin -- same layout as the main
     tune-shift figure. sim_series is a list of (x, dq, label, color,
     marker, fit_box_prefix), one per simulated curve; dq and dq_meas are
     dicts keyed 'x'/'y', and labels may contain {p} for the plane.
+    extra_meas is a list of (x, dq, label, color, marker) for further
+    measured series, shown as points only (no fit / coefficient box).
     """
-    fig, axes = plt.subplots(2, 1, figsize=(9, 9), sharex=True)
+    fig, axes = plt.subplots(2, 1, figsize=(9, 11), sharex=True)
     axes_boxes = []
     for ax, plane in zip(axes, ('x', 'y')):
         boxes = []
@@ -559,6 +671,10 @@ def tune_shift_comparison_figure(sim_series, x_meas, dq_meas, meas_label,
                     color='k', linewidth=1)
             boxes.append((fit_box_text(plane, coef_sim, box_prefix),
                           text_box_kwargs))
+        for x_extra, dq_extra, label, color, marker in extra_meas:
+            ax.plot(x_extra, dq_extra[plane], marker=marker, linestyle='none',
+                    markersize=4, markerfacecolor='none', color=color,
+                    label=label.format(p=plane))
         coef_meas = np.polyfit(x_meas, dq_meas[plane], 2)
         ax.plot(x_meas, dq_meas[plane], marker='d', linestyle='none',
                 markersize=4, color='tab:purple',
@@ -585,395 +701,132 @@ def tune_shift_comparison_figure(sim_series, x_meas, dq_meas, meas_label,
     return fig
 
 
-def plot_case(data, place_label, model_label):
-    """Build and save the 3 figures for one case, purely from the dict
-    returned by compute_case()/get_case_data() -- no line building, matching
-    or twissing happens here, so this is cheap and safe to re-run on its own
-    (e.g. via --replot) to iterate on plot styling.
+MODEL_STYLES = {'SB': ('SplineBoris', 'tab:blue', 'o'),
+                'MK': ('Multipole kick', 'tab:green', 's')}
+
+
+def plot_tune_shift_panel(data, ax_x, ax_y, measured):
+    """Twiss tune shift vs offset for one (placement, model) case into
+    (ax_x, ax_y), with its quadratic fit, the first-order-perturbation
+    cross-checks and, if available, the measured closed-minus-open-gap
+    shift. Returns the coefficient boxes for each axes, to be stacked under
+    the legends once the figure layout is final (stack_boxes_under_legend).
     """
-    case_label = data['case_label']
-
-    def mark_undulator_bounds(ax):
-        for s_start, s_end in data['undulator_s_ranges']:
-            ax.axvline(s_start, color='0.4', linestyle='--', linewidth=1)
-            ax.axvline(s_end, color='0.4', linestyle='--', linewidth=1)
-
     hor_off_list = data['hor_off_list']
-    deltaqx_list = data['deltaqx_list']
-    deltaqy_list = data['deltaqy_list']
-    orbit_scan_s = data['orbit_scan_s']
-    betx_scan = data['betx_scan']
-    bety_scan = data['bety_scan']
-    betx2_scan = data['betx2_scan']
-    bety1_scan = data['bety1_scan']
-    betx_no_und_i = data['betx_no_und_i']
-    bety_no_und_i = data['bety_no_und_i']
-    betx2_no_und_i = data['betx2_no_und_i']
-    bety1_no_und_i = data['bety1_no_und_i']
-    deltaqx_formula_list = data['deltaqx_formula_list']
-    deltaqy_formula_list = data['deltaqy_formula_list']
-    deltaqx_formula_pert_list = data['deltaqx_formula_pert_list']
-    deltaqy_formula_pert_list = data['deltaqy_formula_pert_list']
+    dq_twiss = {'x': data['deltaqx_list'], 'y': data['deltaqy_list']}
+    dq_formula = {'x': data['deltaqx_formula_list'],
+                  'y': data['deltaqy_formula_list']}
+    dq_formula_pert = {'x': data['deltaqx_formula_pert_list'],
+                       'y': data['deltaqy_formula_pert_list']}
+    styles = {'x': ('o', 'tab:blue', r'\delta K_1', r'\,'),
+              'y': ('s', 'tab:orange', r'(-\delta K_1)', '')}
+    # SB: full linear focusing from the 3D field on the wiggling orbit
+    # (cached data from before this was added has no flag).
+    if 'field_K_included' in data and bool(data['field_K_included']):
+        styles = {'x': ('o', 'tab:blue', r'\,K_x', r'\,'),
+                  'y': ('s', 'tab:orange', r'\,K_y', r'\,')}
 
-    # Beta-beat figures commented out for now (re-enable here and in
-    # `figures` below).
-    # # Colour scale for the offset-coloured beta-beat scan plots below (a
-    # # per-curve legend would be unreadable with n_tunes=30 curves).
-    # norm = plt.Normalize(vmin=hor_off_list.min(), vmax=hor_off_list.max())
-    # cmap = plt.cm.viridis
-
-    # # Beta beat at each offset of the tune scan, relative to the
-    # # no-undulator baseline and normalized by that baseline to show the
-    # # relative scale -- same colour-coded-by-offset layout as the orbit
-    # # scan above.
-    # fig_beta_diff, (ax_dbetx, ax_dbety) = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
-    # for dx, betx, bety in zip(hor_off_list, betx_scan, bety_scan):
-    #     color = cmap(norm(dx))
-    #     ax_dbetx.plot(orbit_scan_s, (betx - betx_no_und_i) / betx_no_und_i, color=color)
-    #     ax_dbety.plot(orbit_scan_s, (bety - bety_no_und_i) / bety_no_und_i, color=color)
-    # mark_undulator_bounds(ax_dbetx)
-    # mark_undulator_bounds(ax_dbety)
-    # ax_dbetx.set_ylabel(r'$\Delta\beta_x/\beta_{x,0}$')
-    # ax_dbetx.set_title('Relative beta beat across the tune scan (relative to no undulator)')
-    # ax_dbetx.grid(True, alpha=0.3)
-    # ax_dbety.set_xlabel('s [m]')
-    # ax_dbety.set_ylabel(r'$\Delta\beta_y/\beta_{y,0}$')
-    # ax_dbety.grid(True, alpha=0.3)
-
-    # sm_beta = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
-    # sm_beta.set_array([])
-    # fig_beta_diff.colorbar(sm_beta, ax=[ax_dbetx, ax_dbety], label='Horizontal offset [m]')
-    # fig_beta_diff.suptitle(case_label)
-
-    # # Same colour-coded-by-offset layout, but for the coupled beta functions
-    # # betx2/bety1 (Edwards-Teng), which are zero without coupling and hence
-    # # a direct probe of the coupling introduced by the undulator. Normalized
-    # # by the *primary* beta (betx/bety, no undulator) rather than by
-    # # betx2/bety1 itself, since the latter is near zero along most of the
-    # # ring (only the ring's residual imperfection coupling) and would blow
-    # # up the ratio wherever it happens to dip towards zero.
-    # fig_beta_diff_coupled, (ax_dbetx2, ax_dbety1) = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
-    # for dx, betx2, bety1 in zip(hor_off_list, betx2_scan, bety1_scan):
-    #     color = cmap(norm(dx))
-    #     ax_dbetx2.plot(orbit_scan_s, (betx2 - betx2_no_und_i) / betx_no_und_i, color=color)
-    #     ax_dbety1.plot(orbit_scan_s, (bety1 - bety1_no_und_i) / bety_no_und_i, color=color)
-    # mark_undulator_bounds(ax_dbetx2)
-    # mark_undulator_bounds(ax_dbety1)
-    # ax_dbetx2.set_ylabel(r'$\Delta\beta_{x2}/\beta_{x,0}$')
-    # ax_dbetx2.set_title('Coupled beta beat across the tune scan (relative to no undulator)')
-    # ax_dbetx2.grid(True, alpha=0.3)
-    # ax_dbety1.set_xlabel('s [m]')
-    # ax_dbety1.set_ylabel(r'$\Delta\beta_{y1}/\beta_{y,0}$')
-    # ax_dbety1.grid(True, alpha=0.3)
-
-    # sm_beta_coupled = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
-    # sm_beta_coupled.set_array([])
-    # fig_beta_diff_coupled.colorbar(sm_beta_coupled, ax=[ax_dbetx2, ax_dbety1], label='Horizontal offset [m]')
-    # fig_beta_diff_coupled.suptitle(case_label)
-
-    coef_qx = np.polyfit(hor_off_list, deltaqx_list, 2)
-    coef_qy = np.polyfit(hor_off_list, deltaqy_list, 2)
-
-    poly_qx = np.poly1d(coef_qx)
-    poly_qy = np.poly1d(coef_qy)
-
-    # coef_q*[0]/[1]/[2] are just the quadratic-fit Taylor coefficients of
+    # coef[0]/[1]/[2] are just the quadratic-fit Taylor coefficients of
     # DeltaQ(dx) itself -- (1/2)*d^2(DeltaQ)/dx^2, d(DeltaQ)/dx, DeltaQ(0) --
     # not yet deconvolved into magnetic field gradients.
-    print(f"(1/2) d²(ΔQx)/dx² = {coef_qx[0]}")
-    print(f"d(ΔQx)/dx         = {coef_qx[1]}")
-    print(f"ΔQx(0)            = {coef_qx[2]}")
-    print(f"(1/2) d²(ΔQy)/dx² = {coef_qy[0]}")
-    print(f"d(ΔQy)/dx         = {coef_qy[1]}")
-    print(f"ΔQy(0)            = {coef_qy[2]}")
+    all_boxes = []
+    for ax, plane in zip((ax_x, ax_y), ('x', 'y')):
+        marker, color, dk1, sep = styles[plane]
+        coef = np.polyfit(hor_off_list, dq_twiss[plane], 2)
+        for tag, dq in (('formula', dq_formula),
+                        ('formula, perturbed beta', dq_formula_pert)):
+            print(f"[{data['case_label']}, {tag}] ΔQ{plane} quadratic fit "
+                  f"coefficients {np.polyfit(hor_off_list, dq[plane], 2)}")
+        print(f"[{data['case_label']}] ΔQ{plane} quadratic fit "
+              f"coefficients {coef}")
 
-    coef_qx_formula = np.polyfit(hor_off_list, deltaqx_formula_list, 2)
-    coef_qy_formula = np.polyfit(hor_off_list, deltaqy_formula_list, 2)
-    print(f"[formula] (1/2) d²(ΔQx)/dx² = {coef_qx_formula[0]}")
-    print(f"[formula] d(ΔQx)/dx         = {coef_qx_formula[1]}")
-    print(f"[formula] ΔQx(0)            = {coef_qx_formula[2]}")
-    print(f"[formula] (1/2) d²(ΔQy)/dx² = {coef_qy_formula[0]}")
-    print(f"[formula] d(ΔQy)/dx         = {coef_qy_formula[1]}")
-    print(f"[formula] ΔQy(0)            = {coef_qy_formula[2]}")
+        ax.plot(hor_off_list, dq_twiss[plane], marker=marker, color=color,
+                label='Twiss')
+        ax.plot(hor_off_list, np.poly1d(coef)(hor_off_list), linestyle='--',
+                color='k', label='Quadratic fit')
+        ax.plot(hor_off_list, dq_formula[plane], marker='^', linestyle='none',
+                color='tab:green',
+                label=f'$\\frac{{1}}{{4\\pi}}\\oint{dk1}{sep}\\beta_{{{plane},0}}\\,ds$')
+        ax.plot(hor_off_list, dq_formula_pert[plane], marker='v',
+                linestyle='none', color='tab:red',
+                label=f'$\\frac{{1}}{{4\\pi}}\\oint{dk1}{sep}\\beta_{plane}\\,ds$')
+        boxes = [(fit_box_text(plane, coef), text_box_kwargs)]
 
-    coef_qx_formula_pert = np.polyfit(hor_off_list, deltaqx_formula_pert_list, 2)
-    coef_qy_formula_pert = np.polyfit(hor_off_list, deltaqy_formula_pert_list, 2)
-    print(f"[formula, perturbed beta] (1/2) d²(ΔQx)/dx² = {coef_qx_formula_pert[0]}")
-    print(f"[formula, perturbed beta] d(ΔQx)/dx         = {coef_qx_formula_pert[1]}")
-    print(f"[formula, perturbed beta] ΔQx(0)            = {coef_qx_formula_pert[2]}")
-    print(f"[formula, perturbed beta] (1/2) d²(ΔQy)/dx² = {coef_qy_formula_pert[0]}")
-    print(f"[formula, perturbed beta] d(ΔQy)/dx         = {coef_qy_formula_pert[1]}")
-    print(f"[formula, perturbed beta] ΔQy(0)            = {coef_qy_formula_pert[2]}")
+        if measured is not None:
+            meas_x = np.asarray(measured['bump_amplitude_m'], dtype=float)
+            meas_dq = np.asarray(measured[f'dtune_{plane}_measured'], dtype=float)
+            coef_meas = np.polyfit(meas_x, meas_dq, 2)
+            print(f"[measured] ΔQ{plane} quadratic fit coefficients {coef_meas}")
+            ax.plot(meas_x, meas_dq, marker='d', linestyle='none',
+                    markersize=4, color='tab:purple', label='Measurements')
+            ax.plot(hor_off_list, np.poly1d(coef_meas)(hor_off_list),
+                    linestyle='--', color='tab:red',
+                    label='Quadratic fit (measured)')
+            boxes.append((fit_box_text(plane, coef_meas, 'measured fit:\n'),
+                          text_box_kwargs))
 
-    # Coefficient boxes live outside the axes, stacked down the right margin
-    # underneath the legend (see stack_boxes_under_legend), so they don't sit
-    # on top of the data. Collected per-axes here and only placed once the
-    # figure has been laid out, since where they go depends on how tall the
-    # legend turns out to be.
-    ax1_boxes = []
-    ax2_boxes = []
+        ax.set_ylabel(f'$\\Delta Q_{plane}$')
+        ax.grid(True, alpha=0.3)
+        legend_outside(ax)
+        all_boxes.append(boxes)
+    return all_boxes
 
-    fig_tune_shift, (ax1, ax2) = plt.subplots(2, 1, figsize=(9, 9), sharex=True)
-    ax1.plot(hor_off_list, deltaqx_list, marker='o', color='tab:blue', label='Twiss')
-    ax1.plot(hor_off_list, poly_qx(hor_off_list), linestyle='--', color='k', label='Quadratic fit')
-    ax1.plot(hor_off_list, deltaqx_formula_list, marker='^', linestyle='none',
-              color='tab:green', label=r'$\frac{1}{4\pi}\oint\delta K_1\,\beta_{x,0}\,ds$')
-    ax1.plot(hor_off_list, deltaqx_formula_pert_list, marker='v', linestyle='none',
-              color='tab:red', label=r'$\frac{1}{4\pi}\oint\delta K_1\,\beta_x\,ds$')
-    ax1.set_ylabel(r'$\Delta Q_x$')
-    ax1.set_title('Tune shift vs undulator horizontal offset')
-    ax1.grid(True, alpha=0.3)
-    legend_outside(ax1)
-    ax1_boxes.append((
-        f'$\\frac{{1}}{{2}}\\frac{{d^2\\Delta Q_x}}{{dx^2}}$ = {coef_qx[0]:.4e}\n'
-        f'$\\frac{{d\\Delta Q_x}}{{dx}}$ = {coef_qx[1]:.4e}\n'
-        f'$\\Delta Q_x(0)$ = {coef_qx[2]:.4e}',
-        text_box_kwargs))
 
-    ax2.plot(hor_off_list, deltaqy_list, marker='s', color='tab:orange', label='Twiss')
-    ax2.plot(hor_off_list, poly_qy(hor_off_list), linestyle='--', color='k', label='Quadratic fit')
-    ax2.plot(hor_off_list, deltaqy_formula_list, marker='^', linestyle='none',
-              color='tab:green', label=r'$\frac{1}{4\pi}\oint(-\delta K_1)\beta_{y,0}\,ds$')
-    ax2.plot(hor_off_list, deltaqy_formula_pert_list, marker='v', linestyle='none',
-              color='tab:red', label=r'$\frac{1}{4\pi}\oint(-\delta K_1)\beta_y\,ds$')
-    ax2.set_xlabel('Horizontal offset [m]')
-    ax2.set_ylabel(r'$\Delta Q_y$')
-    ax2.grid(True, alpha=0.3)
-    legend_outside(ax2)
-    ax2_boxes.append((
-        f'$\\frac{{1}}{{2}}\\frac{{d^2\\Delta Q_y}}{{dx^2}}$ = {coef_qy[0]:.4e}\n'
-        f'$\\frac{{d\\Delta Q_y}}{{dx}}$ = {coef_qy[1]:.4e}\n'
-        f'$\\Delta Q_y(0)$ = {coef_qy[2]:.4e}',
-        text_box_kwargs))
-
+def plot_tune_shift_models_side_by_side(place_label, case_datas):
+    """The per-model tune-shift figure, MK (left) and SB (right) next to
+    each other on shared vertical axes for direct comparison."""
     measured = load_measured_tune_shift()
-    fig_tune_shift_measured = None
-    if measured is not None:
-        meas_x = np.asarray(measured['bump_amplitude_m'], dtype=float)
-        meas_dqx = np.asarray(measured['dtune_x_measured'], dtype=float)
-        meas_dqy = np.asarray(measured['dtune_y_measured'], dtype=float)
+    fig, axes = plt.subplots(2, 2, figsize=(18, 9), sharex=True, sharey='row')
+    axes_boxes = []
+    for col, model_label in enumerate(('MK', 'SB')):
+        ax_x, ax_y = axes[:, col]
+        boxes = plot_tune_shift_panel(case_datas[model_label], ax_x, ax_y,
+                                      measured)
+        axes_boxes.extend(zip((ax_x, ax_y), boxes))
+        ax_x.set_title(MODEL_STYLES[model_label][0])
+        ax_y.set_xlabel('Horizontal offset [m]')
+        # sharey hides the right column's tick labels, show them anyway
+        ax_x.tick_params(labelleft=True)
+        ax_y.tick_params(labelleft=True)
 
-        # Quadratic fit through the digitized measurement, same Taylor-
-        # coefficient convention as coef_qx/coef_qy above
-        # (coef[0]/[1]/[2] = (1/2) d²ΔQ/dx², dΔQ/dx, ΔQ(0)).
-        coef_qx_measured = np.polyfit(meas_x, meas_dqx, 2)
-        coef_qy_measured = np.polyfit(meas_x, meas_dqy, 2)
-        poly_qx_measured = np.poly1d(coef_qx_measured)
-        poly_qy_measured = np.poly1d(coef_qy_measured)
-
-        print(f"[measured] (1/2) d²(ΔQx)/dx² = {coef_qx_measured[0]}")
-        print(f"[measured] d(ΔQx)/dx         = {coef_qx_measured[1]}")
-        print(f"[measured] ΔQx(0)            = {coef_qx_measured[2]}")
-        print(f"[measured] (1/2) d²(ΔQy)/dx² = {coef_qy_measured[0]}")
-        print(f"[measured] d(ΔQy)/dx         = {coef_qy_measured[1]}")
-        print(f"[measured] ΔQy(0)            = {coef_qy_measured[2]}")
-
-        # The measured fit gets its own box, styled identically to the
-        # simulated one (text_box_kwargs) and stacked underneath it in the
-        # right margin -- its leading "measured fit:" line is what tells the
-        # two apart.
-
-        # --- overlay measured points + their quadratic fit on the main plot ---
-        ax1.plot(meas_x, meas_dqx,
-                  marker='d', linestyle='none', markersize=4,
-                  color='tab:purple', label='Measurements')
-        ax1.plot(hor_off_list, poly_qx_measured(hor_off_list),
-                  linestyle='--', color='tab:red', label='Quadratic fit (measured)')
-        ax1_boxes.append((
-            f'measured fit:\n'
-            f'$\\frac{{1}}{{2}}\\frac{{d^2\\Delta Q_x}}{{dx^2}}$ = {coef_qx_measured[0]:.4e}\n'
-            f'$\\frac{{d\\Delta Q_x}}{{dx}}$ = {coef_qx_measured[1]:.4e}\n'
-            f'$\\Delta Q_x(0)$ = {coef_qx_measured[2]:.4e}',
-            text_box_kwargs))
-        legend_outside(ax1)
-
-        ax2.plot(meas_x, meas_dqy,
-                  marker='d', linestyle='none', markersize=4,
-                  color='tab:purple', label='Measurements')
-        ax2.plot(hor_off_list, poly_qy_measured(hor_off_list),
-                  linestyle='--', color='tab:red', label='Quadratic fit (measured)')
-        ax2_boxes.append((
-            f'measured fit:\n'
-            f'$\\frac{{1}}{{2}}\\frac{{d^2\\Delta Q_y}}{{dx^2}}$ = {coef_qy_measured[0]:.4e}\n'
-            f'$\\frac{{d\\Delta Q_y}}{{dx}}$ = {coef_qy_measured[1]:.4e}\n'
-            f'$\\Delta Q_y(0)$ = {coef_qy_measured[2]:.4e}',
-            text_box_kwargs))
-        legend_outside(ax2)
-
-    fig_tune_shift.suptitle(case_label)
-    fig_tune_shift.tight_layout()
-    fig_tune_shift.subplots_adjust(right=0.62)
+    fig.suptitle(f'{place_label}: tune shift vs undulator horizontal offset')
+    fig.tight_layout()
+    # Room right of each column for its legend + coefficient boxes.
+    fig.subplots_adjust(right=0.81, wspace=0.85)
     # Only now that the axes geometry is final can the boxes be stacked
     # under the legend (their placement depends on its rendered height).
-    stack_boxes_under_legend(ax1, ax1_boxes)
-    stack_boxes_under_legend(ax2, ax2_boxes)
+    for ax, boxes in axes_boxes:
+        stack_boxes_under_legend(ax, boxes)
 
-    # --- standalone figure: measured tune data only + quadratic fit, on the
-    #     same vertical axis as the main tune-shift plot above ---
-    if measured is not None:
-        ylim_qx = ax1.get_ylim()
-        ylim_qy = ax2.get_ylim()
-
-        meas_x_dense = np.linspace(meas_x.min(), meas_x.max(), 200)
-
-        fig_tune_shift_measured, (ax1_m, ax2_m) = plt.subplots(
-            2, 1, figsize=(9, 9), sharex=True)
-
-        ax1_m.plot(meas_x, meas_dqx, marker='d', linestyle='none', markersize=5,
-                    color='tab:purple', label='Measurements')
-        ax1_m.plot(meas_x_dense, poly_qx_measured(meas_x_dense),
-                    linestyle='--', color='tab:red', label='Quadratic fit')
-        ax1_m.set_ylabel(r'$\Delta Q_x$')
-        ax1_m.set_ylim(ylim_qx)
-        ax1_m.set_title('Measured tune shift vs undulator horizontal offset')
-        ax1_m.grid(True, alpha=0.3)
-        legend_outside(ax1_m)
-        ax1_m_boxes = [(
-            f'$\\frac{{1}}{{2}}\\frac{{d^2\\Delta Q_x}}{{dx^2}}$ = {coef_qx_measured[0]:.4e}\n'
-            f'$\\frac{{d\\Delta Q_x}}{{dx}}$ = {coef_qx_measured[1]:.4e}\n'
-            f'$\\Delta Q_x(0)$ = {coef_qx_measured[2]:.4e}',
-            text_box_kwargs)]
-
-        ax2_m.plot(meas_x, meas_dqy, marker='d', linestyle='none', markersize=5,
-                    color='tab:purple', label='Measurements')
-        ax2_m.plot(meas_x_dense, poly_qy_measured(meas_x_dense),
-                    linestyle='--', color='tab:red', label='Quadratic fit')
-        ax2_m.set_xlabel('Horizontal offset [m]')
-        ax2_m.set_ylabel(r'$\Delta Q_y$')
-        ax2_m.set_ylim(ylim_qy)
-        ax2_m.grid(True, alpha=0.3)
-        legend_outside(ax2_m)
-        ax2_m_boxes = [(
-            f'$\\frac{{1}}{{2}}\\frac{{d^2\\Delta Q_y}}{{dx^2}}$ = {coef_qy_measured[0]:.4e}\n'
-            f'$\\frac{{d\\Delta Q_y}}{{dx}}$ = {coef_qy_measured[1]:.4e}\n'
-            f'$\\Delta Q_y(0)$ = {coef_qy_measured[2]:.4e}',
-            text_box_kwargs)]
-
-        fig_tune_shift_measured.suptitle(case_label)
-        fig_tune_shift_measured.tight_layout()
-        fig_tune_shift_measured.subplots_adjust(right=0.62)
-        stack_boxes_under_legend(ax1_m, ax1_m_boxes)
-        stack_boxes_under_legend(ax2_m, ax2_m_boxes)
-
-    # --- measured closed-gap Q_x,y (closed-minus-open shift with the open
-    #     gap added back in) minus the Twiss tune without undulator, next to
-    #     the usual simulated shift (Twiss with minus without undulator).
-    #     Needs the absolute tunes, hence qx_0/qy_0; dominated by any offset
-    #     between the model's bare tunes and the machine's open-gap tunes
-    #     (~0.01 in Qy). The opposite comparison (Twiss with undulator minus
-    #     measured open gap) is plot_models_combined(), SB and MK overlaid. ---
-    fig_tune_shift_closed_gap = None
-    if measured is not None and 'qx_0' not in data:
-        print("[tune_shift_closed_gap_vs_model] cached data has no "
-              "qx_0/qy_0 (computed before this plot existed) -- rerun "
-              "without --replot to produce it")
-    elif measured is not None:
-        q_0 = {'x': float(data['qx_0']), 'y': float(data['qy_0'])}
-        dq_meas_closed_vs_model = {
-            'x': meas_dqx + np.asarray(measured['tune_x_open_gap'], dtype=float) - q_0['x'],
-            'y': meas_dqy + np.asarray(measured['tune_y_open_gap'], dtype=float) - q_0['y'],
-        }
-        fig_tune_shift_closed_gap = tune_shift_comparison_figure(
-            [(hor_off_list, {'x': deltaqx_list, 'y': deltaqy_list},
-              'Twiss (with $-$ without undulator)', 'tab:blue', 'o', '')],
-            meas_x, dq_meas_closed_vs_model,
-            'Measured closed-gap $Q_{p}$ $-$ Twiss $Q_{p}$ without undulator',
-            'Tune shift vs undulator horizontal offset '
-            '(relative to Twiss tune without undulator)',
-            case_label)
-
-    # Save the figures for this case (1, or 3 when measured data is
-    # available), named
-    # "<place_label>_<model_label>_<what the figure shows>.pdf".
-    figures = [
-    #     (fig_beta_diff, 'beta_beat'),
-    #     (fig_beta_diff_coupled, 'beta_beat_coupled'),
-        (fig_tune_shift, 'tune_shift'),
-        ]
-    if fig_tune_shift_measured is not None:
-        figures.append((fig_tune_shift_measured, 'tune_shift_measured'))
-    if fig_tune_shift_closed_gap is not None:
-        figures.append((fig_tune_shift_closed_gap, 'tune_shift_closed_gap_vs_model'))
-    for fig, suffix in figures:
-        out_path = OUT_DIR / f'{place_label}_{model_label}_{suffix}.pdf'
-        # bbox_inches='tight' so the out-of-axes legends aren't clipped.
-        fig.savefig(out_path, bbox_inches='tight')
-        print(f"Saved {out_path}")
-
-
-def plot_measured_open_gap_drift():
-    """Measurement-only figure: the open-gap tune drift with bump amplitude
-    (bump orbit through the ring's own sextupoles, no undulator involved)
-    next to the undulator signal (closed minus open gap), both relative to
-    their own mean so the sizes of the two variations can be compared
-    directly. Point-by-point subtraction of the open gap (as done in the
-    dtune_*_measured columns) removes this drift; subtracting only the
-    open-gap mean would leave it in the measured Delta Q.
-    """
-    measured = load_measured_tune_shift()
-    if measured is None or 'tune_x_open_gap' not in measured:
-        return None
-    meas_x_um = np.asarray(measured['bump_amplitude_um'], dtype=float)
-
-    fig, axes = plt.subplots(2, 1, figsize=(9, 7), sharex=True)
-    for ax, plane in zip(axes, ('x', 'y')):
-        q_open = np.asarray(measured[f'tune_{plane}_open_gap'], dtype=float)
-        dq = np.asarray(measured[f'dtune_{plane}_measured'], dtype=float)
-        ax.plot(meas_x_um, q_open - q_open.mean(), marker='o', markersize=4,
-                color='tab:blue',
-                label=f'Open gap: $Q_{plane} - \\langle Q_{plane}\\rangle$')
-        ax.plot(meas_x_um, dq - dq.mean(), marker='d', markersize=4,
-                color='tab:purple',
-                label=f'Closed $-$ open: $\\Delta Q_{plane} - '
-                      f'\\langle\\Delta Q_{plane}\\rangle$')
-        ax.set_ylabel(f'Tune {plane} variation')
-        ax.grid(True, alpha=0.3)
-        ax.legend(fontsize=8)
-    axes[0].set_title('X11MA, gap = 11.5 mm: open-gap drift vs undulator signal')
-    axes[1].set_xlabel(r'Bump amplitude x [$\mu$m]')
-    fig.tight_layout()
-
-    out_path = OUT_DIR / 'x11ma_open_gap_drift.pdf'
+    out_path = OUT_DIR / f'{place_label}_tune_shift_MK_vs_SB.pdf'
+    # bbox_inches='tight' so the out-of-axes legends aren't clipped.
     fig.savefig(out_path, bbox_inches='tight')
     print(f"Saved {out_path}")
     return fig
 
 
-MODEL_STYLES = {'SB': ('SplineBoris', 'tab:blue', 'o'),
-                'MK': ('Multipole kick', 'tab:green', 's')}
-
-
-def plot_models_combined(place_label, case_datas, reference,
-                         zero_at_origin=False):
+def plot_closed_gap_tune_shift(place_label, case_datas):
     """Simulated tune shift for both undulator models (case_datas:
-    {model_label: data}) in one figure, next to the measured
-    closed-minus-open-gap shift. reference sets what the simulated Twiss
-    Q_x,y with undulator is taken relative to:
-      'open_gap': the *measured* open-gap Q_x,y at the same bump amplitude;
-      'model':    the Twiss Q_x,y without undulator (as in the main
-                  tune_shift figure).
-    With zero_at_origin, every curve is shifted by its own (linearly
-    interpolated) value at x = 0, so only the progression with offset is
-    compared, not the absolute level.
+    {model_label: data}) next to the measured closed-gap tune (the
+    closed-minus-open-gap shift with the measured open-gap tune added back
+    in). Every curve is shifted by its own (linearly interpolated) value at
+    x = 0, so only the progression with offset is compared, not the
+    absolute level -- for the simulation that makes "Twiss with minus
+    without undulator" and "Twiss with undulator" the same thing.
     """
     measured = load_measured_tune_shift()
     if measured is None:
         return None
-    if (reference == 'open_gap'
-            and any('qx_0' not in data for data in case_datas.values())):
-        print(f"[{place_label}_tune_shift_vs_open_gap] cached data has no "
-              "qx_0/qy_0 (computed before this plot existed) -- rerun "
-              "without --replot to produce it")
-        return None
     meas_x = np.asarray(measured['bump_amplitude_m'], dtype=float)
-    meas_q_open = {plane: np.asarray(measured[f'tune_{plane}_open_gap'], dtype=float)
-                   for plane in ('x', 'y')}
-    meas_dq = {plane: np.asarray(measured[f'dtune_{plane}_measured'], dtype=float)
-               for plane in ('x', 'y')}
+    meas_q_open = {
+        plane: np.asarray(measured[f'tune_{plane}_open_gap'], dtype=float)
+        for plane in ('x', 'y')}
+    meas_q_closed = {
+        plane: (np.asarray(measured[f'dtune_{plane}_measured'], dtype=float)
+                + meas_q_open[plane])
+        for plane in ('x', 'y')}
 
     def shift_to_origin(x, dq):
-        if not zero_at_origin:
-            return dq
         return {plane: dq[plane] - np.interp(0., x, dq[plane])
                 for plane in ('x', 'y')}
 
@@ -989,56 +842,144 @@ def plot_models_combined(place_label, case_datas, reference,
         dq_twiss = {'x': np.interp(x_sim, hor_off_list, data['deltaqx_list']),
                     'y': np.interp(x_sim, hor_off_list, data['deltaqy_list'])}
         model_name, color, marker = MODEL_STYLES[model_label]
-        if reference == 'open_gap':
-            q_0 = {'x': float(data['qx_0']), 'y': float(data['qy_0'])}
-            dq_sim = {plane: (dq_twiss[plane] + q_0[plane]
-                              - meas_q_open[plane][in_range])
-                      for plane in ('x', 'y')}
-            label = (f'{model_name}: Twiss $Q_{{p}}$ $-$ '
-                     f'measured open-gap $Q_{{p}}$')
-        else:
-            dq_sim = dq_twiss
-            label = f'{model_name}: Twiss (with $-$ without undulator)'
         sim_series.append((
-            x_sim, shift_to_origin(x_sim, dq_sim), label,
+            x_sim, shift_to_origin(x_sim, dq_twiss),
+            f'{model_name}: Twiss $Q_{{p}}$ with undulator',
             color, marker, f'{model_name} fit:\n'))
 
-    if reference == 'open_gap':
-        title = ('Tune shift vs undulator horizontal offset '
-                 '(relative to measured open-gap tune)')
-        suffix = 'tune_shift_vs_open_gap'
-    else:
-        title = ('Tune shift vs undulator horizontal offset '
-                 '(relative to Twiss tune without undulator)')
-        suffix = 'tune_shift_models'
-    if zero_at_origin:
-        title += ',\nshifted to $\\Delta Q(0) = 0$'
-        suffix += '_zeroed'
     fig = tune_shift_comparison_figure(
-        sim_series, meas_x, shift_to_origin(meas_x, meas_dq),
-        'Measurements (closed $-$ open gap)', title, place_label)
-    out_path = OUT_DIR / f'{place_label}_{suffix}.pdf'
+        sim_series, meas_x, shift_to_origin(meas_x, meas_q_closed),
+        'Measured closed-gap $Q_{p}$',
+        'Tune shift vs undulator horizontal offset,\n'
+        'shifted to $\\Delta Q(0) = 0$',
+        place_label,
+        # Open-gap tune drift with bump amplitude (bump orbit through the
+        # ring's own sextupoles, no undulator), for reference.
+        extra_meas=[(meas_x, shift_to_origin(meas_x, meas_q_open),
+                     'Measured open-gap $Q_{p}$', 'tab:gray', 'o')])
+    out_path = OUT_DIR / f'{place_label}_tune_shift_vs_closed_gap_zeroed.pdf'
     fig.savefig(out_path, bbox_inches='tight')
     print(f"Saved {out_path}")
     return fig
 
 
-plot_measured_open_gap_drift()
+_bare_beta_cache = {}
 
-for place_label, wiggler_places in WIGGLER_CASES:
-    case_datas = {}
-    for model_label in MODEL_LABELS:
-        case_datas[model_label] = get_case_data(
-            place_label, wiggler_places, model_label)
-        plot_case(case_datas[model_label], place_label, model_label)
-    plot_models_combined(place_label, case_datas, 'open_gap')
-    plot_models_combined(place_label, case_datas, 'open_gap',
-                         zero_at_origin=True)
-    plot_models_combined(place_label, case_datas, 'model',
-                         zero_at_origin=True)
 
-# All figures (per placement: the per-model ones from plot_case() plus the
-# SB/MK-combined ones from plot_models_combined()) are kept open so they can all
-# be reviewed interactively here, in addition to having been saved as PDFs
-# above.
+def bare_ring_beta(s_eval):
+    """Bare-ring (no undulator) betx, bety at arbitrary s. The cached
+    betx/bety_no_und_i are linearly interpolated between bare-ring Twiss
+    rows, which is off by up to ~8% inside the ~2 m drift-like span the
+    undulator replaces (beta is a parabola there) -- so re-Twiss the bare
+    ring at exactly these s instead (cheap: no field map needed)."""
+    s_eval = np.asarray(s_eval, dtype=float)
+    key = (s_eval.size, float(s_eval[0]), float(s_eval[-1]))
+    if key not in _bare_beta_cache:
+        line = xt.load(str(madx_file)).ring
+        line.configure_bend_model(core='mat-kick-mat')
+        line.particle_ref = p0.copy()
+        s_unique, inverse = np.unique(s_eval, return_inverse=True)
+        tw = line.twiss4d(at_s=s_unique)
+        betx = np.interp(s_unique, tw.s, tw.betx)
+        bety = np.interp(s_unique, tw.s, tw.bety)
+        _bare_beta_cache[key] = (betx[inverse], bety[inverse])
+    return _bare_beta_cache[key]
+
+
+def plot_beta_beat(place_label, case_datas):
+    """Beta beat Delta beta / beta around the ring, MK (left) and SB (right),
+    one curve per scanned offset (colour = offset), undulator span(s)
+    shaded. In the phase-advance picture this is the tune shift itself:
+    Delta Q = -(1/2 pi) oint (Delta beta / beta) dphi to first order."""
+    fig, axes = plt.subplots(2, 2, figsize=(18, 9), sharex=True, sharey='row')
+    cmap = plt.get_cmap('viridis')
+    for col, model_label in enumerate(('MK', 'SB')):
+        data = case_datas[model_label]
+        s = data['orbit_scan_s']
+        hor_off_list = data['hor_off_list']
+        norm = plt.Normalize(hor_off_list.min() * 1e3, hor_off_list.max() * 1e3)
+        beta0 = dict(zip(('x', 'y'), bare_ring_beta(s)))
+        for row, plane in enumerate(('x', 'y')):
+            ax = axes[row, col]
+            beat = data[f'bet{plane}_scan'] / beta0[plane] - 1
+            for dx, b in zip(hor_off_list, beat):
+                ax.plot(s, 100 * b, color=cmap(norm(dx * 1e3)), linewidth=0.8)
+            i0 = np.argmin(np.abs(hor_off_list))
+            print(f"[{place_label} {model_label}] Δβ{plane}/β{plane} at "
+                  f"dx = {hor_off_list[i0] * 1e6:.1f} um: rms "
+                  f"{100 * np.sqrt(np.mean(beat[i0] ** 2)):.3f} %, "
+                  f"peak {100 * np.max(np.abs(beat[i0])):.3f} %")
+            for s_start, s_end in data['undulator_s_ranges']:
+                ax.axvspan(s_start, s_end, color='tab:red', alpha=0.3,
+                           label='Undulator')
+            ax.set_ylabel(f'$\\Delta\\beta_{plane}/\\beta_{plane}$ [%]')
+            ax.grid(True, alpha=0.3)
+            ax.tick_params(labelleft=True)
+        axes[0, col].set_title(MODEL_STYLES[model_label][0])
+        axes[1, col].set_xlabel('s [m]')
+        axes[0, col].legend(loc='upper right', fontsize=8)
+        fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap),
+                     ax=axes[:, col], label='Horizontal offset [mm]')
+    fig.suptitle(f'{place_label}: beta beat from the undulator '
+                 '(vs bare ring, closed-ring Twiss)')
+    out_path = OUT_DIR / f'{place_label}_beta_beat_MK_vs_SB.pdf'
+    fig.savefig(out_path, bbox_inches='tight')
+    print(f"Saved {out_path}")
+    return fig
+
+
+def plot_beta_beat_tune_shift(place_label, case_datas):
+    """The beta beat's own contribution to the tune shift, per model: the
+    second-order term (1/8 pi) oint K Delta beta ds (half the difference
+    between the perturbed-beta and beta_0 formulas) next to what the Twiss
+    leaves over the first-order formula. Both are shifted to zero at x = 0,
+    since the comparison is about the progression (curvature) -- for MK the
+    Twiss also carries a constant offset from the edge kicks, which the
+    formulas leave out.
+    """
+    fig, axes = plt.subplots(2, 1, figsize=(8, 8), sharex=True)
+    for ax, plane in zip(axes, ('x', 'y')):
+        for model_label, data in case_datas.items():
+            x = data['hor_off_list']
+            model_name, color, marker = MODEL_STYLES[model_label]
+            f0 = data[f'deltaq{plane}_formula_list']
+            fp = data[f'deltaq{plane}_formula_pert_list']
+            residual = data[f'deltaq{plane}_list'] - f0
+            beat = 0.5 * (fp - f0)
+            for dq, ls, mk, label in (
+                    (residual, 'none', marker,
+                     f'{model_name}: Twiss $-$ 1st order'),
+                    (beat, '-', None,
+                     f'{model_name}: $\\frac{{1}}{{8\\pi}}\\oint K\\,'
+                     f'\\Delta\\beta_{plane}\\,ds$')):
+                dq = dq - np.interp(0., x, dq)
+                print(f"[{place_label} {model_name}, beta-beat] {label}: "
+                      f"ΔQ{plane} quadratic fit coefficients {np.polyfit(x, dq, 2)}")
+                ax.plot(x, dq, linestyle=ls, marker=mk, markersize=4,
+                        markerfacecolor='none', color=color, label=label)
+        ax.set_ylabel(f'$\\Delta Q_{plane}$ (shifted to 0 at $x = 0$)')
+        ax.grid(True, alpha=0.3)
+        ax.legend(fontsize=8)
+    axes[0].set_title('Tune shift from the beta beat (2nd order)')
+    axes[1].set_xlabel('Horizontal offset [m]')
+    fig.suptitle(place_label)
+    fig.tight_layout()
+    out_path = OUT_DIR / f'{place_label}_tune_shift_beta_beat.pdf'
+    fig.savefig(out_path, bbox_inches='tight')
+    print(f"Saved {out_path}")
+    return fig
+
+
+for place_label in CASES:
+    wiggler_places = WIGGLER_CASES[place_label]
+    case_datas = {model_label: get_case_data(place_label, wiggler_places,
+                                             model_label)
+                  for model_label in MODEL_LABELS}
+    plot_tune_shift_models_side_by_side(place_label, case_datas)
+    plot_closed_gap_tune_shift(place_label, case_datas)
+    plot_beta_beat_tune_shift(place_label, case_datas)
+    plot_beta_beat(place_label, case_datas)
+
+# All figures are kept open so they can be reviewed interactively here, in
+# addition to having been saved as PDFs above.
 plt.show()
