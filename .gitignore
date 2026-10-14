@@ -16,7 +16,11 @@ __pycache__
 xtrack/prebuilt_kernels
 !xtrack/prebuilt_kernels/*.py
 checkpoint_restart.dat
+**/claude_notes/
 .idea
 simona_field_map*
 .claude/
-**/claude_notes/
+examples/splineboris/results/
+examples/splineboris/data/
+examples/splineboris/data_007b/
+xtrack/beam_elements/borissolenoid_src/

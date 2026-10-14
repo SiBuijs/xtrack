@@ -16,10 +16,9 @@ import xtrack as xt
 from xobjects import BypassLinked
 
 from .masses import PROTON_MASS_EV
-from .masses import __dict__ as mass__dict__
 from .pdg import get_pdg_id_from_name, get_properties_from_pdg_id, \
                  get_mass_from_pdg_id
-from ..general import DEPRECATION_INFO_PREP_1_0
+from ..general import _print, DEPRECATION_INFO_PREP_1_0
 
 LAST_INVALID_STATE = -999999999
 
@@ -40,7 +39,7 @@ scalar_vars = (
 )
 
 part_energy_vars = (
-    (xo.Float64, 'ptau'),
+    (xo.Float64, 'pzeta'),
     (xo.Float64, 'delta'),
     (xo.Float64, 'rpp'),
     (xo.Float64, 'rvv'),
@@ -83,331 +82,6 @@ per_particle_vars = (
 )
 
 
-def gen_local_particle_api():
-    src_lines = [
-        '#include "xobjects/headers/common.h"',
-        '#include "xtrack/particles/rng_src/base_rng.h"',
-        '#include "xtrack/particles/rng_src/particles_rng.h"',
-    ]
-    for name, mass in mass__dict__.items():
-        if name.endswith('_MASS_EV'):
-            src_lines.append(f'#define {name} {mass}')
-
-    src_lines.append('typedef struct {')
-
-    for tt, vv in size_vars + scalar_vars:
-        src_lines.append('                 ' + tt._c_type + '  ' + vv + ';')
-
-    for tt, vv in per_particle_vars:
-        src_lines.append('    GPUGLMEM ' + tt._c_type + '* ' + vv + ';')
-
-    src_lines.append('             int64_t ipart;')
-    src_lines.append('             int64_t endpart;')
-    src_lines.append('             uint64_t track_flags;')
-    src_lines.append('             double line_length;')
-    src_lines.append('    GPUGLMEM int8_t* io_buffer;')
-    src_lines.append('} LocalParticle;')
-    src_typedef = '\n'.join(src_lines)
-
-    # Get io buffer
-    src_lines = []
-    src_lines.append(
-        '''
-        GPUFUN
-        GPUGLMEM int8_t* LocalParticle_get_io_buffer(LocalParticle* part){
-            return part->io_buffer;
-        }
-
-        '''
-    )
-
-    # Get track flag
-    src_lines.append(
-        '''
-        GPUFUN
-        uint64_t LocalParticle_check_track_flag(LocalParticle* part, uint8_t index){
-            return (part->track_flags >> index) & 1;
-        }
-    '''
-    )
-
-    # Particles_to_LocalParticle
-    src_lines.append(
-        '''
-        GPUFUN
-        void Particles_to_LocalParticle(ParticlesData source,
-                                        LocalParticle* dest,
-                                        int64_t id,
-                                        int64_t eid){'''
-    )
-    for _, vv in size_vars + scalar_vars:
-        src_lines.append(
-            f'  dest->{vv} = ParticlesData_get_' + vv + '(source);'
-        )
-
-    for _, vv in per_particle_vars:
-        src_lines.append(
-            f'  dest->{vv} = ParticlesData_getp1_' + vv + '(source, 0);'
-        )
-
-    src_lines.append('  dest->ipart = id;')
-    src_lines.append('  dest->endpart = eid;')
-    src_lines.append('}')
-    src_particles_to_local = '\n'.join(src_lines)
-
-    # LocalParticle_to_Particles
-    src_lines = []
-    src_lines.append(
-        '''
-        GPUFUN
-        void LocalParticle_to_Particles(LocalParticle* source,
-                                        ParticlesData dest,
-                                        int64_t id,
-                                        int64_t set_scalar){'''
-    )
-    src_lines.append('if (set_scalar){')
-    for _, vv in size_vars + scalar_vars:
-        src_lines.append(
-            '  ParticlesData_set_' + vv + '(dest,'
-                                          f'      LocalParticle_get_{vv}(source));'
-        )
-    src_lines.append('}')
-
-    for _, vv in per_particle_vars:
-        src_lines.append(
-            '  ParticlesData_set_' + vv + '(dest, id, '
-                                          f'      LocalParticle_get_{vv}(source));'
-        )
-    src_lines.append('}')
-    src_local_to_particles = '\n'.join(src_lines)
-
-    # Adders
-    src_lines = []
-    for tt, vv in per_particle_vars:
-        src_lines.append(
-            '''
-        GPUFUN
-        void LocalParticle_add_to_''' + vv + f'(LocalParticle* part, {tt._c_type} value)'
-            + '{'
-        )
-        src_lines.append(f'#ifndef FREEZE_VAR_{vv}')
-        src_lines.append(f'  part->{vv}[part->ipart] += value;')
-        src_lines.append('#endif')
-        src_lines.append('}\n')
-    src_adders = '\n'.join(src_lines)
-
-    # Scalers
-    src_lines = []
-    for tt, vv in per_particle_vars:
-        src_lines.append(
-            '''
-        GPUFUN
-        void LocalParticle_scale_''' + vv + f'(LocalParticle* part, {tt._c_type} value)'
-            + '{'
-        )
-        src_lines.append(f'#ifndef FREEZE_VAR_{vv}')
-        src_lines.append(f'  part->{vv}[part->ipart] *= value;')
-        src_lines.append('#endif')
-        src_lines.append('}\n')
-    src_scalers = '\n'.join(src_lines)
-
-    # Setters
-    src_lines = []
-    for tt, vv in per_particle_vars:
-        src_lines.append(
-            '''
-        GPUFUN
-        void LocalParticle_set_''' + vv + f'(LocalParticle* part, {tt._c_type} value)'
-            + '{'
-        )
-        src_lines.append(f'#ifndef FREEZE_VAR_{vv}')
-        src_lines.append(f'  part->{vv}[part->ipart] = value;')
-        src_lines.append('#endif')
-        src_lines.append('}')
-    src_setters = '\n'.join(src_lines)
-
-    # Getters
-    src_lines = []
-
-    for tt, vv in size_vars + scalar_vars:
-        src_lines.append('GPUFUN')
-        src_lines.append(
-            f'{tt._c_type} LocalParticle_get_' + vv
-            + '(LocalParticle* part)'
-            + '{'
-        )
-        src_lines.append(f'  return part->{vv};')
-        src_lines.append('}')
-
-    for tt, vv in per_particle_vars:
-        src_lines.append('GPUFUN')
-        src_lines.append(
-            f'{tt._c_type} LocalParticle_get_' + vv
-            + '(LocalParticle* part)'
-            + '{'
-        )
-        src_lines.append(f'  return part->{vv}[part->ipart];')
-        src_lines.append('}')
-
-    src_getters = '\n'.join(src_lines)
-
-    # Angles
-    src_angles_lines = []
-    for exact in ['', 'exact_']:
-        # xp (py as transverse) and vice versa
-        for xx, yy in [['x', 'y'], ['y', 'x']]:
-            # Getter
-            src_angles_lines.append('GPUFUN')
-            src_angles_lines.append(
-                f'double LocalParticle_get_{exact}{xx}p(LocalParticle* part){{'
-            )
-            src_angles_lines.append(
-                f'    double const p{xx} = LocalParticle_get_p{xx}(part);'
-            )
-            if exact == 'exact_':
-                src_angles_lines.append(
-                    f'    double const p{yy} = LocalParticle_get_p{yy}(part);'
-                )
-                src_angles_lines.append(
-                    '    double const one_plus_delta = 1. + LocalParticle_get_delta(part);'
-                )
-                src_angles_lines.append(
-                    '    double const rpp = 1./sqrt(one_plus_delta*one_plus_delta - px*px - py*py);'
-                )
-            else:
-                src_angles_lines.append(
-                    '    double const rpp = LocalParticle_get_rpp(part);'
-                )
-            src_angles_lines.append(
-                '    // INFO: this is not the angle, but sin(angle)'
-            )
-            src_angles_lines.append(f'    return p{xx}*rpp;')
-            src_angles_lines.append('}')
-            src_angles_lines.append('')
-
-        for xx, yy in [['x', 'y'], ['y', 'x']]:
-            # Setter
-            src_angles_lines.append('GPUFUN')
-            src_angles_lines.append(
-                f'void LocalParticle_set_{exact}{xx}p(LocalParticle* part, double {xx}p){{'
-            )
-            src_angles_lines.append(f'#ifndef FREEZE_VAR_p{xx}')
-            src_angles_lines.append(
-                '    double rpp = LocalParticle_get_rpp(part);'
-            )
-            if exact == 'exact_':
-                src_angles_lines.append(
-                    f'    // Careful! If {yy}p also changes, use LocalParticle_set_{exact}xp_yp!'
-                )
-                src_angles_lines.append(
-                    f'    double const {yy}p = LocalParticle_get_{exact}{yy}p(part);'
-                )
-                src_angles_lines.append('    rpp *= sqrt(1 + xp*xp + yp*yp);')
-            src_angles_lines.append(
-                f'    // INFO: {xx}p is not the angle, but sin(angle)'
-            )
-            src_angles_lines.append(
-                f'    LocalParticle_set_p{xx}(part, {xx}p/rpp);'
-            )
-            src_angles_lines.append('#endif')
-            src_angles_lines.append('}')
-            src_angles_lines.append('')
-
-        for xx, yy in [['x', 'y'], ['y', 'x']]:
-            # Adder
-            src_angles_lines.append('GPUFUN')
-            src_angles_lines.append(
-                f'void LocalParticle_add_to_{exact}{xx}p(LocalParticle* part, double {xx}p){{'
-            )
-            src_angles_lines.append(f'#ifndef FREEZE_VAR_p{xx}')
-            src_angles_lines.append(
-                f'    LocalParticle_set_{exact}{xx}p(part, '
-                + f'LocalParticle_get_{exact}{xx}p(part) + {xx}p);'
-            )
-            src_angles_lines.append('#endif')
-            src_angles_lines.append('}')
-            src_angles_lines.append('')
-            # Scaler
-            src_angles_lines.append('GPUFUN')
-            src_angles_lines.append(
-                f'void LocalParticle_scale_{exact}{xx}p(LocalParticle* part, double value){{'
-            )
-            src_angles_lines.append(f'#ifndef FREEZE_VAR_p{xx}')
-            src_angles_lines.append(
-                f'    LocalParticle_set_{exact}{xx}p(part, '
-                + f'LocalParticle_get_{exact}{xx}p(part) * value);'
-            )
-            src_angles_lines.append('#endif')
-            src_angles_lines.append('}')
-            src_angles_lines.append('')
-        # Double setter, adder, scaler
-        src_angles_lines.append('GPUFUN')
-        src_angles_lines.append(
-            f'void LocalParticle_set_{exact}xp_yp(LocalParticle* part, double xp, double yp){{'
-        )
-        src_angles_lines.append('    double rpp = LocalParticle_get_rpp(part);')
-        if exact == 'exact_':
-            src_angles_lines.append('    rpp *= sqrt(1 + xp*xp + yp*yp);')
-        for xx in ['x', 'y']:
-            src_angles_lines.append(f'#ifndef FREEZE_VAR_p{xx}')
-            src_angles_lines.append(
-                f'    LocalParticle_set_p{xx}(part, {xx}p/rpp);'
-            )
-            src_angles_lines.append('#endif')
-        src_angles_lines.append('}')
-        src_angles_lines.append('')
-        src_angles_lines.append('GPUFUN')
-        src_angles_lines.append(
-            f'void LocalParticle_add_to_{exact}xp_yp(LocalParticle* part, double xp, double yp){{'
-        )
-        src_angles_lines.append(
-            f'    LocalParticle_set_{exact}xp_yp(part, '
-            + f'LocalParticle_get_{exact}xp(part) + xp, '
-            + f'LocalParticle_get_{exact}yp(part) + yp);'
-        )
-        src_angles_lines.append('}')
-        src_angles_lines.append('')
-        src_angles_lines.append('GPUFUN')
-        src_angles_lines.append(
-            f'void LocalParticle_scale_{exact}xp_yp(LocalParticle* part, double value_x, double value_y){{'
-        )
-        src_angles_lines.append(
-            f'    LocalParticle_set_{exact}xp_yp(part, '
-            + f'LocalParticle_get_{exact}xp(part) * value_x, '
-            + f'LocalParticle_get_{exact}yp(part) * value_y);'
-        )
-        src_angles_lines.append('}')
-    src_angles = '\n'.join(src_angles_lines)
-
-    # Particle exchangers
-    src_exchange = '''
-    GPUFUN
-    void LocalParticle_exchange(LocalParticle* part, int64_t i1, int64_t i2){
-    '''
-    for tt, vv in per_particle_vars:
-        src_exchange += '\n'.join(
-            [
-                '\n    {',
-                f'    {tt._c_type} temp = part->{vv}[i2];',
-                f'    part->{vv}[i2] = part->{vv}[i1];',
-                f'    part->{vv}[i1] = temp;',
-                '     }']
-        )
-    src_exchange += '}\n'
-
-    source = '\n\n'.join(
-        [src_typedef, src_adders, src_getters,
-            src_setters, src_scalers, src_exchange,
-            src_particles_to_local, src_local_to_particles,
-            src_angles]
-    )
-
-    source += """
-                #include "xtrack/particles/local_particle_custom_api.h"
-    """
-    return source
-
-
 class Particles(xo.HybridClass):
     _cname = 'ParticlesData'
 
@@ -425,12 +99,12 @@ class Particles(xo.HybridClass):
                     if (not vv[1].startswith('_') and vv[1] != 't_sim')] + ['t_sim']
 
     _extra_c_sources = [
-        gen_local_particle_api()
+        '#include "xtrack/particles/headers/local_particle.h"'
     ]
 
     _rename = {
         'delta': '_delta',
-        'ptau': '_ptau',
+        'pzeta': '_pzeta',
         'rvv': '_rvv',
         'rpp': '_rpp',
         'p0c': '_p0c',
@@ -470,8 +144,8 @@ class Particles(xo.HybridClass):
 
         Parameters
         ----------
-        pdg_id_0 : int or str, optional, define reference mass and charge from
-            PDG id or particle name.
+        pdg_id_0 : int or str, optional
+            Define reference mass and charge from PDG id or particle name.
         _capacity: int
             The maximum number of particles that can be stored in the object.
             If not provided, it is inferred from the size of the provided
@@ -486,6 +160,17 @@ class Particles(xo.HybridClass):
             Vertical position [m]
         py : array_like of float, optional
             Py / (m/m0 * p0c)
+        ax, ay : array_like of float, optional
+            Normalized transverse vector-potential components (dimensionless),
+            in the same normalization as ``px`` and ``py``. The kinetic momenta
+            are ``kin_px = px - ax`` and ``kin_py = py - ay``. Both default to 0.
+        spin_x, spin_y, spin_z : array_like of float, optional
+            Dimensionless spin-vector components along the local horizontal,
+            vertical, and longitudinal directions. Each defaults to 0. The
+            constructor does not normalize the spin vector.
+        anomalous_magnetic_moment : array_like of float, optional
+            Dimensionless magnetic-moment anomaly ``(g - 2) / 2`` used for
+            spin tracking. Defaults to 0; it is not inferred from ``pdg_id``.
         delta : array_like of float, optional
             (Pc m0/m - p0c) /p0c
         ptau : array_like of float, optional
@@ -520,7 +205,9 @@ class Particles(xo.HybridClass):
             mass/mass0 (this is used to track particles of
             different species. Note that mass is the rest mass
             of the considered particle species and not the
-            relativistic mass)
+            relativistic mass). If supplied, also provide ``charge_ratio``
+            or ``chi``. Non-default mass ratios also require an explicit
+            ``delta``, ``ptau``, or ``pzeta``.
         chi : array_like of float, optional
             q / q0 * m0 / m = qratio / mratio
         charge_ratio : array_like of float, optional
@@ -533,19 +220,34 @@ class Particles(xo.HybridClass):
             It is <= 0 if the particle is lost, > 0 otherwise
             (different values are used to record information on how the particle
             is lost or generated)
-        pdg_id : array_like of float, optional
+        pdg_id : array_like of int or str, optional
             PDG id of the particle under consideration (needed when tracking
             ions to distinguish different particle types). The default is 0
             (undefined)
         weight : array_like of float, optional
-            Particle weight in number of particles (for collective simulations)
+            Particle weight in number of particles per macro-particle
+            (used for collective simulations, e.g. space charge, beam-beam,
+            wakefields, etc.)
         at_element : array_like of int, optional
             Identifier of the last element through which the particle has been
+        start_tracking_at_element : int, optional
+            Element index at which the next tracking call starts. A nonnegative
+            value overrides the default starting element and is reset to -1
+            when consumed. Cannot be combined with a nonzero ``ele_start``
+            argument to tracking. Defaults to -1 (no override).
         parent_particle_id : array_like of int, optional
             Identifier of the parent particle (secondary production processes)
         t_sim : float, optional
             Simulation frame time (typically one revolution period)
+        name : str, optional
+            Optional label attached to this Particles object as ``name``.
+            It does not affect particle identifiers or tracking.
         """
+        if 'mass' in kwargs:
+            raise NameError(
+                'The `mass` argument is not supported. Use `mass0` for the '
+                'reference mass and `mass_ratio` for relative particle masses.')
+
         if '_xobject' in kwargs.keys():
             # Initialize xobject
             self.xoinitialize(**kwargs)
@@ -556,11 +258,11 @@ class Particles(xo.HybridClass):
                             'Please use `zeta` instead.')
 
         if 'psigma' in kwargs.keys():
-            raise NameError('`psigma` is not supported anymore.'
+            raise NameError('`psigma` is not supported anymore. '
                             'Please use `pzeta` instead.')
 
         accepted_args = set(self._xofields.keys()) | {
-            'energy0', 'tau', 'pzeta', 'mass_ratio', 'mass', 'kinetic_energy0',
+            'energy0', 'tau', 'ptau', 'mass_ratio', 'kinetic_energy0',
             '_context', '_buffer', '_offset', 'name', 'rigidity0',
         }
         if set(kwargs.keys()) - accepted_args:
@@ -570,13 +272,17 @@ class Particles(xo.HybridClass):
         if pdg_id_0 is not None:
             _update_kwargs0_from_pdg_id(pdg_id_0, kwargs)
 
+        # Resolve particle names before converting per-particle inputs to integers.
+        if 'pdg_id' in kwargs:
+            kwargs['pdg_id'] = get_pdg_id_from_name(kwargs['pdg_id'])
+
         per_part_input_vars = (
             self.per_particle_vars +
             ((xo.Float64, 'energy0'),
              (xo.Float64, 'kinetic_energy0'),
              (xo.Float64, 'rigidity0'),
              (xo.Float64, 'tau'),
-             (xo.Float64, 'pzeta'),
+             (xo.Float64, 'ptau'),
              (xo.Float64, 'mass_ratio'))
         )
 
@@ -598,12 +304,12 @@ class Particles(xo.HybridClass):
         # Validate _capacity if given explicitly, if not assume it based on input
         if _capacity is not None:
             if _capacity <= 0:
-                raise ValueError('Explicitly provided `_capacity` has to be'
+                raise ValueError('Explicitly provided `_capacity` has to be '
                                  'greater than zero.')
 
             if _capacity < input_length:
                 raise ValueError(
-                    f'Capacity ({_capacity}) has to be greater or equal to the '
+                    f'Capacity ({_capacity}) has to be greater than or equal to the '
                     f'number of particles ({input_length}).'
                 )
         else:
@@ -739,7 +445,7 @@ class Particles(xo.HybridClass):
         dct : dict
             The dictionary to load the Particles object from.
         load_rng_state : bool, optional
-            Whether to load the state of the random number generator  from the
+            Whether to load the state of the random number generator from the
             dictionary. Defaults to True.
         _context : Context, optional
             The context to load the Particles object into. If not provided,
@@ -786,7 +492,7 @@ class Particles(xo.HybridClass):
         copy_to_cpu : bool, optional
             Whether to copy the Particles object to the CPU before converting
             it to a dictionary. Defaults to True.
-        compact:
+        compact : bool, optional
             Whether to minimize the size of the dictionary. Defaults to False.
         remove_underscored : bool, optional
             Whether to remove underscored variables from the dictionary.
@@ -829,7 +535,7 @@ class Particles(xo.HybridClass):
 
         dct = xo.HybridClass.to_dict(p_for_dict)
         dct['delta'] = p_for_dict.delta
-        dct['ptau'] = p_for_dict.ptau
+        dct['pzeta'] = p_for_dict.pzeta
         dct['rvv'] = p_for_dict.rvv
         dct['rpp'] = p_for_dict.rpp
         dct['p0c'] = p_for_dict._p0c
@@ -845,7 +551,7 @@ class Particles(xo.HybridClass):
                     del (dct[kk])
 
         if remove_redundant_variables:
-            for kk in ['ptau', 'rpp', 'rvv', 'gamma0', 'beta0']:
+            for kk in ['pzeta', 'rpp', 'rvv', 'gamma0', 'beta0']:
                 del (dct[kk])
 
         return dct
@@ -859,7 +565,7 @@ class Particles(xo.HybridClass):
         filename : str
             The name of the file to save the Particles object to.
         **kwargs : dict
-            Additional keyword arguments to pass to the json.to_dict method.
+            Additional keyword arguments to pass to the `to_dict` method.
         """
 
         class NumpyEncoder(json.JSONEncoder):
@@ -893,6 +599,9 @@ class Particles(xo.HybridClass):
         _buffer : Buffer, optional
             The buffer to load the Particles object into. If not provided,
             a new buffer will be allocated from the context.
+        load_rng_state : bool, optional
+            Whether to load the state of the random number generator from the
+            DataFrame. Defaults to True.
 
         Returns
         -------
@@ -920,7 +629,7 @@ class Particles(xo.HybridClass):
 
         Parameters
         ----------
-        compact:
+        compact : bool, optional
             Whether to minimize the size of the dictionary. Defaults to False.
         remove_underscored : bool, optional
             Whether to remove underscored variables from the dictionary.
@@ -1020,7 +729,7 @@ class Particles(xo.HybridClass):
 
         """
 
-        # TODO For now the merge is performed on CPU for add contexts.
+        # TODO For now the merge is performed on CPU for all contexts.
         # Slow for objects on GPU (transferred to CPU for the merge).
 
         # Move everything to cpu
@@ -1032,7 +741,7 @@ class Particles(xo.HybridClass):
             else:
                 cpu_lst.append(pp.copy(_context=xo.context_default))
 
-        # Check that scalar variable are compatible
+        # Check that scalar variables are compatible
         for tt, nn in cls.scalar_vars:
             vals = [getattr(pp, nn) for pp in cpu_lst]
             assert np.allclose(vals, getattr(cpu_lst[0], nn),
@@ -1075,7 +784,7 @@ class Particles(xo.HybridClass):
 
         # Copy to appropriate context
         if _context is None and _buffer is None:
-            # Use constext of first particle
+            # Use context of first particle
             if isinstance(lst[0]._buffer.context, xo.ContextCpu):
                 new_part_cpu._buffer.context = lst[0]._buffer.context
                 return new_part_cpu
@@ -1106,7 +815,7 @@ class Particles(xo.HybridClass):
         else:
             self_cpu = self.copy(_context=xo.context_default)
 
-        # copy mask to cpu is needed
+        # copy mask to cpu if needed
         if isinstance(mask, self._buffer.context.nplike_array_type):
             mask = self._buffer.context.nparray_from_context_array(mask)
 
@@ -1215,7 +924,7 @@ class Particles(xo.HybridClass):
 
         if isinstance(self._context, xo.ContextPyopencl):
             # Needs special treatment because masking does not work with pyopencl
-            # Going to for the masking for now, could be replaced by a kernel in the future.
+            # Going to CPU for the masking for now, could be replaced by a kernel in the future.
             state_cpu = self.state.get()
             mask_active_cpu = state_cpu > 0
             mask_lost_cpu = (state_cpu < 1) & (state_cpu > LAST_INVALID_STATE)
@@ -1358,13 +1067,14 @@ class Particles(xo.HybridClass):
 
         df = self.to_pandas()
         dash = '-' * 55
-        print("PARTICLES:\n\n")
-        print('{:<27} {:>12}'.format("Property", "Value"))
-        print(dash)
+        _print("PARTICLES:\n\n")
+        _print('{:<27} {:>12}'.format("Property", "Value"))
+        _print(dash)
         for column in df:
-            print('{:<27} {:>12}'.format(df[column].name, df[column].values[0]))
-        print(dash)
-        print('\n')
+            _print('{:<27} {:>12}'.format(
+                df[column].name, df[column].values[0]))
+        _print(dash)
+        _print('\n')
 
     def get_classical_particle_radius0(self):
 
@@ -1391,7 +1101,7 @@ class Particles(xo.HybridClass):
 
     def _init_random_number_generator(self, seeds=None):
         """
-        Initialize state of the random number generator (possibility to providing
+        Initialize state of the random number generator (possibility to provide
         a seed for each particle).
         """
 
@@ -1447,7 +1157,7 @@ class Particles(xo.HybridClass):
     def update_delta(self, new_delta_value):
 
         """
-        Update the `delta` value of the particles object. `ptau` and `rvv` and
+        Update the `delta` value of the particles object. `pzeta` and `rvv` and
         `rpp` are updated accordingly. If `new_delta_value` contains nans, these
         values are not updated.
         """
@@ -1480,12 +1190,48 @@ class Particles(xo.HybridClass):
         temp_delta[indx] = val
         self.update_delta(temp_delta)
 
+    def update_pzeta(self, new_pzeta):
+
+        """
+        Update the `pzeta` value of the particles object. `delta` and `rvv` and
+        `rpp` are updated accordingly. If `new_pzeta` contains nans, these values
+        are not updated.
+        """
+
+        isnan = self._context.nplike_lib.isnan
+        # The comparison with False is needed as mask consists of int8 on opencl
+        mask = (isnan(new_pzeta) == False) & (self.state > 0)  # noqa
+
+        self._update_energy_deviations(
+            pzeta=new_pzeta,
+            mask=mask
+        )
+
+    def _pzeta_setitem(self, indx, val):
+        ctx = self._buffer.context
+        temp_pzeta = ctx.zeros(shape=self._pzeta.shape, dtype=np.float64)
+        temp_pzeta[:] = np.nan
+        temp_pzeta[indx] = val
+        self.update_pzeta(temp_pzeta)
+
+    @property
+    def pzeta(self):
+        return self._buffer.context.linked_array_type.from_array(
+            self._pzeta,
+            mode='setitem_from_container',
+            container=self,
+            container_setitem_name='_pzeta_setitem')
+
+    @pzeta.setter
+    def pzeta(self, value):
+        self.pzeta[:] = value
+
     def update_ptau(self, new_ptau):
 
         """
-        Update the `ptau` value of the particles object. `delta` and `rvv` and
-        `rpp` are updated accordingly. If `new_ptau` contains nans, these values
-        are not updated.
+        Update the `ptau` value of the particles object. `pzeta`, `delta`,
+        `rvv` and `rpp` are updated accordingly. If `new_ptau` contains nans,
+        these values are not updated.
         """
 
         isnan = self._context.nplike_lib.isnan
@@ -1499,15 +1245,17 @@ class Particles(xo.HybridClass):
 
     def _ptau_setitem(self, indx, val):
         ctx = self._buffer.context
-        temp_ptau = ctx.zeros(shape=self._ptau.shape, dtype=np.float64)
+        temp_ptau = ctx.zeros(shape=self._pzeta.shape, dtype=np.float64)
         temp_ptau[:] = np.nan
         temp_ptau[indx] = val
         self.update_ptau(temp_ptau)
 
     @property
     def ptau(self):
+        # ptau is not stored, it is derived from the stored pzeta
+        ptau = self._pzeta * self._beta0
         return self._buffer.context.linked_array_type.from_array(
-            self._ptau,
+            ptau,
             mode='setitem_from_container',
             container=self,
             container_setitem_name='_ptau_setitem')
@@ -1697,7 +1445,7 @@ class Particles(xo.HybridClass):
 
     @property
     def energy(self):
-        energy = (self.energy0 + self.ptau * self.p0c) * self.mass_ratio  # eV
+        energy = (self.energy0 + self.pzeta * (self.beta0 * self.p0c)) * self.mass_ratio  # eV
         return self._buffer.context.linked_array_type.from_array(
             energy, mode='readonly',
             container=self)
@@ -1721,13 +1469,6 @@ class Particles(xo.HybridClass):
         out = self.charge_ratio * self.q0
         return self._buffer.context.linked_array_type.from_array(
             out, mode='readonly',
-            container=self)
-
-    @property
-    def pzeta(self):
-        pzeta = self.ptau / self.beta0
-        return self._buffer.context.linked_array_type.from_array(
-            pzeta, mode='readonly',
             container=self)
 
     @property
@@ -1787,10 +1528,10 @@ class Particles(xo.HybridClass):
 
     def add_to_energy(self, delta_energy):
         """
-        Add `delta_energy` to the `energy` of the particles object. `delta`,
-        'ptau', `rvv` and `rpp` are updated accordingly.
+        Add `delta_energy` to the `energy` of the particles object. `pzeta`,
+        `delta`, `rvv` and `rpp` are updated accordingly.
         """
-        self.ptau += delta_energy / self.p0c / self.mass_ratio
+        self.pzeta += delta_energy / (self.beta0 * self.p0c) / self.mass_ratio
 
     def set_particle(self, index, set_scalar_vars=False, **kwargs):
         raise NotImplementedError('This functionality has been removed')
@@ -1816,17 +1557,10 @@ class Particles(xo.HybridClass):
         self.spin_z = kwargs.get('spin_z', 0)
 
         pdg_id = kwargs.get('pdg_id')
-        try:
-            pdg_id = get_pdg_id_from_name(pdg_id)
-            if not np.isscalar(pdg_id):
-                pdg_id = self._context.nparray_to_context_array(pdg_id)
-            self.pdg_id = pdg_id
-        except ModuleNotFoundError:
-            if pdg_id is not None:
-                raise ValueError("In order to specify `pdg_id` you must have "
-                                 "xpart installed, however, it's not currently "
-                                 "available.")
-            self.pdg_id = 0
+        pdg_id = get_pdg_id_from_name(pdg_id)
+        if not np.isscalar(pdg_id):
+            pdg_id = self._context.nparray_to_context_array(pdg_id)
+        self.pdg_id = pdg_id
 
     @classmethod
     def reference_from_pdg_id(cls, pdg_id, **kwargs):
@@ -1876,7 +1610,7 @@ class Particles(xo.HybridClass):
                                mask=None):
         """Update field values that may be both given and computed from others.
 
-        In case of small differences between the given value and them computed
+        In case of small differences between the given value and the computed
         value, the given value will prevail to preserve numerical stability.
         This is useful when two or more dependent variables are given as input.
         """
@@ -1954,11 +1688,11 @@ class Particles(xo.HybridClass):
                                   _rpp=None, _rvv=None, mask=None):
         if all(ff is None for ff in (delta, ptau, pzeta)):
             if _rpp is not None or _rvv is not None:
-                raise ValueError('Setting `delta` and `ptau` by only giving '
+                raise ValueError('Setting `delta` and `pzeta` by only giving '
                                  '`_rpp` and `_rvv` is not supported.')
             if any(self.mass_ratio != 1.0):
-                raise ValueError('Need to provide `delta` or `ptau` with '
-                                 'non-default mass ratios.')
+                raise ValueError('Need to provide `delta`, `ptau` or `pzeta` '
+                                 'with non-default mass ratios.')
             self._delta = 0.0
             delta = self._delta  # Cupy complains if we later assign LinkedArray
 
@@ -1980,14 +1714,14 @@ class Particles(xo.HybridClass):
         else:
             raise RuntimeError('This statement is unreachable.')
 
-        self._assert_values_consistent(pzeta, _pzeta, mask)
+        self._assert_values_consistent(ptau, _ptau, mask)
         self._setattr_if_consistent('_delta',
                                     given_value=delta,
                                     computed_value=_delta,
                                     mask=mask)
-        self._setattr_if_consistent('_ptau',
-                                    given_value=ptau,
-                                    computed_value=_ptau,
+        self._setattr_if_consistent('_pzeta',
+                                    given_value=pzeta,
+                                    computed_value=_pzeta,
                                     mask=mask)
 
         delta = self._delta  # Cupy complains if we later assign LinkedArray
@@ -2087,7 +1821,7 @@ class Particles(xo.HybridClass):
 
         if update_pxpy:
             if isinstance(self._context, xo.ContextPyopencl):
-                raise NotImplementedError # Issue wiht masking
+                raise NotImplementedError # Issue with masking
             scale_pxpy = old_p0c[mask] / new_p0c[mask]
             self.px[mask] *= scale_pxpy
             self.py[mask] *= scale_pxpy
@@ -2116,38 +1850,42 @@ def _update_kwargs0_from_pdg_id(pdg_id, kwargs):
             kwargs['mass0'] = get_mass_from_pdg_id(pdg_id)
 
 def ptau2delta(ptau, beta0):
-    """Convert transverse momentum pt/p to relative momentum deviation dp/p.
+    """Convert normalized energy deviation ptau to momentum deviation delta.
 
     Parameters
     ----------
     ptau : float
-        Transverse momentum relative to total momentum (pt/p, dimensionless).
+        Normalized energy deviation (dimensionless). For particles with the
+        reference mass, ptau = (E - E0) / (p0*c).
     beta0 : float
-        Particle relativistic beta (v/c).
+        Reference particle relativistic beta (v0/c).
 
     Returns
     -------
     float
-        Relative momentum deviation (dp/p, dimensionless).
+        Relative momentum deviation delta (dimensionless). For particles with
+        the reference mass, delta = (p - p0) / p0.
     """
 
     _beta0 = 1 / beta0
     return np.sqrt(1 + 2*ptau*_beta0 + ptau**2) - 1
 
 def dptau2ddelta(ptau, beta0):
-    """Calculate derivative of relative momentum deviation dp/p with respect to pt.
+    """Calculate the derivative d(delta)/d(ptau) at fixed beta0.
 
     Parameters
     ----------
     ptau : float
-        Transverse momentum relative to total momentum (pt/p, dimensionless).
+        Normalized energy deviation (dimensionless). For particles with the
+        reference mass, ptau = (E - E0) / (p0*c).
     beta0 : float
-        Particle relativistic beta (v/c).
+        Reference particle relativistic beta (v0/c).
 
     Returns
     -------
     float
-        Derivative of relative momentum deviation (d(dp/p), dimensionless).
+        Derivative d(delta)/d(ptau) (dimensionless), where delta is the
+        relative momentum deviation returned by :func:`ptau2delta`.
     """
 
     _beta0 = 1 / beta0
