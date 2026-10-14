@@ -299,7 +299,7 @@ if args.zoom_ip:
             tw[f'{col}_corr_minus_bare'] = (
                 fits['corrected'][plane][kk] - fits['bare'][plane][kk])
             prime = "'" * kk
-            TwissPlot = xt.twissplot.TwissPlot
+            TwissPlot = xt.twiss.twissplot.TwissPlot
             TwissPlot.lglabel[f'{col}_corr_minus_bare'] = (
                 rf"$\Delta\mu_{plane}{prime}$ (corr - bare)")
             TwissPlot.axlabel[f'{col}_corr_minus_bare'] = (
