@@ -928,48 +928,6 @@ def plot_beta_beat(place_label, case_datas):
     return fig
 
 
-def plot_beta_beat_tune_shift(place_label, case_datas):
-    """The beta beat's own contribution to the tune shift, per model: the
-    second-order term (1/8 pi) oint K Delta beta ds (half the difference
-    between the perturbed-beta and beta_0 formulas) next to what the Twiss
-    leaves over the first-order formula. Both are shifted to zero at x = 0,
-    since the comparison is about the progression (curvature) -- for MK the
-    Twiss also carries a constant offset from the edge kicks, which the
-    formulas leave out.
-    """
-    fig, axes = plt.subplots(2, 1, figsize=(8, 8), sharex=True)
-    for ax, plane in zip(axes, ('x', 'y')):
-        for model_label, data in case_datas.items():
-            x = data['hor_off_list']
-            model_name, color, marker = MODEL_STYLES[model_label]
-            f0 = data[f'deltaq{plane}_formula_list']
-            fp = data[f'deltaq{plane}_formula_pert_list']
-            residual = data[f'deltaq{plane}_list'] - f0
-            beat = 0.5 * (fp - f0)
-            for dq, ls, mk, label in (
-                    (residual, 'none', marker,
-                     f'{model_name}: Twiss $-$ 1st order'),
-                    (beat, '-', None,
-                     f'{model_name}: $\\frac{{1}}{{8\\pi}}\\oint K\\,'
-                     f'\\Delta\\beta_{plane}\\,ds$')):
-                dq = dq - np.interp(0., x, dq)
-                print(f"[{place_label} {model_name}, beta-beat] {label}: "
-                      f"ΔQ{plane} quadratic fit coefficients {np.polyfit(x, dq, 2)}")
-                ax.plot(x, dq, linestyle=ls, marker=mk, markersize=4,
-                        markerfacecolor='none', color=color, label=label)
-        ax.set_ylabel(f'$\\Delta Q_{plane}$ (shifted to 0 at $x = 0$)')
-        ax.grid(True, alpha=0.3)
-        ax.legend(fontsize=8)
-    axes[0].set_title('Tune shift from the beta beat (2nd order)')
-    axes[1].set_xlabel('Horizontal offset [m]')
-    fig.suptitle(place_label)
-    fig.tight_layout()
-    out_path = OUT_DIR / f'{place_label}_tune_shift_beta_beat.pdf'
-    fig.savefig(out_path, bbox_inches='tight')
-    print(f"Saved {out_path}")
-    return fig
-
-
 for place_label in CASES:
     wiggler_places = WIGGLER_CASES[place_label]
     case_datas = {model_label: get_case_data(place_label, wiggler_places,
@@ -977,7 +935,6 @@ for place_label in CASES:
                   for model_label in MODEL_LABELS}
     plot_tune_shift_models_side_by_side(place_label, case_datas)
     plot_closed_gap_tune_shift(place_label, case_datas)
-    plot_beta_beat_tune_shift(place_label, case_datas)
     plot_beta_beat(place_label, case_datas)
 
 # All figures are kept open so they can be reviewed interactively here, in
