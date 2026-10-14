@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -21,8 +22,19 @@ tilted by the 15 mrad half crossing angle, hence Bx ~ 0.015 * Bz on axis.
 
 plt.rcParams.update({"font.size": 14})
 
-file_path = (Path(__file__).resolve().parent.parent.parent / "test_data"
-             / "fcc_ee_solenoids" / "Field_map_2T_BNL_August_14_2026.csv")
+# The BNL map is third-party data and must not be committed, so it is read from
+# outside the repo: $FCC_SOLENOID_FIELD_MAP if set, otherwise the synced
+# CERNBox copy (same relative path on every machine). Never from test_data/.
+FIELD_MAP_ENV_VAR = "FCC_SOLENOID_FIELD_MAP"
+DEFAULT_FIELD_MAP = (Path.home() / "cernbox" / "Solenoid_Field_Maps"
+                     / "Field_map_2T_BNL_August_14_2026.csv")
+file_path = Path(os.environ.get(FIELD_MAP_ENV_VAR, DEFAULT_FIELD_MAP)).expanduser()
+if not file_path.is_file():
+    raise SystemExit(
+        f"BNL FCC-ee solenoid field map not found at {file_path}.\n"
+        f"Set {FIELD_MAP_ENV_VAR} to the path of "
+        f"Field_map_2T_BNL_August_14_2026.csv (default: {DEFAULT_FIELD_MAP}). "
+        "The map is not distributed with this repository.")
 df_raw_data = (
     pd.read_csv(file_path, usecols=["Xb", "Yb", "Zb", "Bx", "By", "Bz"])
     .rename(columns={"Xb": "X", "Yb": "Y", "Zb": "Z", "Bz": "Bs"})
