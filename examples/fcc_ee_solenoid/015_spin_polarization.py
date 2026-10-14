@@ -444,6 +444,7 @@ def _run_polarization_evolution(
         fit_slope=fit_slope,
         fit_tau_depol_turns=fit_tau_depol_turns,
         fit_tau_depol_s=fit_tau_depol_s,
+        fit_turn_start=turn_start,
         p_eq_derived=p_eq_derived,
         radiation="quantum",
         variant=variant_suffix(

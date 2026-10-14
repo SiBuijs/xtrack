@@ -1,8 +1,17 @@
 # fcc_ee_solenoid — directory overview (for Claude, read this first)
 
-Written 2026-07-10. Purpose: let a future session skip re-reading every script.
+Written 2026-07-10. Last reviewed against the code 2026-10-14 (notes 01, 05,
+09, 10 and this file updated; 02, 03, 08 only checked for missing files and
+functions). Purpose: let a future session skip re-reading every script.
 If a referenced file/function no longer exists, treat these notes as stale for
 that detail and re-check the source.
+
+**Lattice filenames are tagged.** Since 2026-07-24, every lattice/template
+file carries `_{FIELD_TAG}{ORDER_TAG}` (e.g. `_2T`, `_3T`, `_3T_o2`), plus an
+optional `_{output_tag}` (e.g. `_mainscale`) from 004b/004c's `--output-tag`.
+Where an older passage writes an untagged name such as
+`fccee_z_lcc_splineboris_solenoids_coupling_corrected.json`, read it as the
+tagged family.
 
 ## What this study is about
 
@@ -50,7 +59,30 @@ fccee_z_lcc.json (external input, LCC optics, no solenoids)
        004c --model=splineboris|varsol: orbit+optics+coupling correction
            -> fccee_z_lcc_splineboris_solenoids_coupling_corrected.json
            -> fccee_z_lcc_varsol_solenoids_coupling_corrected.json
-       004d: analysis/plots of the SplineBoris corrected lattice
+       004d: analysis/plots of the SplineBoris corrected lattice (needs BOTH
+             the 2T and 3T corrected lattices, see note 01)
+
+   (filenames above are shown untagged -- see the tagging note at the top)
+
+   Side scripts (none write a lattice; most read the corrected ones):
+       004cc: one-IP, right-half sandbox of the 004c correction, with W and
+              phase diagnostics (notes 09/10)
+       004dd: chromatic phase advance mu(s), mu'(s), mu''(s) (note 08)
+       004e:  sextupole-content window study on the isolated main solenoid
+              (standalone, reads no pipeline JSON)
+       004f/004g/004h/004i/004j: comp_b_scale / main_b_scale scans and the
+              coupling-Jacobian SVD diagnostic (notes 06/07, both MISSING
+              from this checkout -- see the note index). CAVEAT: all five
+              were last changed 2026-09-09 and re-solve coupling the OLD
+              way (full straight,
+              ~84 skew knobs vs 12 targets at both boundaries, init at
+              dy_match), not 004c's per-side scheme since 2026-09-15.
+       004k:  off-momentum tune footprint on a resonance diagram
+       004l:  A/B of the optics match with/without the sdm1 targets
+       004m:  beta functions of the old (pre mid-bend quads, pre rcond) vs
+              current corrected rings, old ones read from git
+       017:   tune vs delta, scan+fit vs twiss dqx/ddqx
+       See "Scripts without a dedicated note" below.
 
 These two *_coupling_corrected.json files are the ones actually consumed by
 009/010/011/013/014 (the "current" study family). Everything upstream of them
@@ -67,8 +99,8 @@ These two *_coupling_corrected.json files are the ones actually consumed by
        into ONE tracking run per case (they differed only in twiss flavour,
        bunch initial emittance and spin IC), and 013 now drives 018 in place
        of 014 -- so a default 013 run yields DA + MA + EMIT + POL for the
-       cost of three tracking passes. 014 and 015 are kept untouched and
-       still runnable standalone. See 05_spin_polarization.md.
+       cost of three tracking passes. 014 and 015 are still runnable
+       standalone (015 has changed since; see 05_spin_polarization.md).
 ```
 
 ## Shared helper modules (used across many scripts)
@@ -182,7 +214,9 @@ These two *_coupling_corrected.json files are the ones actually consumed by
 - Correction knob chain per IP (final consolidated knob):
   `on_sol_corr_{ip}` drives `on_comp_sol_{ip}`, `on_rot_doublet_{left,right}_{ip}`,
   `on_sol_orbit_corr_{ip}`, `on_sol_optics_corr_{ip}`, and (004c/current path
-  only) `on_sol_coupling_corr_{ip}`.
+  only) `on_sol_coupling_corr_{ip}`. Since 2026-09-15 each of those three
+  drives a `..._corr_left_{ip}` and a `..._corr_right_{ip}` child, which are
+  the actual generated knobs (one per half-straight match, see note 01).
 - `line.particle_ref.anomalous_magnetic_moment = 0.00115965218128` is set
   whenever spin/polarization-related twiss (`polarization_analysis=True`) is
   used (002, 004d, 009/010/011/014 radiative tracking setup).
@@ -196,8 +230,10 @@ These two *_coupling_corrected.json files are the ones actually consumed by
 - `002_analysis_and_plots.py` still points at the legacy
   `fccee_z_lcc_non_local_solenoid.json`, not the current SplineBoris/VarSol
   corrected lattices — treat 002/003 as legacy-path analysis only.
-- A stray file `Untitled` (single line: `build_splineboris_line`) and a
-  `__pycache__/` sit in this directory — junk, not part of the pipeline.
+- `radial_steering.py` is a stray: it imports `dx_manual` from
+  `examples/`, which does not exist in this repo, so it cannot run here. It
+  is only referenced in a comment in `lattice_knobs.py`. (The stray
+  `Untitled` file mentioned here before is gone.)
 
 ## Note index
 - `01_lattice_construction_000_004d.md` — 000a/000b/001a/001b/002/003/004a/004b
@@ -222,7 +258,10 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   it is off, the `__bunchdiv<F>` provenance tag, the `--seed` determinism
   path, and the measurement that the tracked `tau_depol` is noise-dominated
   (SNR ~ 1).
-- `07_main_b_scale_scans.md` — the `main_b_scale` / per-side
+- `07_main_b_scale_scans.md` — **MISSING from this checkout** and in no git
+  commit, because `claude_notes/` was gitignored until 2026-10-14. It may
+  still exist on another machine; see "Note history" below. The scale knobs themselves are now summarised in note 01
+  (004b section). What it covered: the `main_b_scale` / per-side
   `comp_b_scale_{side}_{ip}` knobs (new in 004b/004c, `--output-tag
   mainscale` lattices) and the three scan scripts that use them:
   `004h_main_b_scale_scan.py` (004f analogue, floats the per-side comp
@@ -237,7 +276,8 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   means** — the grey dashed verticals on the IR figures mark the *orbit*
   correctors, not the coupling skews, which is the easiest thing in this
   study to misread.
-- `06_coupling_matching_convergence.md` — why `004f_comp_b_scale_scan.py`'s
+- `06_coupling_matching_convergence.md` — **MISSING**, same as 07. What it
+  covered: why `004f_comp_b_scale_scan.py`'s
   per-scan-point coupling re-solve (84 skew-quad vary knobs vs. 12 targets)
   is slow/sometimes fails to converge (ill-conditioned Jacobian, SVD
   diagnosis), the `004g_coupling_svd_diagnostic.py` tool built to inspect
@@ -282,7 +322,75 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   measured dead ends (knob limits, `step=1e-6`, the `bety`-at-sdm1 target,
   tighter tolerances), why "penalty is not quality", the diagnostics added to
   004c (`max|knob|` column, `--ips`, figure 4's Q(δ) plot), and the fact that
-  **004cc still carries a value-shift bug** in its sextupole targets.
+  that 004cc carried a value-shift bug in its sextupole targets. **That bug is
+  gone (2026-10-14 check: never in any commit).** 004cc now runs two
+  independent correction chains, with and without the `sext` targets; see
+  notes 09/10.
+
+## Scripts without a dedicated note (summarised 2026-10-14 from docstrings)
+
+- `000c_field_map_y_s_plane.py` — figure: main-solenoid (By, Bz) field
+  arrows in the y-s plane at x=0, coloured by |B|, from `SolenoidField`.
+- `004aa_splineboris_field_content.py` (2026-09-24) — two figures, main and
+  compensation solenoid: Bs/Bx/By along s at x=y=0, and d^k Bx/dx^k,
+  d^k By/dx^k per order k, read from the templates 004a wrote. The
+  curves are the exact quartic the Boris pusher integrates
+  (`_quartic_from_hermite`, checked against `get_field` to 1e-16). A
+  cheaper alternative to 004a's ~100 check figures.
+- `004e_sextupole_window_study.py` — zeroes the order-2 bx/by row of the
+  isolated main solenoid in an s-window (default 0.7-1.245 m) and compares
+  beta_y- and beta_y^(3/2)-weighted cumulative d^2Bx/dx^2 integrals against
+  the nominal solenoid. d^2Bx/dx^2 is antisymmetric about the IP, so its
+  plain integral cancels but a beta-weighted one need not. Standalone: reads
+  and writes no pipeline JSON.
+- `004k_tune_diagram_vs_delta.py` — (Qx, Qy) footprint vs delta from
+  periodic 4D twisses of the 2T/3T corrected rings (+ bare), on a resonance
+  diagram up to `--max-resonance-order` (default 3), in absolute tune.
+  `--vs-old` adds the previous lattice generation read from git at
+  `--old-rev` (default `f6dfc5087`) via `aperture_study_io.old_lattice_path`.
+- `004l_sextupole_target_ab.py` (2026-09-15) — runs one IP's optics match
+  with and without the sdm1 `sext` targets (mid-bend quads installed in
+  both) and compares convergence, boundary residuals, bety at the sextupole
+  and the worst beta-beat. Writes nothing; meant for `%run` in IPython.
+  Written when the 3T match with the sext targets stopped converging
+  (penalty ~57.75) and `generate_knob()` froze a near-zero knob, i.e. the
+  optics correction had silently become a no-op.
+- `004m_old_vs_new_beta.py` (2026-09-23) — beta functions of the old vs
+  current corrected rings at 2T and 3T. Old = `OLD_REV` `f6dfc5087`, the
+  newest commit where both rings are pre-mid-bend-quads and
+  pre-conditioning-fix. `8d46a1fbe` is NOT usable as old: there the 3T
+  ring was already cut and the 2T was not.
+- `aperture_study_io.old_lattice_path(rev, filename)` (added 2026-09-23) —
+  extracts `examples/fcc_ee_solenoid/<filename>` at a git rev into
+  `data/old_lattices/{rev}_{filename}` (gitignored) via `git cat-file`,
+  writing atomically through a `.part` file. Shared by 004k and 004m. Needed
+  because each 004c run overwrites the corrected lattices in place.
+- `009_parametric_version.py` / `009b_table_results.py` /
+  `009c_table_local_sol.py` — a separate, parametric single-IP study (ipa
+  only) after Boscolo, Ciarma, Burkhardt (NIM A 1083 (2026) 171135). It
+  builds the solenoid from analytic `TiltedSolenoid`s with free `B0`,
+  half-length, corrector `ds_start` and optional local anti-solenoids
+  (`B0_local`, `l_local`), corrects it, and dumps results (incl.
+  `gemitt_y`) to `results/*.json`. 009b tabulates `gemitt_y` vs B0 x
+  half-length, and 009c vs B0_local x l_local. Not connected to the
+  004-pipeline lattices. Despite the name, it is unrelated to
+  `009_momentum_acceptance.py`.
+- `017_tune_vs_delta.py` — Q(delta) two ways: scan + polynomial fit
+  (order `--fit-order`, coefficient x n!), and twiss's own `dqx/ddqx`. Its
+  docstring cites `xtrack.twiss._get_chromatic_functions`; after the twiss
+  refactor that is in `xtrack/twiss/chromatic_functions.py`.
+
+## Note history: why some notes are missing
+
+`.gitignore` had `**/claude_notes/` until 2026-10-14, when it was removed at
+the user's request. Notes 00-05 had been committed regardless and survived.
+Everything else lived only in whichever working tree it was written in. 08-10
+are in this checkout; 06 and 07 are not, and are in no commit on any branch.
+Some of this work was done on a second, Linux machine (`/home/simonfan/...`,
+see the `PLOT_DIR` history above), so 06/07 may still be there. Check
+before rewriting them. `004d` and `004j` still cite them in comments. From
+2026-10-14 on, new notes here are ordinary untracked files and need committing
+like any other.
 
 Removed 2026-07-15: the `kill_higher_order_{upstream,downstream}_{ip}` knob
 (zeroed sextupole-and-above multipole content for one half of one IP's main

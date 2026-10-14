@@ -528,7 +528,10 @@ def save_pol_study(
         radiation=radiation,
         sexamp=float(sexamp),
         # First turn included in the fit that produced the fit_* values above.
-        # 0 is literally correct for 015_spin_polarization.py's full-range fit.
+        # 015 and 018 both pass their own fit start (2000 by default). In POL
+        # files 015 wrote between 2026-09-22 (when it started fitting from
+        # turn 2000) and 2026-10-14 (when it started passing it), 0 is wrong:
+        # the fit started at 2000. Before 2026-09-22, 0 is correct.
         fit_turn_start=int(fit_turn_start),
         # Bunch initial emittance as eq/divisor. NaN means "not recorded" --
         # 015_spin_polarization.py does not pass it (it always used 1.0).

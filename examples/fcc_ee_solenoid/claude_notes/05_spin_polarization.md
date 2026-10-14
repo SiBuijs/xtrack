@@ -17,8 +17,10 @@ timescale `tau_depol`. Combined:
 
 ## Where these quantities live in xtrack
 
-All computed inside `xtrack.twiss._get_spin_polarization` (in `twiss.py`,
-`polarization_analysis=True`, which forces `spin=True` and
+All computed inside `_add_spin_polarization` in `xtrack/twiss/spin.py`
+(called from `twiss_postprocess_and_complem_results.py`; before the twiss
+refactor this was `xtrack.twiss._get_spin_polarization` in a single
+`twiss.py`). `polarization_analysis=True`, which forces `spin=True` and
 `radiation_integrals=True` internally — a single `line.twiss(...)` call with
 both `radiation_analysis=True` and `polarization_analysis=True` works,
 confirmed working together in this codebase's xtrack 0.106.1):
@@ -71,13 +73,28 @@ Per-turn polarization: `P(t) = |<spin_vec>|` — mean spin_x/y/z over (alive)
 particles, then vector magnitude. Full polarization = all unit spin vectors
 aligned (`P=1`); full depolarization = random directions (`P->0`).
 
-Depolarization is fit as a **straight line** (`_fit_linear_depolarization`,
-`np.polyfit` degree 1): `P(n) ~= P0 + slope*n`, `tau_depol = -1/slope`
-(turns), converted to seconds via `tw.t_rev0`. This is deliberately *not* an
-exponential fit (unlike 014's damping-rate fit) — per the user's framing,
-`tau_depol` is always vastly larger than any feasible tracked turn count
-(confirmed empirically, see below), so only the linear (leading-order) term
-of the true exponential decay is ever resolvable from tracking.
+Depolarization is fit as an **exponential**,
+`_fit_exponential_depolarization`: `P(n) = P0 * exp(-n/tau_depol)`, by a
+degree-1 `np.polyfit` of `ln P` against `n`, with `tau_depol` converted to
+seconds via `tw.t_rev0`. Only turns `n >= --turn-start` (`FIT_TURN_START`,
+default 2000) are fitted, which drops the spin-decoherence transient of the
+first ~1-2k turns (see "The spin-IC trap" below). `P0` is the fit
+extrapolated back to n=0, not P at the fit start. The returned `slope` is
+`dP/dn` at n=0, kept so the npz schema matches the old linear fit.
+
+History: the script was written (2026-07-17) with a straight-line fit
+(`_fit_linear_depolarization`, `P ~= P0 + slope*n`), on the argument that
+`tau_depol` is far beyond any trackable turn count, so only the linear term
+is resolvable. It switched to the exponential on 2026-07-27 (`6bad42e43`)
+and gained the turn-2000 fit start on 2026-09-22 (`8995bb22e`). The
+straight-line fit now lives only in `016_refit_polarization_linear.py`,
+which refits saved POL files.
+
+Since 2026-09-22 the figure's info box also states the absolute tracked drop
+`Delta P` over the run, the drop Twiss's `tau_depol` predicts over the same
+span, and their ratio. P sits so close to 1 that matplotlib uses offset
+notation, so two of these figures can differ 10x in scale while looking
+equally steep; compare the numbers, not the curves.
 
 Final combination: `p_eq_derived = p_inf / (1 + tau_pol_s/fit_tau_depol_s)`
 (eq. 8.37, using Twiss `P_inf`/`tau_pol` + the tracking-fit `tau_depol`),
@@ -112,7 +129,7 @@ concurrent CPU load (e.g. a simultaneous `014` run) it can be far slower — a
 during development. At `tau_depol ~ 3.18e6` turns for `sb_on`, the script's
 014-matched defaults (`N_TURNS=10_000`, `N_PART=1000`) only cover ~0.3% of
 one depolarization time — a real measurement needs a deliberately larger
-`--n-turns`/`--n-part` than those defaults to pull the linear-fit slope out
+`--n-turns`/`--n-part` than those defaults to pull the fitted decay out
 of finite-N noise; a smoke test with tiny `--n-turns --n-part` will produce a
 `fit_tau_depol_s` wildly off from the Twiss value (confirmed: a 20p/50t smoke
 run gave `fit_tau_depol_s=7.1e3 s` vs the true `960 s`) — this is expected
@@ -152,8 +169,11 @@ byte-identical. They differed in exactly three places:
 turn-by-turn monitor, then runs both analyses off that monitor and calls both
 `save_emitt_study` and `save_pol_study` unchanged. 013's tracking stage now
 points at 018 (`EMITT_POL_SCRIPT`), so a default 013 run yields DA + MA +
-EMIT + POL. **014 and 015 are deliberately left byte-untouched** so existing
-results stay reproducible.
+EMIT + POL. **014 and 015 were deliberately left byte-untouched** by the
+merge so existing results stay reproducible. 015 has changed since
+(2026-09-22: exponential fit from turn 2000 and the `Delta P` box; 2026-10-14:
+it now records its real fit start in the npz, see the `fit_turn_start`
+paragraph under "Provenance tagging"); 014 has not.
 
 ## Why spin is free when it is off
 
@@ -167,7 +187,7 @@ never writes back to the orbit. Consequence, verified: **at a fixed `--seed`
 ## The spin-IC trap (easy to get wrong)
 
 `twiss(spin=True)` writes the invariant spin field onto `tw.particle_on_co`
-(`xtrack/twiss.py`, `_find_spin_fixed_point`) and `build_particles` copies
+(`_find_spin_fixed_point`, now in `xtrack/twiss/spin.py`) and `build_particles` copies
 `particle_ref`'s spin into every generated particle
 (`xpart/build_particles.py:447-449`). So **after a polarization twiss the
 generated bunch is NOT spin-zero**, and a `--no-pol` mode that merely
@@ -214,13 +234,20 @@ equilibrium bunch. 018 tags each study against *its own parent's* divisor:
 So an untagged file always means "same physics the legacy script would have
 written". `EMIT_`/`POL_` prefixes are unchanged, so 016's `glob("POL_*.npz")`
 still finds everything and its PDF stem inherits the tag.
-`--bunch-emitt-divisor 1 --no-emitt` reproduces 015 exactly.
+`--bunch-emitt-divisor 1 --no-emitt` reproduces 015's tracking exactly (at
+the same `--seed`), and since 2026-09-22 both fit from turn 2000 by default.
 
 `aperture_study_io.py` gained two additive, backward-compatible kwargs:
 `save_pol_study(fit_turn_start=0, bunch_emitt_divisor=None)` and
 `save_emitt_study(bunch_emitt_divisor=None)`, stored in the npz (`np.nan` =
 "not recorded", which is what 014/015 write since they don't pass it).
-`fit_turn_start=0` is literally correct for 015's full-range fit.
+
+**`fit_turn_start` in 015's POL files (fixed 2026-10-14).** 015 never passed
+`fit_turn_start`, so it always recorded the default 0. That was right while
+015 fitted the full range, but from 2026-09-22 it fitted from turn 2000 and
+still wrote 0. It now passes its `--turn-start`. So in a 015 POL npz written
+between 2026-09-22 and 2026-10-14, `fit_turn_start = 0` is wrong (the fit
+started at 2000); earlier files are correct. 018's files were always right.
 
 ## Determinism
 
