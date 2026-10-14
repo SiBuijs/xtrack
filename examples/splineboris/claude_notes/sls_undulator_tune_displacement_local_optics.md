@@ -14,7 +14,7 @@ note only covers how/why 007b differs from it),
 ## Current state (2026-10-14) -- read this first
 
 The rest of this note describes the file as added on 2026-08-25. Since then
-(`21d1bf1e5`, `a8e5ecc17`, `caa89c0b4`, 2026-10-06..13) the **main result
+(`21d1bf1e5`, `a8e5ecc17`, `d7343fade`, 2026-10-06..13) the **main result
 changed method**, and several "differences from 007a" below no longer hold.
 
 - **The tune shift is now exact, from a one-turn matrix**, not from local

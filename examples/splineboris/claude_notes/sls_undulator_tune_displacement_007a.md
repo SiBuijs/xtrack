@@ -27,7 +27,7 @@ to the new name; nothing else about the pipeline changed in that commit.
 Everything below this section is the history of the file as of
 2026-08-25..10-05. It describes `TubeFitter.to_line()`/`to_multipole_line()`,
 `get_tube_fitter()` and figure sets that no longer exist. This section
-describes `HEAD` (after `21d1bf1e5`, `a8e5ecc17`, `caa89c0b4`, `e7ce286f3`,
+describes `HEAD` (after `21d1bf1e5`, `a8e5ecc17`, `d7343fade`, `a755e8667`,
 2026-10-06..14).
 
 - **Fit (two-stage, see `00_overview.md`).** `get_undulator_fit()` (was
@@ -81,7 +81,7 @@ describes `HEAD` (after `21d1bf1e5`, `a8e5ecc17`, `caa89c0b4`, `e7ce286f3`,
     (`bare_ring_beta`, cached), because interpolating the cached rows is
     off by up to ~8% inside the undulator span.
   - `{place}_tune_shift_beta_beat.pdf` existed briefly and was removed in
-    `e7ce286f3` (2026-10-14).
+    `a755e8667` (2026-10-14).
 - `OUT_DIR` uses `$SLS_UNDULATOR_PLOT_DIR` (default
   `~/cernbox/Pictures/SLS_Undulator_Studies`); `--replot` and the per-case
   `data/{place}_{model}.npz` cache are unchanged, still with no staleness

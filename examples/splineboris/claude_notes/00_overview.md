@@ -1,6 +1,6 @@
 # splineboris — directory overview (for Claude, read this first)
 
-Written 2026-10-14, against `HEAD` of `fcc_nonlocal_paper` (`46ca5f56b`, plus the
+Written 2026-10-14, against `HEAD` of `fcc_nonlocal_paper` (`2d82945f2`, plus the
 uncommitted note updates of the same day). Purpose: orientation before reading
 the dated notes in this directory, most of which describe the fitting code
 **before** the 2026-10-06..08 rewrite and are now history. If a referenced
@@ -161,3 +161,12 @@ so check there before rewriting any of them:
 | `fieldfitter_vs_tubefitter_comparison.md` | `tube_fitter.py` docstring (`residual_tol`), older notes |
 | `transverse_bs_coupling_gap.md` | `tests/test_splineboris.py` |
 | `tube_approach_paper.md`, `field_fitter.md` | older notes here |
+
+**History rewrite, 2026-10-14.** A third-party field map was purged from the
+fork's history. Every commit on `fcc_nonlocal_paper`, `tube_approach`,
+`fcc_coupling` and `fcc_nonlocal_solenoid` descending from `6d0f3cc2e`
+(2026-08-28) or `37daa77df` (2026-10-09) got a new hash (57 commits);
+everything older is unchanged. Hashes cited in these notes and in 004k/004m
+were updated to the new values the same day. Any other hash of such a commit
+(e.g. in an old message or log) no longer exists in the repo; the pre-rewrite
+clone `xtrack_OLD_DO_NOT_PUSH` still has them.

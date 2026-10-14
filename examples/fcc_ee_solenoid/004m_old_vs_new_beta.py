@@ -8,7 +8,7 @@ Four lattices, all SplineBoris, all with solenoids and their corrections on:
 Two things changed between the two generations, and this script exists to show
 what they did to the optics:
 
-1. The mid-bend quads (004c, commit f4f9a77b9): the six bends framing each
+1. The mid-bend quads (004c, commit 25958ba9b): the six bends framing each
    IP are cut in half and a zero-length quad `qbmid_<bend>` goes at each
    cut, giving the half-straight optics match local handles between the IP and
    the nearest chromatic sextupole. 24 bends, 72 quads.
@@ -17,10 +17,10 @@ what they did to the optics:
    half-straight match was rank-deficient with no SVD truncation and landed on
    an arbitrary null-space point each run.
 
-Why OLD_REV is not 8d46a1fbe, which is where this was first looked for: at that
+Why OLD_REV is not 957c3bea4, which is where this was first looked for: at that
 commit the 3 T lattice had ALREADY been regenerated with the cut bends (72
 `qbmid_`), while the 2 T had not -- so the pair is not internally consistent.
-f6dfc5087 (2026-09-01) is the newest commit at which both are still pre-cut and
+f89a90b2c (2026-09-01) is the newest commit at which both are still pre-cut and
 pre-conditioning-fix. The 2 T blob is byte-identical at the two commits anyway
 (written 2026-07-21 by 6f04ddb9b and never regenerated in between), so only the
 3 T file actually differs between the two choices.
@@ -40,8 +40,8 @@ HERE = Path(__file__).parent
 
 # The newest commit whose 2 T *and* 3 T corrected lattices both predate the
 # mid-bend cuts and the optics-match conditioning fix. See the module docstring
-# for why this is not 8d46a1fbe.
-DEFAULT_OLD_REV = 'f6dfc5087'
+# for why this is not 957c3bea4.
+DEFAULT_OLD_REV = 'f89a90b2c'
 
 IP_NAMES = ['ipa', 'ipd', 'ipg', 'ipj']
 

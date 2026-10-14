@@ -347,7 +347,7 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   periodic 4D twisses of the 2T/3T corrected rings (+ bare), on a resonance
   diagram up to `--max-resonance-order` (default 3), in absolute tune.
   `--vs-old` adds the previous lattice generation read from git at
-  `--old-rev` (default `f6dfc5087`) via `aperture_study_io.old_lattice_path`.
+  `--old-rev` (default `f89a90b2c`) via `aperture_study_io.old_lattice_path`.
 - `004l_sextupole_target_ab.py` (2026-09-15) — runs one IP's optics match
   with and without the sdm1 `sext` targets (mid-bend quads installed in
   both) and compares convergence, boundary residuals, bety at the sextupole
@@ -356,9 +356,9 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   (penalty ~57.75) and `generate_knob()` froze a near-zero knob, i.e. the
   optics correction had silently become a no-op.
 - `004m_old_vs_new_beta.py` (2026-09-23) — beta functions of the old vs
-  current corrected rings at 2T and 3T. Old = `OLD_REV` `f6dfc5087`, the
+  current corrected rings at 2T and 3T. Old = `OLD_REV` `f89a90b2c`, the
   newest commit where both rings are pre-mid-bend-quads and
-  pre-conditioning-fix. `8d46a1fbe` is NOT usable as old: there the 3T
+  pre-conditioning-fix. `957c3bea4` is NOT usable as old: there the 3T
   ring was already cut and the 2T was not.
 - `aperture_study_io.old_lattice_path(rev, filename)` (added 2026-09-23) —
   extracts `examples/fcc_ee_solenoid/<filename>` at a git rev into
@@ -401,3 +401,12 @@ session), so there is no git history to recover it from. Its note
 (`05_kill_higher_order_half_solenoid.md`) is deleted; if this line of
 investigation (effect of higher-order multipole content on DA) is revisited,
 it will need to be rebuilt from scratch.
+
+**History rewrite, 2026-10-14.** A third-party field map was purged from the
+fork's history. Every commit on `fcc_nonlocal_paper`, `tube_approach`,
+`fcc_coupling` and `fcc_nonlocal_solenoid` descending from `6d0f3cc2e`
+(2026-08-28) or `37daa77df` (2026-10-09) got a new hash (57 commits);
+everything older is unchanged. Hashes cited in these notes and in 004k/004m
+were updated to the new values the same day. Any other hash of such a commit
+(e.g. in an old message or log) no longer exists in the repo; the pre-rewrite
+clone `xtrack_OLD_DO_NOT_PUSH` still has them.

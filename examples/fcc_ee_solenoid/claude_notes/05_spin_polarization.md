@@ -86,7 +86,7 @@ History: the script was written (2026-07-17) with a straight-line fit
 (`_fit_linear_depolarization`, `P ~= P0 + slope*n`), on the argument that
 `tau_depol` is far beyond any trackable turn count, so only the linear term
 is resolvable. It switched to the exponential on 2026-07-27 (`6bad42e43`)
-and gained the turn-2000 fit start on 2026-09-22 (`8995bb22e`). The
+and gained the turn-2000 fit start on 2026-09-22 (`b7d51b855`). The
 straight-line fit now lives only in `016_refit_polarization_linear.py`,
 which refits saved POL files.
 

@@ -261,7 +261,7 @@ Analysed, not exhaustively measured. Short answer: probably not.
 - **004cc** — *(updated 2026-10-14)* The value-shift bug this note
   described (`betx=tw0['bety', sext]`, `bety=tw0['dpy', sext]`, i.e. βy targeted
   to 1.96e-12 m) is **gone**. The `sext` targets read `betx`/`bety`/`dy` at
-  sdm1r correctly. No commit ever contained the bug (checked from `6cbf2d368`
+  sdm1r correctly. No commit ever contained the bug (checked from `f1b16ec05`
   to `HEAD`), so it only ever lived in the uncommitted working tree on
   2026-09-16/17. For reference, the bare values there are betx 6.457586, bety
   1.471115, dy −1.473e-11, dpy 1.961e-12.
@@ -290,7 +290,7 @@ That is true Q''y ≈ +4666, against ≈ −151 bare. Small enough that the mome
 acceptance study (009) ran on it and chromaticity was not the limiting factor,
 which is where this chapter was closed.
 
-Provenance: committed as `e4836d884` "Seems we have finally improved enough
+Provenance: committed as `59d8b1986` "Seems we have finally improved enough
 for safe injection. Now an MA calculation.", together with the 004c that
 contains both fixes — so this **is** the staged + truncated result. For
 comparison along the way: +682.6 with `rcond` only (no staging), −18863.9 with

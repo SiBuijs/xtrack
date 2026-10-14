@@ -25,7 +25,7 @@ it by hand, and ``--max-resonance-order 2`` to thin the line set when the
 vertical sweep is large.
 
 ``--vs-old`` additionally scans the *previous generation* of corrected lattices
--- read straight out of git at ``--old-rev`` (default ``f6dfc5087``, the newest
+-- read straight out of git at ``--old-rev`` (default ``f89a90b2c``, the newest
 commit whose 2 T and 3 T rings both predate the mid-bend quads and the
 optics-match conditioning fix; see 004m for the archaeology) -- and emits two
 figures instead of one: the old ring and the current ring, **sharing one
@@ -70,7 +70,7 @@ LATTICE_NAME_TEMPLATE = (
 # Newest commit whose 2 T *and* 3 T corrected lattices both predate the mid-bend
 # cuts and the optics-match conditioning fix. Same default, and same reasoning,
 # as 004m_old_vs_new_beta.py.
-DEFAULT_OLD_REV = "f6dfc5087"
+DEFAULT_OLD_REV = "f89a90b2c"
 
 DELTA_MAX = 0.015
 N_DELTA = 61
