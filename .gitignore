@@ -23,3 +23,5 @@ examples/splineboris/results/
 examples/splineboris/data/
 examples/splineboris/data_007b/
 xtrack/beam_elements/borissolenoid_src/
+# Third-party field maps (e.g. the BNL FCC-ee solenoid map) must not be committed
+**/Field_map_*.csv

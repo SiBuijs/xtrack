@@ -87,8 +87,13 @@ the `*_fit_pars*.csv` test fixtures, and the examples `003a_fieldfitter_basic_us
   Both use `energy0=45.6e6` (eV, i.e. 45.6 MeV), although 006a's comment
   says GeV.
 - `006b_fcc_ee_solenoid.py` — the BNL 2 T FCC-ee detector-solenoid map
-  (`test_data/fcc_ee_solenoids/Field_map_2T_BNL_August_14_2026.csv`, one side
-  of the IP, ±10 mm grid), tracked at 45.6 GeV vs Boris through the raw map.
+  (`Field_map_2T_BNL_August_14_2026.csv`, one side of the IP, ±10 mm grid),
+  tracked at 45.6 GeV vs Boris through the raw map. The map is third-party
+  data, so it is **not in the repo**. It was purged from the fork's history
+  on 2026-10-14, and `**/Field_map_*.csv` is gitignored. The script reads
+  `$FCC_SOLENOID_FIELD_MAP`, defaulting to
+  `~/cernbox/Solenoid_Field_Maps/Field_map_2T_BNL_August_14_2026.csv`, and
+  exits if neither exists. Never add it back under `test_data/`.
 - `007a_sls_undulator_tune_displacement.py`,
   `007b_sls_undulator_tune_displacement_local_optics.py`,
   `007c_undulator_focusing_decomposition.py` — tune shift vs undulator offset,
