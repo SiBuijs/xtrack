@@ -129,8 +129,10 @@ def report_nonlinear_chromaticity(line, label):
     The suspected payoff of the whole local-optics correction is the
     second-order chromaticity, so it is measured directly rather than inferred
     from the beta bump. Uses the order=2 fit from detuning.py, whose
-    q{x,y}_derivatives[n] is already divided by n! -- so index 1 is Q' and
-    index 2 is Q''/2, exactly what 004j records as d2qx/d2qy.
+    q{x,y}_derivatives[n] is the polynomial coefficient divided by n! once
+    more, i.e. Q^(n)/(n!)^2 -- so index 1 is Q' but index 2 is Q''/4, not
+    Q''/2. The printed d2qx/d2qy (the same quantity 004j records) are
+    therefore Q''/4; the true Q'' = d2Q/ddelta2 is 4 * d2q (claude_notes/10).
 
     Off-momentum twisses need a closed orbit, which the solenoid-on /
     correction-off state does not have, so a failure is reported rather than
