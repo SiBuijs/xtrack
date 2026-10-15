@@ -10,7 +10,7 @@ Canonical copy: `examples/fcc_ee_solenoid/paper/TODO.md` on branch `fcc_nonlocal
 - [ ] `ASK` Tell V. Teotia the map was publicly visible in the fork from 2026-08-28 until 2026-10-14, and ask whether it may be shared at all (e.g. alongside the paper)
 - [x] Commit `claude_notes/` 08–10, which hold the Q″y diagnosis → commit bd4d5793
 - [x] Re-run 004c → 004d at 2 T and 3 T with the current, frozen solver settings and log the baseline in `RESULTS.md` (all numbers there are `stale`) → `fccee_z_lcc_splineboris_solenoids_coupling_corrected_{2T,3T}.json` at e749d4795, logs in `data/logs_2026-10-15/` (RESULTS L12–L22; |C⁻|, εy and the IP/edge numbers stay `prelim` until the measurement scripts are committed)
-- [ ] Decisive test: is 3 T fine **without** the mid-bend trim quads, now that the solver is fixed? (§4a)
+- [x] Decisive test: is 3 T fine **without** the mid-bend trim quads, now that the solver is fixed? (§4a) → **No, and neither is 2 T**: true Q″y +24998 (3T) / +10411 (2T) without trims vs +4668 / −1248 with; left-half optics matches stop at 4/8 targets. `fccee_z_lcc_splineboris_solenoids_coupling_corrected_{2T,3T}_notrims.json`, RESULTS L23–L26, note 12
 - [ ] Validate the integrator (Appendix) and work out the linearized-vs-analytic derivation in parallel (§3)
 - [ ] Re-run the 2 T / 3 T analytic results with the frozen setup (§4)
 - [ ] Build the field-map pipeline and produce the 2 T map results (§5)
@@ -29,6 +29,7 @@ Canonical copy: `examples/fcc_ee_solenoid/paper/TODO.md` on branch `fcc_nonlocal
     - Fix: `OPTICS_RCOND = 1e-6` plus a staged pass 1, with no new targets.
     - This replaces the "beta-beat at sextupole → mid-bend quads" narrative of the September slides.
 - [ ] `SIM` Mid-bend trims off vs on (rcond fix active, 2 T and 3 T): compare Q″y, MA, max|k1|. If they aren't needed, the paper proposes **no new hardware**
+    - Q″y, max|k1| and convergence done 2026-10-15 (RESULTS L23–L26): the trims **are** needed at both fields. MA still to run on the `_notrims` lattices if the paper should show it; 013/009 have no `--output-tag` yet, so that needs adding first
 - [ ] `FIG` Singular values of the optics-match Jacobian (the gap between σ₇ ≈ 9.6 and σ₈ ≈ 4.9e-2), from `004g_coupling_svd_diagnostic.py` or 004c's diagnostics
 - [ ] `FIG` Q″y vs QD0→sdy1 phase error: the calibration (dQ″y/dμ = 2.42e7 left, 2.48e7 right, per unit tune of phase error, true Q″) and the 8 measured points. Note 10 reports agreement to ~0.2%. This explains the irreproducibility in one plot
 - [ ] `SIM` Show the sign flips of Q″y across repeated runs with `rcond = 1e-14`, and the stability with `1e-6`

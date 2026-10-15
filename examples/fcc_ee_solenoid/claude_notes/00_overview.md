@@ -337,6 +337,12 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   the IP are non-symplectic by ks), dead ends (tune trim, γ targets), and the
   half-straight map leak diagnostic.
 
+- `12_mid_bend_trims_needed.md` — (2026-10-15) the trims-off test: without
+  the mid-bend trims the left-half optics matches stop at 4/8 targets and true
+  Q″y goes to +10411 (2T) / +24998 (3T), against −1248 / +4668 with them, via
+  the same QD0→sdy1 phase mechanism (calibration agrees to 0.3% / 3%). The
+  trims are needed at both fields. `004c --no-midbend-trims` reproduces it.
+
 ## Scripts without a dedicated note (summarised 2026-10-14 from docstrings)
 
 - `000c_field_map_y_s_plane.py` — figure: main-solenoid (By, Bz) field
@@ -370,6 +376,11 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   newest commit where both rings are pre-mid-bend-quads and
   pre-conditioning-fix. `957c3bea4` is NOT usable as old: there the 3T
   ring was already cut and the 2T was not.
+- `004n_figures_of_merit.py` (2026-10-15) — the numbers for
+  paper/RESULTS.md from one corrected lattice: tunes, |C⁻|, Q′, true Q″,
+  Chao εx/εy, IP/straight-edge residuals vs bare, closed-ring Edwards–Teng
+  at the edges, arc coupling and per-straight x–y leak, for the on/nocorr/off
+  knob states. Writes `data/figures_of_merit/figures_of_merit_{tag}.json`.
 - `aperture_study_io.old_lattice_path(rev, filename)` (added 2026-09-23) —
   extracts `examples/fcc_ee_solenoid/<filename>` at a git rev into
   `data/old_lattices/{rev}_{filename}` (gitignored) via `git cat-file`,
