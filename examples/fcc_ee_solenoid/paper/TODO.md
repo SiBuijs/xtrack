@@ -29,7 +29,7 @@ Canonical copy: `examples/fcc_ee_solenoid/paper/TODO.md` on branch `fcc_nonlocal
     - Fix: `OPTICS_RCOND = 1e-6` plus a staged pass 1, with no new targets.
     - This replaces the "beta-beat at sextupole → mid-bend quads" narrative of the September slides.
 - [ ] `SIM` Mid-bend trims off vs on (rcond fix active, 2 T and 3 T): compare Q″y, MA, max|k1|. If they aren't needed, the paper proposes **no new hardware**
-    - Q″y, max|k1| and convergence done 2026-10-15 (RESULTS L23–L26): the trims **are** needed at both fields. MA still to run on the `_notrims` lattices if the paper should show it; run with `013_run_da_and_ma.py --b0 {2.0,3.0} [--output-tag notrims] --da-cases sb_on --ma-cases sb_on --no-emitt` (tag added 2026-10-15; ~8–10 h per case)
+    - Q″y, max|k1| and convergence done 2026-10-15 (RESULTS L23–L26): the trims **are** needed at both fields. MA still to run on the `_notrims` lattices if the paper should show it; run with `013_run_da_and_ma.py --b0 {2.0,3.0} [--output-tag notrims] --da-cases sb_on --ma-cases sb_on --no-emitt` (tag added 2026-10-15; ~4–5 h per case at the 5000-turn default)
 - [ ] `FIG` Singular values of the optics-match Jacobian (the gap between σ₇ ≈ 9.6 and σ₈ ≈ 4.9e-2), from `004g_coupling_svd_diagnostic.py` or 004c's diagnostics
 - [ ] `FIG` Q″y vs QD0→sdy1 phase error: the calibration (dQ″y/dμ = 2.42e7 left, 2.48e7 right, per unit tune of phase error, true Q″) and the 8 measured points. Note 10 reports agreement to ~0.2%. This explains the irreproducibility in one plot
 - [ ] `SIM` Show the sign flips of Q″y across repeated runs with `rcond = 1e-14`, and the stability with `1e-6`

@@ -50,7 +50,10 @@ GLOBAL_XY_LIMIT = 1.0
 MAX_AMP_SIGMA_X = 40.0
 Y_AXIS_SCAN_FACTOR = 6.0
 MAX_AMP_SIGMA_Y = MAX_AMP_SIGMA_X * Y_AXIS_SCAN_FACTOR
-N_TURNS = 10_000
+# ~2 amplitude damping times in x and y (2590 turns each) and ~4 in z (1290
+# turns), see RESULTS L27. Losses after that are damped out, so 10_000 turns
+# (the default until 2026-10-15) only doubled the cost.
+N_TURNS = 5_000
 
 # Each case can use its own grid resolution.
 def _build_da_cases(tag, order_tag_str=""):

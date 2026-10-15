@@ -93,7 +93,8 @@ subprocesses with a shared CLI.
 - `NEMITT_X=6.33e-5`, `NEMITT_Y=1.69e-7`, `GLOBAL_XY_LIMIT=5e-2` (5 cm —
   intentionally tight since MA only cares about longitudinal loss, not large
   transverse excursions; see 010's comment on why it uses a looser limit).
-  `N_TURNS=10_000` default.
+  `N_TURNS=5_000` default (10_000 until 2026-10-15; ~2 damping times
+  suffice, see RESULTS L27).
 - **`max_y_r` split per direction, added 2026-07-13** (same underlying issue
   as 010/DA's y-axis, spotted by the user after the DA fix): originally
   `max_y_r=MAX_Y_R` (a single module constant, 30) was passed unchanged for
@@ -202,7 +203,8 @@ subprocesses with a shared CLI.
   009's 5 cm** — code comment explains: large beta functions blow up amplitude
   units well past 5 cm even for physical sigma-levels ~O(30), so 5 cm would
   clip particles that should survive.
-  `NEMITT_X=6.33e-5`, `NEMITT_Y=1.69e-7` (same as 009), `N_TURNS=10_000`.
+  `NEMITT_X=6.33e-5`, `NEMITT_Y=1.69e-7` (same as 009), `N_TURNS=5_000` (10_000 until
+  2026-10-15).
 - On-momentum only (`delta=0, px_norm=py_norm=0`) — no off-momentum DA scan
   yet; comment says "For off-momentum DA, repeat with delta set to selected
   momentum offsets" (not implemented).

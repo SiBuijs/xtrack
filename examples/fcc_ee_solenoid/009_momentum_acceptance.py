@@ -50,7 +50,10 @@ MAX_Y_R = 35
 Y_AXIS_SCAN_FACTOR = 6.0
 GLOBAL_XY_LIMIT = 5e-2
 DELTA_INITIAL_VALUES = np.linspace(-35 * ENERGY_SPREAD, 35 * ENERGY_SPREAD, 51)
-N_TURNS = 10_000
+# ~2 amplitude damping times in x and y (2590 turns each) and ~4 in z (1290
+# turns), see RESULTS L27. Losses after that are damped out, so 10_000 turns
+# (the default until 2026-10-15) only doubled the cost.
+N_TURNS = 5_000
 
 def _build_ma_cases(tag, order_tag_str=""):
     """Build the MA_CASES list for a given field_tag (e.g. '2T', '3T') and
