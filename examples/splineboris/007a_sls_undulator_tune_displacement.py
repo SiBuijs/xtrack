@@ -314,7 +314,7 @@ def compute_case(place_label, wiggler_places, model_label):
     # Linear focusing on the wiggling orbit, straight from the 3D field --
     # SB only (the MK model is 2D thick multipoles, for which the multipole
     # deltaK1 formula further below is exact). Derivation in
-    # claude_notes/undulator_linear_focusing_derivation.md: from the
+    # claude_notes/undulator_focusing_writeup.md: from the
     # paraxial Lorentz force
     #   x'' = (y' B_s - B_y) / B rho,   y'' = (B_x - x' B_s) / B rho,
     # linearized about the closed orbit (x_w, y_w), keeping only the

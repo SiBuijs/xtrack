@@ -16,7 +16,7 @@ the other equally. Maxwell fixes the sum,
     int (K_x + K_y) ds = int (B_x^2 + B_y^2) / (B rho)^2 ds,
 and (d) alone integrates to int B_x^2/(B rho)^2 (x) and int B_y^2/(B rho)^2 (y)
 -- both checked below. Derivation and discussion:
-claude_notes/undulator_linear_focusing_derivation.md.
+claude_notes/undulator_focusing_writeup.md.
 
 MK (to_multipole_line(), 2D thick multipoles) has (a) = K1, (b) = K2 x,
 (c) = -K2_skew y and no (d); its thin MultipoleEdge kicks are not included

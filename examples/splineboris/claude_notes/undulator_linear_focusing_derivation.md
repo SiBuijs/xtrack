@@ -1,5 +1,12 @@
 # Linear focusing on a wiggling orbit: derivation of $K_x$, $K_y$
 
+> **Superseded for the $K_x$/$K_y$ derivation (2026-10-15).** The canonical
+> derivation is now `undulator_focusing_writeup.md`, which is a fuller rewrite
+> and corrects a missing $y$ in the second Hill equation. 007a, 007b and 007c
+> cite that file. This note is kept for the material the write-up does not
+> carry: the SB vs MK Twiss comparison (section 7), the collected list of
+> approximations (section 8) and the implementation plan (section 9).
+
 Context: `007a_sls_undulator_tune_displacement.py`, first-order tune-shift
 cross-check
 $$\Delta Q_{x,y} = \frac{1}{4\pi}\oint K_{x,y}(s)\,\beta_{x,y}(s)\,ds .$$

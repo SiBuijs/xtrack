@@ -165,8 +165,11 @@ so check there before rewriting any of them:
 by 007b:249) were rescued from the pre-replacement working tree and are now
 committed here, so they are no longer missing. `undulator_focusing_writeup.md`
 came back with them: it is a later, fuller rewrite of the same $K_x$/$K_y$
-derivation and fixes a missing $y$ in the second Hill equation, but nothing
-cites it yet -- decide which of the two is canonical before relying on either.
+derivation and fixes a missing $y$ in the second Hill equation, so it is now the
+canonical one -- 007a, 007b and 007c cite it, and
+`undulator_linear_focusing_derivation.md` is marked superseded for the
+derivation itself (it is kept for its SB vs MK Twiss comparison, approximation
+list and implementation plan).
 
 **History rewrite, 2026-10-14.** A third-party field map was purged from the
 fork's history. Every commit on `fcc_nonlocal_paper`, `tube_approach`,
