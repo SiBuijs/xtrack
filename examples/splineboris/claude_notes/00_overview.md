@@ -156,17 +156,35 @@ so check there before rewriting any of them:
 
 | missing note | cited by |
 |---|---|
-| `undulator_linear_focusing_derivation.md` | 007a, 007b, 007c (the `field_focusing()` K_x/K_y derivation) |
-| `local_phase_advance_vs_tune_shift.md` | 007b (why local Δμ is ~1/8 of ΔQ) |
 | `fieldfitter_vs_tubefitter_comparison.md` | `tube_fitter.py` docstring (`residual_tol`), older notes |
 | `transverse_bs_coupling_gap.md` | `tests/test_splineboris.py` |
 | `tube_approach_paper.md`, `field_fitter.md` | older notes here |
+
+**Recovered 2026-10-15.** `undulator_linear_focusing_derivation.md` (cited by
+007a:317, 007b:357, 007c:19) and `local_phase_advance_vs_tune_shift.md` (cited
+by 007b:249) were rescued from the pre-replacement working tree and are now
+committed here, so they are no longer missing. `undulator_focusing_writeup.md`
+came back with them: it is a later, fuller rewrite of the same $K_x$/$K_y$
+derivation and fixes a missing $y$ in the second Hill equation, but nothing
+cites it yet -- decide which of the two is canonical before relying on either.
 
 **History rewrite, 2026-10-14.** A third-party field map was purged from the
 fork's history. Every commit on `fcc_nonlocal_paper`, `tube_approach`,
 `fcc_coupling` and `fcc_nonlocal_solenoid` descending from `6d0f3cc2e`
 (2026-08-28) or `37daa77df` (2026-10-09) got a new hash (57 commits);
-everything older is unchanged. Hashes cited in these notes and in 004k/004m
-were updated to the new values the same day. Any other hash of such a commit
-(e.g. in an old message or log) no longer exists in the repo; the pre-rewrite
-clone `xtrack_OLD_DO_NOT_PUSH` still has them.
+everything older is unchanged. Those two boundary hashes are themselves
+pre-rewrite and no longer resolve -- they are now `7b26a6f12` (2026-08-28) and
+`a74008daf` (2026-10-09). Hashes cited in these notes and in 004k/004m were
+updated to the new values the same day. Any other hash of such a commit (e.g.
+in an old message or log) no longer exists in the repo.
+
+**Where the pre-rewrite objects live now (updated 2026-10-15).** The local clone
+was replaced with a fresh one on `fcc_nonlocal_paper` that day, so neither
+`xtrack_OLD_DO_NOT_PUSH` nor `xtrack_old_2026-10-15` is on disk any more. Both
+the old clone (with its `.git`, `refs/stash` included) and the migration backup
+are archived in `~/cernbox/Backups/xtrack_backup_2026-10-15.zip`; unzip that to
+resolve any pre-rewrite hash. Note the 1.69 GB SLS undulator field map is no
+longer stored in the repo either: `test_data/sls/simona_field_map.txt` and
+`examples/splineboris/data/simona_field_map.txt` are gitignored symlinks to
+`~/cernbox/Undulator_Field_Maps/simona_field_map.txt`, which a fresh clone will
+not have -- recreate them with `ln -s`.

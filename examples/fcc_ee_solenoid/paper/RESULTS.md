@@ -22,7 +22,7 @@ One row per number. Only rows with status **final** may appear in the paper. See
 
 | ID | Quantity | Case | Value | Unit | Script + args | Commit | Output file | Seed | Date | Status | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| L01 | \|C⁻\| corrected | SB-3T | 7.88e-4 | – | (slides, 24 Sep) | f6dfc5087? | – | – | 2026-09-24 | stale | before the rcond/staging fix |
+| L01 | \|C⁻\| corrected | SB-3T | 7.88e-4 | – | (slides, 24 Sep) | f89a90b2c? | – | – | 2026-09-24 | stale | before the rcond/staging fix |
 | L02 | \|C⁻\| correctors off | SB-3T | 4.36e-2 | – | (slides) | ? | – | – | 2026-09-24 | stale | ratio ≈ 55, not "two orders of magnitude" |
 | L03 | εy eq. (Twiss) | SB-3T | 1.317e-12 | m·rad | (slides) | ? | – | – | 2026-09-24 | stale | |
 | L04 | εy eq. (tracking fit) | SB-3T | 1.361e-12 | m·rad | (slides) | ? | – | ? | 2026-09-24 | stale | |
