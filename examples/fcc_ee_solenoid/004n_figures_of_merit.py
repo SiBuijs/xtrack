@@ -14,9 +14,11 @@ Per state:
   returns the Taylor coefficients divided by n! once more, so its index 2 is
   Q''/4; the true Q'' = d2Q/ddelta2 is stored as `q2x/q2y`, the raw value as
   `d2qx_printed/d2qy_printed` (claude_notes/10);
-- equilibrium emittances from the 6D radiative twiss (Chao, normal modes),
-  with the recipe of 004j: `configure_radiation('mean')` +
-  `compensate_radiation_energy_loss`, then restored.
+- equilibrium emittances, damping decrements per turn (amplitude, so the
+  amplitude damping time is 1/decrement turns) and partition numbers of the
+  three normal modes, from the 6D radiative twiss (Chao), with the recipe of
+  004j: `configure_radiation('mean')` + `compensate_radiation_energy_loss`,
+  then restored.
 
 For `on`, against `off` (corrected - bare, closed ring):
 - worst residual over the 4 IPs and over the 8 straight edges of dy, dpy,
@@ -100,10 +102,18 @@ def chao_emittances(line):
         line.configure_radiation(model='mean')
         line.compensate_radiation_energy_loss(verbose=False)
         tw6d = line.twiss(method='6d', radiation_analysis=True)
+        # Amplitude damping decrements per turn of the three normal modes
+        # (-ln|eigenvalue| of the one-turn map); amplitude damping time =
+        # 1/decrement turns, emittance damping time half of that.
+        alpha = np.asarray(tw6d.damping_constants_turns, dtype=float)
         return dict(eq_gemitt_x=float(tw6d.eq_gemitt_x),
                     eq_gemitt_y=float(tw6d.eq_gemitt_y),
                     eq_gemitt_zeta=float(tw6d.eq_gemitt_zeta),
-                    energy_loss=float(tw6d.energy_loss))
+                    energy_loss=float(tw6d.energy_loss),
+                    damping_constants_turns=alpha.tolist(),
+                    damping_times_turns=(1 / alpha).tolist(),
+                    partition_numbers=np.asarray(
+                        tw6d.partition_numbers, dtype=float).tolist())
     except Exception as exc:  # noqa: BLE001 -- e.g. no closed orbit
         return dict(emit_error=repr(exc))
     finally:
