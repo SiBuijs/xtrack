@@ -36,6 +36,21 @@ parser.add_argument(
          'match the --output-tag passed to 004b_install_solenoids_in_fcc_'
          'ring.py. Empty (default) keeps the standard filenames.')
 parser.add_argument(
+    '--input-tag', default=None,
+    help='Suffix of the input temp lattice only, if it differs from '
+         '--output-tag (e.g. --output-tag wmatrix --input-tag "" corrects the '
+         'standard temp lattice into a separately tagged output). Default: '
+         'same as --output-tag.')
+parser.add_argument(
+    '--coupling-targets', choices=['wmatrix', 'beta'], default='wmatrix',
+    help='Edge targets of the half-straight coupling matches. "wmatrix" '
+         '(default): the y/py components of mode 1 in the W matrix at the '
+         'edge, normalised with the bare optics there -- linear in the '
+         'coupling and complete. "beta" (legacy, the targets before '
+         '2026-10-15, kept to reproduce older lattices): betx2/bety1/alfx2/'
+         'alfy1 = 0, which see only the position part of the coupling. See '
+         'COUPLING_AMP_TOL and claude_notes/11.')
+parser.add_argument(
     '--no-chromaticity', action='store_true',
     help='Skip the second-order chromaticity report before/after correction. '
          'Each report costs npoints+1 full-ring 4D twisses, so the two reports '
@@ -68,13 +83,15 @@ FIELD_TAG = field_tag(args.b0)
 # filenames so --max-transverse-order has no effect on --model varsol.
 ORDER_TAG = order_tag(args.max_transverse_order)
 OUT_TAG = f'_{args.output_tag}' if args.output_tag else ''
+_input_tag = args.output_tag if args.input_tag is None else args.input_tag
+IN_TAG = f'_{_input_tag}' if _input_tag else ''
 _MODEL_LATTICE_PATHS = {
     'splineboris': (
-        f'temp_fcc_ee_lcc_splineboris_solenoids_{FIELD_TAG}{ORDER_TAG}{OUT_TAG}.json',
+        f'temp_fcc_ee_lcc_splineboris_solenoids_{FIELD_TAG}{ORDER_TAG}{IN_TAG}.json',
         f'fccee_z_lcc_splineboris_solenoids_coupling_corrected_{FIELD_TAG}{ORDER_TAG}{OUT_TAG}.json',
     ),
     'varsol': (
-        f'temp_fcc_ee_lcc_varsol_solenoids_{FIELD_TAG}{OUT_TAG}.json',
+        f'temp_fcc_ee_lcc_varsol_solenoids_{FIELD_TAG}{IN_TAG}.json',
         f'fccee_z_lcc_varsol_solenoids_coupling_corrected_{FIELD_TAG}{OUT_TAG}.json',
     ),
 }
@@ -490,6 +507,75 @@ init_ip = {ip_name: tw0.get_twiss_init(ip_name) for ip_name in IP_NAMES}
 
 SIDES = ('left', 'right')
 
+# Edge targets of the half-straight coupling matches (--coupling-targets).
+#
+# A half straight is decoupled as a whole when, starting from the uncoupled
+# bare optics at the IP, mode 1 has no y/py part at the edge. That is what the
+# default "wmatrix" targets ask for: the four y/py components of mode 1 in the
+# W matrix, normalised with the bare optics at the edge, all zero. They are
+# linear in the coupling, so COUPLING_AMP_TOL is directly the tolerated
+# normalised amplitude of the coupled part.
+#
+# The legacy "beta" targets (betx2/bety1/alfx2/alfy1 = 0) do not pin this
+# down. betx2/bety1 are the SQUARED position parts of the coupled components,
+# and alfx2/alfy1 are position x angle, so they vanish with the position part
+# whatever the angle part is. On the 2026-10-15 rings the angle part at the
+# edges was 4e-4..7e-4 (normalised) with alfy1 ~ 1e-8, and it leaked into the
+# arcs: |C-| 3.9e-4 (2T) / 8.1e-4 (3T), against 4.4e-6 / 7.4e-6 with these
+# targets and the dispersion tolerances below. Adding gamx2/gamy1 (the squared
+# angle part) did not converge.
+#
+# Why W and not the Edwards-Teng matrix, which is the textbook form of the same
+# condition: the IP sits inside the solenoid, where SplineBoris tracks KINETIC
+# momenta, while init_ip is the bare (field-free) Twiss. Maps that start or end
+# at the IP are therefore non-symplectic by ~ks in these coordinates (measured:
+# max|M^T J M - J| = 1.31e-2 at 2T, 1.96e-2 at 3T; 3e-9 between field-free
+# points), and so is the W propagated from init_ip, at the 1e-4 level at the
+# edge. xtrack's Edwards-Teng matrix inverts W symplectically and inherits that
+# error (it left 1.5e-4..2.5e-4 of angle coupling at the IPs); the mode-1
+# components of W need no inverse. The same 1e-4 shows up as a residual x/px
+# part of mode 2 on the open twiss, which is an artifact of the start point,
+# not edge coupling: the closed ring is clean at the edges. The closed-ring
+# Edwards-Teng matrix at the (field-free) edges is valid and is the number to
+# quote. See claude_notes/11.
+COUPLING_AMP_TOL = 1e-5
+
+# Vertical dispersion at the straight edge, in the same coupling match. With
+# the legacy 5e-5 / 1e-7 the closed ring kept ΔDy ~ 6e-5 m at the 3T edges and
+# ΔDpy ~ 9e-5 at the 3T IPs.
+COUPLING_DY_TOL = 1e-7
+COUPLING_DPY_TOL = 1e-9
+
+
+def coupling_edge_targets(name_boundary, at_boundary):
+    """Coupling + vertical-dispersion targets at one half-straight edge."""
+    if args.coupling_targets == 'beta':
+        return [
+            xt.TargetSet(betx2=0, bety1=0, at=at_boundary, tol=5e-5),
+            xt.TargetSet(alfx2=0, alfy1=0, at=at_boundary, tol=1e-6),
+            xt.TargetSet(dy=0, at=at_boundary, tol=5e-5),
+            xt.TargetSet(dpy=0, at=at_boundary, tol=1e-7),
+        ]
+    # Mode-1 columns of W, y and py rows, in the bare normalised coordinates
+    # of the edge: yhat = y/sqrt(bety), pyhat = (alfy*y + bety*py)/sqrt(bety).
+    idx = 0 if at_boundary is xt.START else -1
+    bety_e = tw0['bety', name_boundary]
+    alfy_e = tw0['alfy', name_boundary]
+    sqb = np.sqrt(bety_e)
+
+    def _yhat(col):
+        return lambda tw: tw.W_matrix[idx][2, col] / sqb
+
+    def _pyhat(col):
+        return lambda tw: ((alfy_e * tw.W_matrix[idx][2, col]
+                            + bety_e * tw.W_matrix[idx][3, col]) / sqb)
+
+    return [xt.Target(fn(col), 0, tol=COUPLING_AMP_TOL)
+            for fn in (_yhat, _pyhat) for col in (0, 1)] + [
+        xt.TargetSet(dy=0, at=at_boundary, tol=COUPLING_DY_TOL),
+        xt.TargetSet(dpy=0, at=at_boundary, tol=COUPLING_DPY_TOL),
+    ]
+
 # Broyden setting of the optics solves. False: a full finite-difference
 # Jacobian at every step, the slowest but most robust option. An integer n
 # takes a full Jacobian at the first step of every solve() and every n + 1
@@ -855,8 +941,8 @@ for ip_name in IP_NAMES:
 
         labels['coupling', side] = (
             f'{ip_name} {side.upper()} COUPLING + vertical dispersion '
-            f'(betx2/bety1/alfx2/alfy1/dy/dpy=0 at {name_boundary}; '
-            f'skew-quad trims)')
+            f'({args.coupling_targets} coupling targets, dy/dpy=0 at '
+            f'{name_boundary}; skew-quad trims)')
         opt_coupling[side] = line.match_knob(
             knob_name=f'on_sol_coupling_corr_{side}_{ip_name}',
             name=f'{ip_name}/coupling_{side}',
@@ -866,12 +952,7 @@ for ip_name in IP_NAMES:
             **optics_range,
             n_steps_max=100,
             vary=xt.VaryList(k1s_knobs, step=1e-7),
-            targets=[
-                xt.TargetSet(betx2=0, bety1=0, at=at_boundary, tol=5e-5),
-                xt.TargetSet(alfx2=0, alfy1=0, at=at_boundary, tol=1e-6),
-                xt.TargetSet(dy=0, at=at_boundary, tol=5e-5),
-                xt.TargetSet(dpy=0, at=at_boundary, tol=1e-7),
-            ])
+            targets=coupling_edge_targets(name_boundary, at_boundary))
 
     # The two halves share no knobs and are pinned to the same bare optics at
     # the IP, so each side is iterated on its own. The coupling knobs have

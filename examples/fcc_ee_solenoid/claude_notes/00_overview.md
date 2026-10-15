@@ -327,6 +327,16 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   independent correction chains, with and without the `sext` targets; see
   notes 09/10.
 
+- `11_coupling_targets_w_matrix.md` — (2026-10-15) why the corrected rings
+  leaked coupling into the arcs (|C⁻| 3.9e-4 / 8.1e-4) although every coupling
+  match was "in tolerance": βx2/βy1/αx2/αy1 see only the position part of the
+  coupling, quadratically. 004c now targets the mode-1 y/py components of the
+  W matrix (linear, complete) plus tighter Dy/Dpy: arcs 1e-14..1e-13, |C⁻|
+  4.4e-6 / 7.4e-6, IP/edge residuals < 1e-6. Also why not Edwards–Teng
+  (the IP sits inside the field, SplineBoris uses kinetic momenta, maps to/from
+  the IP are non-symplectic by ks), dead ends (tune trim, γ targets), and the
+  half-straight map leak diagnostic.
+
 ## Scripts without a dedicated note (summarised 2026-10-14 from docstrings)
 
 - `000c_field_map_y_s_plane.py` — figure: main-solenoid (By, Bz) field

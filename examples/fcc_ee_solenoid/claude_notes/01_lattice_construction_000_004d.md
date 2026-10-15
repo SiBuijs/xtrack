@@ -270,8 +270,12 @@ has no `ORDER_TAG`). **This output is the lattice used by 004d, 009/010/011/
     tried, see notes 08/09). It is only measured, via
     `doublet_to_sdy1_range()`.
   - **coupling** `on_sol_coupling_corr_{side}_{ip}`: `k1s` on every
-    Quadrupole of that half (~40 knobs), `betx2=bety1=0`, `alfx2=alfy1=0`,
-    `dy=0`, `dpy=0` at the boundary (6 targets).
+    Quadrupole of that half (~40 knobs). Targets at the boundary, from
+    `coupling_edge_targets()`: since 2026-10-15 the four normalised y/py
+    components of mode 1 in the W matrix = 0 (`COUPLING_AMP_TOL = 1e-5`) plus
+    `dy=0` (1e-7) and `dpy=0` (1e-9). Before that (`--coupling-targets beta`,
+    legacy): `betx2=bety1=0`, `alfx2=alfy1=0`, `dy=0` (5e-5), `dpy=0` (1e-7),
+    which leaked coupling into the arcs -- see note 11.
 - **Solve order per side:** orbit 1/3 → optics 1/3 (staged) → coupling 1/2 →
   orbit 2/3 → optics 2/3 → coupling 2/2 → orbit 3/3 → optics 3/3.
   `solve_and_report()` wraps each solve with a banner (knob, range, pass).
