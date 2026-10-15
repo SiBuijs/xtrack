@@ -51,6 +51,12 @@ parser.add_argument(
          'alfy1 = 0, which see only the position part of the coupling. See '
          'COUPLING_AMP_TOL and claude_notes/11.')
 parser.add_argument(
+    '--no-midbend-trims', action='store_true',
+    help='Do not install the mid-bend trim quadrupoles: the half-straight '
+         'optics matches then vary the normal-quad trims only. Pair with '
+         '--output-tag (e.g. notrims) and --input-tag "" so the standard '
+         'corrected lattice is not overwritten.')
+parser.add_argument(
     '--no-chromaticity', action='store_true',
     help='Skip the second-order chromaticity report before/after correction. '
          'Each report costs npoints+1 full-ring 4D twisses, so the two reports '
@@ -346,6 +352,12 @@ def bend_mid_quad_name(bend_name):
     return BEND_MID_QUAD_PREFIX + bend_name
 
 
+# --no-midbend-trims: no bends are cut, so nothing below installs a trim and
+# the optics matches get no mid-bend knobs.
+if args.no_midbend_trims:
+    for _cfg in config.values():
+        _cfg['bend_for_mid_quad_correction'] = []
+
 _table_before_mid_quad_cuts = line.get_table()
 _s_mid_bend_cuts = []
 for ip_name in IP_NAMES:
@@ -376,7 +388,8 @@ for ip_name in IP_NAMES:
 # cut_at_s advances a single iterator over `s` in lockstep with the elements
 # (see Line._elements_intersecting_s), so `s` has to be ascending or cuts are
 # silently dropped.
-line.cut_at_s(sorted(_s_mid_bend_cuts))
+if _s_mid_bend_cuts:
+    line.cut_at_s(sorted(_s_mid_bend_cuts))
 
 # One batched insert: line.insert() rebuilds the whole ~30k-element line on
 # every call (~2.3 s), so 24 separate calls would cost ~55 s instead of ~2.3 s.
@@ -408,7 +421,8 @@ for ip_name in IP_NAMES:
             mid_quad_name, at=0, from_=downstream_half,
             anchor='start', from_anchor='start'))
 
-line.insert(_mid_quad_places)
+if _mid_quad_places:
+    line.insert(_mid_quad_places)
 print(f'Installed {len(_mid_quad_places)} mid-bend trim quadrupoles '
       f'({len(IP_NAMES)} IPs x '
       f'{len(config[IP_NAMES[0]]["bend_for_mid_quad_correction"])} bends)')
@@ -890,7 +904,8 @@ for ip_name in IP_NAMES:
         labels['optics', side] = (
             f'{ip_name} {side.upper()} OPTICS + horizontal dispersion '
             f'(betx/bety/alfx/alfy/dx/dpx at {name_boundary}, betx/bety at '
-            f'{sext_corr}; normal-quad + mid-bend trims)')
+            f'{sext_corr}; normal-quad'
+            f'{" + mid-bend" if k1_knobs_midbend else ""} trims)')
         opt_optics[side] = line.match_knob(
             knob_name=f'on_sol_optics_corr_{side}_{ip_name}',
             name=f'{ip_name}/optics_{side}',
@@ -902,9 +917,10 @@ for ip_name in IP_NAMES:
             vary=[
                 xt.VaryList(k1_knobs_quad, step=OPTICS_STEP,
                             limits=OPTICS_K1_LIMIT_QUAD),
+            ] + ([
                 xt.VaryList(k1_knobs_midbend, step=OPTICS_STEP,
                             limits=OPTICS_K1_LIMIT_MIDBEND),
-            ],
+            ] if k1_knobs_midbend else []),
             targets=[
                 xt.TargetSet(
                     betx=tw0['betx', name_boundary],
