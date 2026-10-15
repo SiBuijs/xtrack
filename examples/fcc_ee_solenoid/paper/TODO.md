@@ -21,7 +21,7 @@ Canonical copy: `examples/fcc_ee_solenoid/paper/TODO.md` on branch `fcc_nonlocal
 - [x] `CHECK` Field map out of the repo: both copies purged from history, the map lives in `~/cernbox/Solenoid_Field_Maps/`, and 006b loads it through `$FCC_SOLENOID_FIELD_MAP` (2026-10-14)
 - [ ] `ASK` Optional: ask GitHub Support to clear cached views of the old commits (needs the "first changed commit" from the purge output)
 - [x] `WRITE` Track `claude_notes/` so the GitHub sync to the claude.ai project can include them → bd4d5793
-- [ ] `CHECK` Fix 004c's docstring, which says `d2q` is Q″/2; per note 10 the printed `d2qx`/`d2qy` is **Q″/4**. Make sure every Q″ in the paper is the true d²Q/dδ²
+- [x] `CHECK` Fix 004c's docstring, which says `d2q` is Q″/2; per note 10 the printed `d2qx`/`d2qy` is **Q″/4**. Make sure every Q″ in the paper is the true d²Q/dδ² → fixed 2026-10-15; RESULTS L19–L27 all quote true Q″
 - [ ] `CHECK` **Reconcile the story** of the slides with notes 08–10 and the comments in 004c:
     - The sdm1 beta-beat (βy at sdm1r.0: 1.47 m bare → 2.87 m at 2 T → 310 m at 3 T) is **not** the Q″y driver.
     - The driver is the **QD0 → sdy1 vertical phase advance** (the LCC −I pair), which the half-straight match leaves free.
@@ -29,7 +29,7 @@ Canonical copy: `examples/fcc_ee_solenoid/paper/TODO.md` on branch `fcc_nonlocal
     - Fix: `OPTICS_RCOND = 1e-6` plus a staged pass 1, with no new targets.
     - This replaces the "beta-beat at sextupole → mid-bend quads" narrative of the September slides.
 - [ ] `SIM` Mid-bend trims off vs on (rcond fix active, 2 T and 3 T): compare Q″y, MA, max|k1|. If they aren't needed, the paper proposes **no new hardware**
-    - Q″y, max|k1| and convergence done 2026-10-15 (RESULTS L23–L26): the trims **are** needed at both fields. MA still to run on the `_notrims` lattices if the paper should show it; 013/009 have no `--output-tag` yet, so that needs adding first
+    - Q″y, max|k1| and convergence done 2026-10-15 (RESULTS L23–L26): the trims **are** needed at both fields. MA still to run on the `_notrims` lattices if the paper should show it; run with `013_run_da_and_ma.py --b0 {2.0,3.0} [--output-tag notrims] --da-cases sb_on --ma-cases sb_on --no-emitt` (tag added 2026-10-15; ~8–10 h per case)
 - [ ] `FIG` Singular values of the optics-match Jacobian (the gap between σ₇ ≈ 9.6 and σ₈ ≈ 4.9e-2), from `004g_coupling_svd_diagnostic.py` or 004c's diagnostics
 - [ ] `FIG` Q″y vs QD0→sdy1 phase error: the calibration (dQ″y/dμ = 2.42e7 left, 2.48e7 right, per unit tune of phase error, true Q″) and the 8 measured points. Note 10 reports agreement to ~0.2%. This explains the irreproducibility in one plot
 - [ ] `SIM` Show the sign flips of Q″y across repeated runs with `rcond = 1e-14`, and the stability with `1e-6`
