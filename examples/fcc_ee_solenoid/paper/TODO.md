@@ -34,7 +34,7 @@ Canonical copy: `examples/fcc_ee_solenoid/paper/TODO.md` on branch `fcc_nonlocal
 - [ ] `FIG` Q″y vs QD0→sdy1 phase error: the calibration (dQ″y/dμ = 2.42e7 left, 2.48e7 right, per unit tune of phase error, true Q″) and the 8 measured points. Note 10 reports agreement to ~0.2%. This explains the irreproducibility in one plot
 - [ ] `SIM` Show the sign flips of Q″y across repeated runs with `rcond = 1e-14`, and the stability with `1e-6`
 - [x] `CHECK` Coupling leaked into the arcs (|C⁻| 3.9e-4 / 8.1e-4) because the coupling targets βx2/βy1/αx2/αy1 see only the position part, quadratically. 004c now targets the W-matrix mode-1 components + tighter Dy/Dpy → e749d4795, note 11
-- [ ] `CHECK` Commit the measurement scripts used for RESULTS L12–L18, L21–L22 (|C⁻|, Chao εy, closed-ring ET at the edges, IP/edge residuals) as a numbered script, so those rows can become `final`
+- [x] `CHECK` Commit the measurement scripts used for RESULTS L12–L18, L21–L22 (|C⁻|, Chao εy, closed-ring ET at the edges, IP/edge residuals) as a numbered script, so those rows can become `final` → `004n_figures_of_merit.py` (f071fb929); the rows are now `final`
 - [ ] `CHECK` 004cc still carries a value-shift bug in its sextupole targets (note 10): fix it or retire 004cc
 - [ ] `WRITE` Scope decision: polarization (015/016/018 exist; note 05 says the tracked τ_depol has SNR ≈ 1). In the paper, or in the outlook?
 - [ ] `CHECK` εy definition: 014/018 use single-plane CS emittances, which are only approximate with coupling (00_overview, caveats). Switch to 4×4 eigen-emittances for the paper numbers

@@ -9,7 +9,7 @@ Runs: 004c `--b0 {2.0,3.0} --no-midbend-trims --output-tag notrims
 --input-tag ""` at cfcf507f6 (everything else default: sdm1 βx/βy targets,
 staged pass 1, rcond 1e-6, W-matrix coupling targets), then 004n. Lattices
 `fccee_z_lcc_splineboris_solenoids_coupling_corrected_{2T,3T}_notrims.json`
-(untracked), logs in `data/logs_2026-10-15/004c_notrims_*.log`. Numbers in
+(committed), logs in `data/logs_2026-10-15/004c_notrims_*.log`. Numbers in
 paper/RESULTS.md L23–L26.
 
 | | 2T trims | 2T no trims | 3T trims | 3T no trims |
