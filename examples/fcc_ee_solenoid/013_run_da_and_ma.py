@@ -103,6 +103,16 @@ def main():
     add_b0_argument(parser, default=MAIN_SOLENOID_B0)
     add_max_order_argument(parser)
     parser.add_argument(
+        "--output-tag",
+        default="",
+        metavar="TAG",
+        help=(
+            "Lattice tag from 004c --output-tag (e.g. notrims), forwarded to "
+            "the DA and MA scripts. The emittance + polarization stage (018) "
+            "does not take it yet, so combine with --no-emitt."
+        ),
+    )
+    parser.add_argument(
         "--n-turns",
         type=int,
         metavar="N",
@@ -260,6 +270,9 @@ def main():
     emitt_args.extend(["--b0", str(args.b0)])
     da_args.extend(["--max-transverse-order", str(args.max_transverse_order)])
     ma_args.extend(["--max-transverse-order", str(args.max_transverse_order)])
+    if args.output_tag:
+        da_args.extend(["--output-tag", args.output_tag])
+        ma_args.extend(["--output-tag", args.output_tag])
     emitt_args.extend(["--max-transverse-order", str(args.max_transverse_order)])
     da_n_turns = args.da_n_turns if args.da_n_turns is not None else args.n_turns
     ma_n_turns = args.ma_n_turns if args.ma_n_turns is not None else args.n_turns
@@ -304,6 +317,10 @@ def main():
     run_da = not args.ma_only and not args.emitt_only
     run_ma = not args.da_only and not args.emitt_only
     run_emitt = not args.da_only and not args.ma_only and not args.no_emitt
+    if run_emitt and args.output_tag:
+        raise SystemExit(
+            "--output-tag is only forwarded to DA and MA; 018 would read the "
+            "untagged lattice. Add --no-emitt (or --da-only/--ma-only).")
 
     # 018 rejects a polarization fit window that starts at or past the last tracked
     # turn. Catch that here rather than letting it abort the run after DA and MA

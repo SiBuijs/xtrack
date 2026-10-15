@@ -360,6 +360,16 @@ def main():
     add_b0_argument(parser, default=MAIN_SOLENOID_B0)
     add_max_order_argument(parser)
     parser.add_argument(
+        "--output-tag",
+        default="",
+        metavar="TAG",
+        help=(
+            "Read the SplineBoris lattice written by 004c --output-tag TAG "
+            "(e.g. notrims -> ..._coupling_corrected_3T_notrims.json). The "
+            "tag is also added to the saved file names. VarSol is unaffected."
+        ),
+    )
+    parser.add_argument(
         "--n-turns",
         type=int,
         default=N_TURNS,
@@ -457,6 +467,10 @@ def main():
 
     tag = field_tag(args.b0)
     order_tag_str = order_tag(args.max_transverse_order)
+    # The 004c --output-tag rides on the SplineBoris-only suffix, so it reaches
+    # the lattice path, the case titles and the saved file names alike.
+    if args.output_tag:
+        order_tag_str += f"_{args.output_tag}"
     ma_cases = _build_ma_cases(tag, order_tag_str)
     ma_cases_by_name = {case["name"]: case for case in ma_cases}
 
