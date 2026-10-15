@@ -9,7 +9,7 @@ Canonical copy: `examples/fcc_ee_solenoid/paper/TODO.md` on branch `fcc_nonlocal
 - [x] **Field map was public:** both copies of `Field_map_2T_BNL_August_14_2026.csv` were purged from every branch's history on 2026-10-14 → `.gitignore` rule added; 006b reads `$FCC_SOLENOID_FIELD_MAP`
 - [ ] `ASK` Tell V. Teotia the map was publicly visible in the fork from 2026-08-28 until 2026-10-14, and ask whether it may be shared at all (e.g. alongside the paper)
 - [x] Commit `claude_notes/` 08–10, which hold the Q″y diagnosis → commit bd4d5793
-- [ ] Re-run 004c → 004d at 2 T and 3 T with the current, frozen solver settings and log the baseline in `RESULTS.md` (all numbers there are `stale`)
+- [x] Re-run 004c → 004d at 2 T and 3 T with the current, frozen solver settings and log the baseline in `RESULTS.md` (all numbers there are `stale`) → `fccee_z_lcc_splineboris_solenoids_coupling_corrected_{2T,3T}.json` at e749d4795, logs in `data/logs_2026-10-15/` (RESULTS L12–L22; |C⁻|, εy and the IP/edge numbers stay `prelim` until the measurement scripts are committed)
 - [ ] Decisive test: is 3 T fine **without** the mid-bend trim quads, now that the solver is fixed? (§4a)
 - [ ] Validate the integrator (Appendix) and work out the linearized-vs-analytic derivation in parallel (§3)
 - [ ] Re-run the 2 T / 3 T analytic results with the frozen setup (§4)
@@ -32,6 +32,8 @@ Canonical copy: `examples/fcc_ee_solenoid/paper/TODO.md` on branch `fcc_nonlocal
 - [ ] `FIG` Singular values of the optics-match Jacobian (the gap between σ₇ ≈ 9.6 and σ₈ ≈ 4.9e-2), from `004g_coupling_svd_diagnostic.py` or 004c's diagnostics
 - [ ] `FIG` Q″y vs QD0→sdy1 phase error: the calibration (dQ″y/dμ = 2.42e7 left, 2.48e7 right, per unit tune of phase error, true Q″) and the 8 measured points. Note 10 reports agreement to ~0.2%. This explains the irreproducibility in one plot
 - [ ] `SIM` Show the sign flips of Q″y across repeated runs with `rcond = 1e-14`, and the stability with `1e-6`
+- [x] `CHECK` Coupling leaked into the arcs (|C⁻| 3.9e-4 / 8.1e-4) because the coupling targets βx2/βy1/αx2/αy1 see only the position part, quadratically. 004c now targets the W-matrix mode-1 components + tighter Dy/Dpy → e749d4795, note 11
+- [ ] `CHECK` Commit the measurement scripts used for RESULTS L12–L18, L21–L22 (|C⁻|, Chao εy, closed-ring ET at the edges, IP/edge residuals) as a numbered script, so those rows can become `final`
 - [ ] `CHECK` 004cc still carries a value-shift bug in its sextupole targets (note 10): fix it or retire 004cc
 - [ ] `WRITE` Scope decision: polarization (015/016/018 exist; note 05 says the tracked τ_depol has SNR ≈ 1). In the paper, or in the outlook?
 - [ ] `CHECK` εy definition: 014/018 use single-plane CS emittances, which are only approximate with coupling (00_overview, caveats). Switch to 4×4 eigen-emittances for the paper numbers
