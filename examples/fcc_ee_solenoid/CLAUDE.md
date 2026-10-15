@@ -35,7 +35,7 @@ Mention these paths in backticks (as here) rather than as `@`-imports, so they a
 ## Conventions (use these everywhere, in code and text)
 
 - Figures of merit: |C⁻|, βx2/βx and βy1/βy, εy, DA (in σ), MA (δ at the injection amplitude), Q′ and Q″.
-- Q″ always means the true d²Q/dδ². Always say which plane. **Pitfall:** the `d2qx`/`d2qy` that 004c/004j print (`detuning.py`, `q*_derivatives[2]`) is **Q″/4**; 004c's docstring wrongly says Q″/2 (see note 10). Check the convention of any other source before quoting it.
+- Q″ always means the true d²Q/dδ². Always say which plane. **Pitfall:** the `d2qx`/`d2qy` that 004c/004j print (`detuning.py`, `q*_derivatives[2]`) is **Q″/4** (see note 10; 004c's docstring said Q″/2 until 2026-10-15). `004n_figures_of_merit.py` stores the true Q″ as `q2x`/`q2y`. Check the convention of any other source before quoting it.
 - With coupling present, single-plane Courant–Snyder emittances are approximate. For the paper's εy, use the 4×4 covariance eigen-emittances, or state which definition was used.
 - SI units. Fields in T, lengths in m.
 
