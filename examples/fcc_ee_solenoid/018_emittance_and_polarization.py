@@ -43,6 +43,7 @@ from aperture_study_io import (
     variant_suffix,
 )
 from lattice_knobs import robust_twiss, set_lattice_knobs
+from study_plots import plot_emittance_evolution_figure, plot_polarization_figure
 from solenoid_params import (
     MAIN_SOLENOID_B0,
     add_b0_argument,
@@ -216,87 +217,6 @@ def _fit_damping_rate(turns, gemitt, eps_eq_guess, eps_init):
     return float(popt[0]), float(popt[1])
 
 
-def _analytic_emittance(turns, eps_init, eps_eq, damp_turn):
-    return (eps_init - eps_eq) * np.exp(-2.0 * damp_turn * turns) + eps_eq
-
-
-def _plot_emittance_evolution_figure(
-    *,
-    turns,
-    gemitt_x,
-    gemitt_y,
-    gemitt_z,
-    eq_x,
-    eq_y,
-    eq_z,
-    damp_turns,
-    fit_eps_eq,
-    fit_alpha,
-    twiss_eps_init,
-    title,
-):
-    fig, axes = plt.subplots(3, 1, figsize=(6.4, 7.2), sharex=True)
-    series = [
-        (gemitt_x, eq_x, damp_turns[0], fit_eps_eq[0], fit_alpha[0], twiss_eps_init[0], "x", r"$\varepsilon_x$ [m·rad]"),
-        (gemitt_y, eq_y, damp_turns[1], fit_eps_eq[1], fit_alpha[1], twiss_eps_init[1], "y", r"$\varepsilon_y$ [m·rad]"),
-        (gemitt_z, eq_z, damp_turns[2], fit_eps_eq[2], fit_alpha[2], twiss_eps_init[2], r"\zeta", r"$\varepsilon_\zeta$ [m·rad]"),
-    ]
-
-    for ax, (gemitt, eq, damp, eps_eq_fit, alpha_fit, eps_init_tw, sym, ylabel) in zip(axes, series):
-        eps_init = gemitt[0]
-        ax.plot(turns, gemitt, label="tracked")
-        ax.axhline(eq, linestyle="--", color="C2", label=r"$\varepsilon_\mathrm{eq}$ (Twiss)")
-
-        if np.isfinite(alpha_fit):
-            fit_curve = (eps_init - eps_eq_fit) * np.exp(-alpha_fit * turns) + eps_eq_fit
-            ax.plot(turns, fit_curve, "--", color="C3", label="fit")
-
-        analytic = _analytic_emittance(turns, eps_init, eq, damp)
-        ax.plot(turns, analytic, ":", color="C4", label=r"Twiss $-2\lambda t$")
-
-        ax.set_ylabel(ylabel)
-        ax.set_ylim(bottom=0)
-        ax.legend(loc="upper left", fontsize=8)
-
-        alpha_tw = 2.0 * damp
-        tau_tw = 1.0 / alpha_tw
-        fit_lines = ["fit:"]
-        if np.isfinite(alpha_fit):
-            tau_fit = 1.0 / alpha_fit
-            fit_lines += [
-                fr"  $\varepsilon_{{{sym},0}} = {eps_init:.3e}$",
-                fr"  $\varepsilon_{{{sym},\mathrm{{eq}}}} = {eps_eq_fit:.3e}$",
-                fr"  $\alpha_{{{sym}}} = {alpha_fit:.3e}\ \mathrm{{turn}}^{{-1}}$",
-                fr"  $\tau_{{{sym}}} = {tau_fit:.3e}\ \mathrm{{turns}}$",
-            ]
-        else:
-            fit_lines += ["  (failed)"]
-        twiss_lines = [
-            "Twiss:",
-            fr"  $\varepsilon_{{{sym},0}} = {eps_init_tw:.3e}$",
-            fr"  $\varepsilon_{{{sym},\mathrm{{eq}}}} = {eq:.3e}$",
-            fr"  $\alpha_{{{sym}}} = {alpha_tw:.3e}\ \mathrm{{turn}}^{{-1}}$",
-            fr"  $\tau_{{{sym}}} = {tau_tw:.3e}\ \mathrm{{turns}}$",
-        ]
-        info_text = "\n".join(fit_lines + twiss_lines)
-        ax.text(
-            0.98,
-            0.03,
-            info_text,
-            transform=ax.transAxes,
-            ha="right",
-            va="bottom",
-            fontsize=6.5,
-            linespacing=1.4,
-            bbox=dict(boxstyle="round", facecolor="white", alpha=0.85, edgecolor="0.7"),
-        )
-
-    axes[-1].set_xlabel("turn")
-    fig.suptitle(title)
-    fig.tight_layout()
-    return fig
-
-
 # --------------------------------------------------------------------------
 # Polarization half (from 015_spin_polarization.py)
 # --------------------------------------------------------------------------
@@ -362,73 +282,6 @@ def _fit_exponential_depolarization(turns, polarization, t_rev0, *, turn_start=0
         tau_depol_s = np.inf
     slope = float(log_slope * p0)
     return p0, slope, float(tau_depol_turns), float(tau_depol_s)
-
-
-def _plot_polarization_figure(
-    *,
-    turns,
-    polarization,
-    fit_p0,
-    fit_tau_depol_turns,
-    fit_tau_depol_s,
-    fit_turn_start,
-    p_inf,
-    tau_pol_s,
-    tau_depol_twiss_s,
-    p_eq_twiss,
-    p_eq_derived,
-    title,
-):
-    fig, ax = plt.subplots(figsize=(6.4, 4.8))
-    ax.plot(turns, polarization, label="tracked")
-    if fit_turn_start > 0:
-        ax.axvline(fit_turn_start, color="0.5", ls=":", lw=1,
-                   label=f"fit start (n={fit_turn_start})")
-
-    if np.isfinite(fit_tau_depol_turns):
-        fit_turns = turns[turns >= fit_turn_start]
-        fit_curve = fit_p0 * np.exp(-fit_turns / fit_tau_depol_turns)
-        ax.plot(fit_turns, fit_curve, "--", color="C3", label="exponential fit")
-
-    ax.set_xlabel("turn")
-    ax.set_ylabel(r"Polarization $P = |\langle \vec{s}\rangle|$")
-    ax.legend(loc="lower right", fontsize=8)
-
-    fit_lines = [f"fit (tracking, exponential decay, n>={fit_turn_start}):"]
-    if np.isfinite(fit_tau_depol_turns):
-        fit_lines += [
-            fr"  $P_0 = {fit_p0:.6f}$",
-            fr"  $\tau_\mathrm{{depol}} = {fit_tau_depol_s:.3e}\ \mathrm{{s}}$",
-        ]
-    else:
-        fit_lines += ["  (no significant decay resolved)"]
-    twiss_lines = [
-        "Twiss:",
-        fr"  $P_\infty = {p_inf:.6f}$",
-        fr"  $\tau_\mathrm{{pol}} = {tau_pol_s:.3e}\ \mathrm{{s}}$",
-        fr"  $\tau_\mathrm{{depol}} = {tau_depol_twiss_s:.3e}\ \mathrm{{s}}$",
-        fr"  $P_\mathrm{{eq}} = {p_eq_twiss:.3e}$",
-    ]
-    derived_lines = [
-        r"Derived ($P_\infty,\tau_\mathrm{pol}$ Twiss + $\tau_\mathrm{depol}$ fit):",
-        fr"  $P_\mathrm{{eq}} = {p_eq_derived:.3e}$",
-    ]
-    info_text = "\n".join(fit_lines + twiss_lines + derived_lines)
-    ax.text(
-        0.98,
-        0.98,
-        info_text,
-        transform=ax.transAxes,
-        ha="right",
-        va="top",
-        fontsize=6.5,
-        linespacing=1.4,
-        bbox=dict(boxstyle="round", facecolor="white", alpha=0.85, edgecolor="0.7"),
-    )
-
-    ax.set_title(title)
-    fig.tight_layout()
-    return fig
 
 
 # --------------------------------------------------------------------------
@@ -615,7 +468,7 @@ def _run_emittance_and_polarization(
         # Twiss-predicted initial emittance for the fit comparison box.
         twiss_eps_init = np.array([eq_x, eq_y, eq_z]) / bunch_emitt_divisor
 
-        fig_emitt = _plot_emittance_evolution_figure(
+        fig_emitt = plot_emittance_evolution_figure(
             turns=turns,
             gemitt_x=gemitt_x,
             gemitt_y=gemitt_y,
@@ -631,6 +484,7 @@ def _run_emittance_and_polarization(
         )
         save_emitt_study(
             fig=fig_emitt,
+            title=title,
             model=case["model"],
             with_solenoids=case["with_solenoids"],
             with_correctors=case["with_correctors"],
@@ -696,13 +550,14 @@ def _run_emittance_and_polarization(
             f"[Twiss direct: {p_eq_twiss:.6e}]"
         )
 
-        fig_pol = _plot_polarization_figure(
+        fig_pol = plot_polarization_figure(
             turns=turns,
             polarization=polarization,
             fit_p0=fit_p0,
             fit_tau_depol_turns=fit_tau_depol_turns,
             fit_tau_depol_s=fit_tau_depol_s,
-            fit_turn_start=pol_fit_start_turn,
+            turn_start=pol_fit_start_turn,
+            t_rev0=t_rev0,
             p_inf=p_inf,
             tau_pol_s=tau_pol_s,
             tau_depol_twiss_s=tau_depol_twiss_s,
@@ -712,6 +567,7 @@ def _run_emittance_and_polarization(
         )
         save_pol_study(
             fig=fig_pol,
+            title=title,
             model=case["model"],
             with_solenoids=case["with_solenoids"],
             with_correctors=case["with_correctors"],

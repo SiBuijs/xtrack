@@ -22,6 +22,7 @@ from scipy.optimize import curve_fit
 
 from aperture_study_io import save_emitt_study, variant_suffix
 from lattice_knobs import robust_twiss, set_lattice_knobs
+from study_plots import plot_emittance_evolution_figure
 from solenoid_params import (
     MAIN_SOLENOID_B0,
     add_b0_argument,
@@ -165,87 +166,6 @@ def _fit_damping_rate(turns, gemitt, eps_eq_guess, eps_init):
     return float(popt[0]), float(popt[1])
 
 
-def _analytic_emittance(turns, eps_init, eps_eq, damp_turn):
-    return (eps_init - eps_eq) * np.exp(-2.0 * damp_turn * turns) + eps_eq
-
-
-def _plot_emittance_evolution_figure(
-    *,
-    turns,
-    gemitt_x,
-    gemitt_y,
-    gemitt_z,
-    eq_x,
-    eq_y,
-    eq_z,
-    damp_turns,
-    fit_eps_eq,
-    fit_alpha,
-    twiss_eps_init,
-    title,
-):
-    fig, axes = plt.subplots(3, 1, figsize=(6.4, 7.2), sharex=True)
-    series = [
-        (gemitt_x, eq_x, damp_turns[0], fit_eps_eq[0], fit_alpha[0], twiss_eps_init[0], "x", r"$\varepsilon_x$ [m·rad]"),
-        (gemitt_y, eq_y, damp_turns[1], fit_eps_eq[1], fit_alpha[1], twiss_eps_init[1], "y", r"$\varepsilon_y$ [m·rad]"),
-        (gemitt_z, eq_z, damp_turns[2], fit_eps_eq[2], fit_alpha[2], twiss_eps_init[2], r"\zeta", r"$\varepsilon_\zeta$ [m·rad]"),
-    ]
-
-    for ax, (gemitt, eq, damp, eps_eq_fit, alpha_fit, eps_init_tw, sym, ylabel) in zip(axes, series):
-        eps_init = gemitt[0]
-        ax.plot(turns, gemitt, label="tracked")
-        ax.axhline(eq, linestyle="--", color="C2", label=r"$\varepsilon_\mathrm{eq}$ (Twiss)")
-
-        if np.isfinite(alpha_fit):
-            fit_curve = (eps_init - eps_eq_fit) * np.exp(-alpha_fit * turns) + eps_eq_fit
-            ax.plot(turns, fit_curve, "--", color="C3", label="fit")
-
-        analytic = _analytic_emittance(turns, eps_init, eq, damp)
-        ax.plot(turns, analytic, ":", color="C4", label=r"Twiss $-2\lambda t$")
-
-        ax.set_ylabel(ylabel)
-        ax.set_ylim(bottom=0)
-        ax.legend(loc="upper left", fontsize=8)
-
-        alpha_tw = 2.0 * damp
-        tau_tw = 1.0 / alpha_tw
-        fit_lines = ["fit:"]
-        if np.isfinite(alpha_fit):
-            tau_fit = 1.0 / alpha_fit
-            fit_lines += [
-                fr"  $\varepsilon_{{{sym},0}} = {eps_init:.3e}$",
-                fr"  $\varepsilon_{{{sym},\mathrm{{eq}}}} = {eps_eq_fit:.3e}$",
-                fr"  $\alpha_{{{sym}}} = {alpha_fit:.3e}\ \mathrm{{turn}}^{{-1}}$",
-                fr"  $\tau_{{{sym}}} = {tau_fit:.3e}\ \mathrm{{turns}}$",
-            ]
-        else:
-            fit_lines += ["  (failed)"]
-        twiss_lines = [
-            "Twiss:",
-            fr"  $\varepsilon_{{{sym},0}} = {eps_init_tw:.3e}$",
-            fr"  $\varepsilon_{{{sym},\mathrm{{eq}}}} = {eq:.3e}$",
-            fr"  $\alpha_{{{sym}}} = {alpha_tw:.3e}\ \mathrm{{turn}}^{{-1}}$",
-            fr"  $\tau_{{{sym}}} = {tau_tw:.3e}\ \mathrm{{turns}}$",
-        ]
-        info_text = "\n".join(fit_lines + twiss_lines)
-        ax.text(
-            0.98,
-            0.03,
-            info_text,
-            transform=ax.transAxes,
-            ha="right",
-            va="bottom",
-            fontsize=6.5,
-            linespacing=1.4,
-            bbox=dict(boxstyle="round", facecolor="white", alpha=0.85, edgecolor="0.7"),
-        )
-
-    axes[-1].set_xlabel("turn")
-    fig.suptitle(title)
-    fig.tight_layout()
-    return fig
-
-
 def _run_emittance_evolution(
     case, *, n_turns, n_part, with_progress, sexamp, tag,
 ):
@@ -357,7 +277,7 @@ def _run_emittance_evolution(
     # Twiss-predicted initial emittance for the fit comparison box.
     twiss_eps_init = np.array([eq_x, eq_y, eq_z]) / 3.0
 
-    fig = _plot_emittance_evolution_figure(
+    fig = plot_emittance_evolution_figure(
         turns=turns,
         gemitt_x=gemitt_x,
         gemitt_y=gemitt_y,
@@ -373,6 +293,7 @@ def _run_emittance_evolution(
     )
     save_emitt_study(
         fig=fig,
+        title=title,
         model=case["model"],
         with_solenoids=case["with_solenoids"],
         with_correctors=case["with_correctors"],

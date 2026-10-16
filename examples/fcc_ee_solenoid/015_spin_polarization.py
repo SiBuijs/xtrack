@@ -37,6 +37,7 @@ import xtrack as xt
 
 from aperture_study_io import save_pol_study, variant_suffix
 from lattice_knobs import robust_twiss, set_lattice_knobs
+from study_plots import plot_polarization_figure
 from solenoid_params import (
     MAIN_SOLENOID_B0,
     add_b0_argument,
@@ -179,107 +180,6 @@ def _fit_exponential_depolarization(turns, polarization, t_rev0,
     return p0, slope, float(tau_depol_turns), float(tau_depol_s)
 
 
-def _plot_polarization_figure(
-    *,
-    turns,
-    polarization,
-    fit_p0,
-    fit_tau_depol_turns,
-    fit_tau_depol_s,
-    p_inf,
-    tau_pol_s,
-    tau_depol_twiss_s,
-    p_eq_twiss,
-    p_eq_derived,
-    title,
-    t_rev0,
-    turn_start=FIT_TURN_START,
-):
-    fig, ax = plt.subplots(figsize=(6.4, 4.8))
-    ax.plot(turns, polarization, label="tracked")
-    ax.axvline(turn_start, color="0.5", ls=":", lw=1,
-               label=f"fit start (n={turn_start})")
-
-    if np.isfinite(fit_tau_depol_turns):
-        # Drawn only over the fitted range, so the figure cannot suggest the
-        # fit describes the excluded transient.
-        fit_turns = turns[turns >= turn_start]
-        fit_curve = fit_p0 * np.exp(-fit_turns / fit_tau_depol_turns)
-        ax.plot(fit_turns, fit_curve, "--", color="C3",
-                label="exponential fit")
-
-    ax.set_xlabel("turn")
-    ax.set_ylabel(r"Polarization $P = |\langle \vec{s}\rangle|$")
-    ax.legend(loc="lower right", fontsize=8)
-
-    # Each figure autoscales to its own data, and P sits so close to 1 that
-    # matplotlib falls back to offset notation ("1e-6 + 9.9999e-1"). Two
-    # figures can then differ by 10x in y-scale while looking identically
-    # steep -- a 2e-06 wobble fills the frame exactly like a 2e-05 one, so
-    # comparing two of these figures by eye gives the wrong answer, and can
-    # invert the ranking of which case depolarizes more. State the absolute
-    # excursion in the box so the figures are comparable as numbers, and
-    # state what Twiss's own tau_depol predicts over the same span so it is
-    # obvious that the tracked curve is orders of magnitude flatter than the
-    # analytic decay it is supposed to be measuring.
-    span_lines = []
-    if len(polarization) and np.isfinite(polarization[0]):
-        finite = polarization[np.isfinite(polarization)]
-        if finite.size:
-            drop_total = float(polarization[0] - finite[-1])
-            span_lines = [
-                "span (tracked):",
-                fr"  $\Delta P$ over run $= {drop_total:.3e}$",
-            ]
-            if np.isfinite(tau_depol_twiss_s) and tau_depol_twiss_s > 0:
-                tau_twiss_turns = tau_depol_twiss_s / t_rev0
-                n_span = float(turns[-1] - turns[0])
-                drop_twiss = float(
-                    polarization[0] * (1.0 - np.exp(-n_span / tau_twiss_turns)))
-                span_lines.append(
-                    fr"  $\Delta P$ if $\tau_\mathrm{{depol}}$(Twiss)"
-                    fr"$ = {drop_twiss:.3e}$")
-                if drop_total > 0:
-                    span_lines.append(
-                        fr"  ratio Twiss/tracked $= {drop_twiss / drop_total:.3g}$")
-
-    fit_lines = [f"fit (tracking, exponential decay, n>={turn_start}):"]
-    if np.isfinite(fit_tau_depol_turns):
-        fit_lines += [
-            fr"  $P_0 = {fit_p0:.6f}$",
-            fr"  $\tau_\mathrm{{depol}} = {fit_tau_depol_s:.3e}\ \mathrm{{s}}$",
-        ]
-    else:
-        fit_lines += ["  (no significant decay resolved)"]
-    twiss_lines = [
-        "Twiss:",
-        fr"  $P_\infty = {p_inf:.6f}$",
-        fr"  $\tau_\mathrm{{pol}} = {tau_pol_s:.3e}\ \mathrm{{s}}$",
-        fr"  $\tau_\mathrm{{depol}} = {tau_depol_twiss_s:.3e}\ \mathrm{{s}}$",
-        fr"  $P_\mathrm{{eq}} = {p_eq_twiss:.3e}$",
-    ]
-    derived_lines = [
-        r"Derived ($P_\infty,\tau_\mathrm{pol}$ Twiss + $\tau_\mathrm{depol}$ fit):",
-        fr"  $P_\mathrm{{eq}} = {p_eq_derived:.3e}$",
-    ]
-    info_text = "\n".join(span_lines + fit_lines + twiss_lines + derived_lines)
-    ax.text(
-        0.98,
-        0.98,
-        info_text,
-        transform=ax.transAxes,
-        ha="right",
-        va="top",
-        fontsize=6.5,
-        linespacing=1.4,
-        bbox=dict(boxstyle="round", facecolor="white", alpha=0.85, edgecolor="0.7"),
-    )
-
-    ax.set_title(title)
-    fig.tight_layout()
-    return fig
-
-
 def _run_polarization_evolution(
     case, *, n_turns, n_part, with_progress, sexamp, tag,
     turn_start=FIT_TURN_START,
@@ -406,7 +306,7 @@ def _run_polarization_evolution(
         f"[Twiss direct: {p_eq_twiss:.6e}]"
     )
 
-    fig = _plot_polarization_figure(
+    fig = plot_polarization_figure(
         turns=turns,
         polarization=polarization,
         fit_p0=fit_p0,
@@ -423,6 +323,7 @@ def _run_polarization_evolution(
     )
     save_pol_study(
         fig=fig,
+        title=title,
         model=case["model"],
         with_solenoids=case["with_solenoids"],
         with_correctors=case["with_correctors"],

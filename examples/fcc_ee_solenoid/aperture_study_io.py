@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import socket
 import subprocess
 import sys
 from datetime import datetime
+from math import factorial
 from pathlib import Path
 from typing import Any, Literal
 
@@ -15,6 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from solenoid_params import FIELD_TAG
+import study_plots
 
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parents[1]
@@ -489,6 +492,7 @@ def save_emitt_study(
     sexamp: float = BUILD_DEFAULTS["sexamp"],
     field_tag: str = FIELD_TAG,
     bunch_emitt_divisor: float | None = None,
+    title: str = "",
 ) -> tuple[Path, Path]:
     stem = make_study_stem(
         "EMIT",
@@ -505,6 +509,9 @@ def save_emitt_study(
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     arrays = dict(
+        # Figure title, so replot_from_npz can redraw it (not stored before
+        # 2026-10-16; older files get a title rebuilt from the file name).
+        title=title,
         turns=np.asarray(turns),
         gemitt_x=np.asarray(gemitt_x),
         gemitt_y=np.asarray(gemitt_y),
@@ -569,6 +576,7 @@ def save_pol_study(
     field_tag: str = FIELD_TAG,
     fit_turn_start: int = 0,
     bunch_emitt_divisor: float | None = None,
+    title: str = "",
 ) -> tuple[Path, Path]:
     stem = make_study_stem(
         "POL",
@@ -585,6 +593,9 @@ def save_pol_study(
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     arrays = dict(
+        # Figure title, so replot_from_npz can redraw it (not stored before
+        # 2026-10-16; older files get a title rebuilt from the file name).
+        title=title,
         turns=np.asarray(turns),
         spin_x_mean=np.asarray(spin_x_mean),
         spin_y_mean=np.asarray(spin_y_mean),
@@ -678,6 +689,7 @@ def save_tune_study(
     variant: str = "",
     sexamp: float = BUILD_DEFAULTS["sexamp"],
     field_tag: str = FIELD_TAG,
+    title: str = "",
 ) -> tuple[Path, Path]:
     """coeffs_x_fit / coeffs_y_fit are Taylor coefficients from the
     delta-scan polynomial fit, indexed [q0, dq, ddq, dddq, ...] up to
@@ -697,6 +709,9 @@ def save_tune_study(
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     arrays = dict(
+        # Figure title, so replot_from_npz can redraw it (not stored before
+        # 2026-10-16; older files get a title rebuilt from the file name).
+        title=title,
         delta_values=np.asarray(delta_values),
         qx=np.asarray(qx),
         qy=np.asarray(qy),
@@ -822,6 +837,141 @@ def _plot_ma_from_arrays(data: np.lib.npyio.NpzFile) -> plt.Figure:
     return fig
 
 
+_MODEL_TITLE_NAMES = {"SB": "SplineBoris", "VarSol": "VariableSolenoid"}
+
+
+def _title_from_stem(stem: str) -> str:
+    """Rebuild the case title the scripts use (e.g. 'SplineBoris (3T):
+    solenoids powered + correction scheme') from a study file name, for data
+    saved before the title was stored. The field tag is everything between
+    the model and the radiation tag (EMIT/POL) or the n_delta tag (TUNE)."""
+    tokens = stem.split("_")[1:]  # drop the study prefix
+    with_solenoids = tokens[:2] == ["Sol", "On"]
+    tokens = tokens[2:]
+    correctors_off = tokens[:2] == ["Cor", "Off"]
+    if correctors_off:
+        tokens = tokens[2:]
+    model = tokens[0] if tokens else ""
+    tag_tokens = []
+    for token in tokens[1:]:
+        # Stop at the radiation tag or a count tag (1000p, 21d), not at a
+        # field tag like 3T.
+        if token.startswith("rad") or re.fullmatch(r"\d+[pd]", token):
+            break
+        tag_tokens.append(token)
+    name = _MODEL_TITLE_NAMES.get(model, model)
+    if tag_tokens:
+        name += f" ({'_'.join(tag_tokens)})"
+    if not with_solenoids:
+        state = "solenoids unpowered"
+    elif correctors_off:
+        state = "solenoids powered, correctors off"
+    else:
+        state = "solenoids powered + correction scheme"
+    return f"{name}: {state}"
+
+
+def _title_from_npz(data, stem: str) -> str:
+    if "title" in data.files and str(data["title"]):
+        return str(data["title"])
+    return _title_from_stem(stem)
+
+
+def _plot_emitt_from_arrays(data, stem: str) -> plt.Figure:
+    divisor = float(data["bunch_emitt_divisor"])
+    if not np.isfinite(divisor):
+        # Not recorded: written by 014, which always generated the bunch at
+        # 1/3 of the equilibrium emittance.
+        divisor = 3.0
+    eq = np.array([
+        float(data["eq_gemitt_x"]),
+        float(data["eq_gemitt_y"]),
+        float(data["eq_gemitt_zeta"]),
+    ])
+    return study_plots.plot_emittance_evolution_figure(
+        turns=data["turns"],
+        gemitt_x=data["gemitt_x"],
+        gemitt_y=data["gemitt_y"],
+        gemitt_z=data["gemitt_z"],
+        eq_x=eq[0],
+        eq_y=eq[1],
+        eq_z=eq[2],
+        damp_turns=data["damping_constants_turns"],
+        fit_eps_eq=data["fit_eps_eq"],
+        fit_alpha=data["fit_alpha"],
+        twiss_eps_init=eq / divisor,
+        title=_title_from_npz(data, stem),
+    )
+
+
+# 015 fitted from turn 2000 from 2026-09-22 on, but only started storing the
+# fit start on 2026-10-14; POL files it wrote in between say 0.
+_POL_UNRECORDED_FIT_START = (datetime(2026, 9, 22), datetime(2026, 10, 14))
+
+
+def _pol_fit_turn_start(data, npz_path: Path) -> int:
+    turn_start = int(data["fit_turn_start"])
+    from_015 = not np.isfinite(float(data["bunch_emitt_divisor"]))
+    saved = datetime.fromtimestamp(npz_path.stat().st_mtime)
+    lo, hi = _POL_UNRECORDED_FIT_START
+    if turn_start == 0 and from_015 and lo <= saved < hi:
+        print(
+            f"  {npz_path.name}: fit_turn_start is stored as 0, but 015 wrote "
+            f"this file on {saved:%Y-%m-%d}, when it fitted from turn 2000. "
+            "Drawing the fit from turn 2000."
+        )
+        return 2000
+    return turn_start
+
+
+def _plot_pol_from_arrays(data, stem: str, npz_path: Path) -> plt.Figure:
+    return study_plots.plot_polarization_figure(
+        turns=data["turns"],
+        polarization=data["polarization"],
+        fit_p0=float(data["fit_p0"]),
+        fit_tau_depol_turns=float(data["fit_tau_depol_turns"]),
+        fit_tau_depol_s=float(data["fit_tau_depol_s"]),
+        p_inf=float(data["p_inf"]),
+        tau_pol_s=float(data["tau_pol_s"]),
+        tau_depol_twiss_s=float(data["tau_depol_twiss_s"]),
+        p_eq_twiss=float(data["p_eq_twiss"]),
+        p_eq_derived=float(data["p_eq_derived"]),
+        title=_title_from_npz(data, stem),
+        t_rev0=float(data["t_rev0"]),
+        turn_start=_pol_fit_turn_start(data, npz_path),
+    )
+
+
+def _poly_from_taylor_coeffs(coeffs: np.ndarray) -> np.ndarray:
+    """Inverse of 017's _taylor_coeffs_from_polyfit: Taylor coefficients
+    [q0, dq, ddq, ...] back to np.polyval's highest-degree-first form."""
+    low_to_high = [c / factorial(n) for n, c in enumerate(coeffs)]
+    return np.array(low_to_high[::-1])
+
+
+def _plot_tune_from_arrays(data, stem: str) -> plt.Figure:
+    return study_plots.plot_tune_vs_delta_figure(
+        delta_values=data["delta_values"],
+        qx=data["qx"],
+        qy=data["qy"],
+        qx0=float(data["qx0_twiss"]),
+        qy0=float(data["qy0_twiss"]),
+        poly_qx=_poly_from_taylor_coeffs(data["coeffs_x_fit"]),
+        poly_qy=_poly_from_taylor_coeffs(data["coeffs_y_fit"]),
+        fit_order=int(data["fit_order"]),
+        coeffs_x_fit=data["coeffs_x_fit"],
+        coeffs_y_fit=data["coeffs_y_fit"],
+        dqx_twiss=float(data["dqx_twiss"]),
+        ddqx_twiss=float(data["ddqx_twiss"]),
+        dqy_twiss=float(data["dqy_twiss"]),
+        ddqy_twiss=float(data["ddqy_twiss"]),
+        title=_title_from_npz(data, stem),
+    )
+
+
+REPLOTTABLE_STUDIES = ("DA", "MA", "EMIT", "POL", "TUNE")
+
+
 def replot_from_npz(npz_path: Path | str, *, show: bool = False) -> Path:
     npz_path = Path(npz_path)
     with np.load(npz_path, allow_pickle=True) as data:
@@ -830,6 +980,12 @@ def replot_from_npz(npz_path: Path | str, *, show: bool = False) -> Path:
             fig = _plot_da_from_arrays(data)
         elif study == "MA":
             fig = _plot_ma_from_arrays(data)
+        elif study == "EMIT":
+            fig = _plot_emitt_from_arrays(data, npz_path.stem)
+        elif study == "POL":
+            fig = _plot_pol_from_arrays(data, npz_path.stem, npz_path)
+        elif study == "TUNE":
+            fig = _plot_tune_from_arrays(data, npz_path.stem)
         else:
             raise ValueError(f"Unrecognized study prefix in {npz_path.name}")
 

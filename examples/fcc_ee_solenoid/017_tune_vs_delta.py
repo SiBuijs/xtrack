@@ -59,6 +59,7 @@ from xtrack.twiss import ClosedOrbitSearchError
 
 from aperture_study_io import save_tune_study, variant_suffix
 from lattice_knobs import robust_twiss, set_lattice_knobs
+from study_plots import plot_tune_vs_delta_figure
 from solenoid_params import (
     MAIN_SOLENOID_B0,
     add_b0_argument,
@@ -145,78 +146,6 @@ def _build_tune_cases(tag, order_tag_str=""):
 # no more than the other two and is included by default for the bare-machine
 # comparison.
 DEFAULT_TUNE_CASE_NAMES = ["sb_on", "varsol_on", "sb_off"]
-
-
-def _order_symbol(n: int, sym: str) -> str:
-    """LaTeX label for the order-n delta-derivative of q_sym: dq_x, ddq_x,
-    then d^3q_x, d^4q_x, ... beyond that."""
-    if n == 1:
-        return fr"dq_{sym}"
-    if n == 2:
-        return fr"ddq_{sym}"
-    return fr"d^{n}q_{sym}"
-
-
-def _plot_tune_vs_delta_figure(
-    *,
-    delta_values,
-    qx,
-    qy,
-    qx0,
-    qy0,
-    poly_qx,
-    poly_qy,
-    fit_order,
-    coeffs_x_fit,
-    coeffs_y_fit,
-    dqx_twiss,
-    ddqx_twiss,
-    dqy_twiss,
-    ddqy_twiss,
-    title,
-):
-    fig, (ax_x, ax_y) = plt.subplots(2, 1, figsize=(6.4, 7.6), sharex=True)
-    delta_fine = np.linspace(delta_values[0], delta_values[-1], 400)
-
-    # Plot relative to the on-momentum tune (qx0/qy0, from the Method-2
-    # Twiss-direct call at delta0=0) -- this only shifts the curve vertically
-    # by a constant, so it doesn't change dq/ddq/... at all, just strips the
-    # large integer-tune offset (e.g. ~194) that otherwise dominates the axis.
-    panels = (
-        (ax_x, qx, qx0, poly_qx, coeffs_x_fit, dqx_twiss, ddqx_twiss, "x"),
-        (ax_y, qy, qy0, poly_qy, coeffs_y_fit, dqy_twiss, ddqy_twiss, "y"),
-    )
-    for ax, q, q0, poly, coeffs_fit, dq_tw, ddq_tw, sym in panels:
-        ax.plot(delta_values, q - q0, "o", ms=4, color="C0", label="Twiss scan")
-        ax.plot(
-            delta_fine, np.polyval(poly, delta_fine) - q0, "--", color="C3",
-            label=f"order-{fit_order} fit",
-        )
-        ax.set_ylabel(fr"$q_{sym} - q_{sym}(\delta{{=}}0)$")
-        ax.legend(loc="upper left", fontsize=8)
-
-        fit_lines = [f"fit (order-{fit_order} scan):"]
-        for n in range(1, fit_order + 1):
-            fit_lines.append(fr"  ${_order_symbol(n, sym)} = {coeffs_fit[n]:.5g}$")
-        twiss_lines = [
-            "Twiss (direct):",
-            fr"  ${_order_symbol(1, sym)} = {dq_tw:.5g}$",
-            fr"  ${_order_symbol(2, sym)} = {ddq_tw:.5g}$",
-        ]
-        info_text = "\n".join(fit_lines + twiss_lines)
-        ax.text(
-            0.98, 0.03, info_text,
-            transform=ax.transAxes,
-            ha="right", va="bottom",
-            fontsize=7.5, linespacing=1.4,
-            bbox=dict(boxstyle="round", facecolor="white", alpha=0.85, edgecolor="0.7"),
-        )
-
-    ax_y.set_xlabel(r"$\delta$")
-    ax_y.tick_params(axis="x", labelrotation=30)
-    fig.suptitle(title)
-    fig.tight_layout()
-    return fig
 
 
 def _run_tune_vs_delta(case, *, delta_max, n_delta, fit_order, sexamp, tag):
@@ -312,7 +241,7 @@ def _run_tune_vs_delta(case, *, delta_max, n_delta, fit_order, sexamp, tag):
         print(f"  d{n}qx = {coeffs_x_fit[n]:.6g}   d{n}qy = {coeffs_y_fit[n]:.6g}   "
               "[fit only, no direct-Twiss reference]")
 
-    fig = _plot_tune_vs_delta_figure(
+    fig = plot_tune_vs_delta_figure(
         delta_values=delta_values,
         qx=qx,
         qy=qy,
@@ -331,6 +260,7 @@ def _run_tune_vs_delta(case, *, delta_max, n_delta, fit_order, sexamp, tag):
     )
     save_tune_study(
         fig=fig,
+        title=title,
         model=case["model"],
         with_solenoids=case["with_solenoids"],
         with_correctors=case["with_correctors"],

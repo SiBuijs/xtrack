@@ -194,6 +194,14 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   hardcoded to `/home/simonfan/...`, which broke on other machines/users —
   same synced cernbox folder, just resolved via the current user's home dir
   now).
+  Since 2026-10-16: every saved `.npz` carries `provenance_*` keys (commit,
+  dirty flag, host, start time, command line) and every PDF saved through
+  `save_figure_pdf` has the same in its Subject metadata (`pdfinfo`);
+  `replot_from_npz` (via 012) handles DA, MA, EMIT, POL and TUNE.
+- `study_plots.py` (2026-10-16) — the figure functions for EMIT (014/018),
+  POL (015/018) and TUNE (017), shared with the replot so a replotted figure
+  is drawn by the same code. Change figure styling here, not in the scripts.
+  018's POL figure now has 015's "span" box too.
 
 ## Physical/engineering constants worth remembering
 
