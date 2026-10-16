@@ -23,9 +23,11 @@ parser = argparse.ArgumentParser(
 )
 parser.add_argument(
     '--model',
-    choices=['splineboris', 'varsol'],
+    choices=['splineboris', 'varsol', 'partialmap'],
     default='splineboris',
-    help='Solenoid model to correct (default: splineboris).',
+    help='Solenoid model to correct (default: splineboris). partialmap = the '
+         '2 T BNL field map up to 2.4 m from each IP '
+         '(004b_install_partial_2T_map_in_fcc_ring.py); needs --b0 2.0.',
 )
 add_b0_argument(parser, default=MAIN_SOLENOID_B0)
 add_max_order_argument(parser)
@@ -101,6 +103,14 @@ _MODEL_LATTICE_PATHS = {
         f'fccee_z_lcc_varsol_solenoids_coupling_corrected_{FIELD_TAG}{OUT_TAG}.json',
     ),
 }
+# The field map exists at 2 T only; its order is fixed by the fit in 004b, so
+# --max-transverse-order does not apply either.
+_MODEL_LATTICE_PATHS['partialmap'] = (
+    f'temp_fcc_ee_lcc_partialmap_solenoids_{FIELD_TAG}{IN_TAG}.json',
+    f'fccee_z_lcc_partialmap_solenoids_coupling_corrected_{FIELD_TAG}{OUT_TAG}.json',
+)
+if args.model == 'partialmap' and args.b0 != 2.0:
+    raise SystemExit('--model partialmap is the 2 T BNL field map: use --b0 2.0.')
 
 INPUT_LATTICE_JSON = HERE / _MODEL_LATTICE_PATHS[args.model][0]
 OUTPUT_LATTICE_JSON = HERE / _MODEL_LATTICE_PATHS[args.model][1]
