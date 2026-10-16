@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
 # Long paper runs. Run from this directory, each step with nohup:
 #
-run_paper_campaign.sh da_ma_varsol     # the same for VarSol (~6.5 h)/run_paper_campaign.sh lattices         # rebuild the VarSol lattices (004c), done 2026-10-16
-run_paper_campaign.sh da_ma_varsol     # the same for VarSol (~6.5 h)/run_paper_campaign.sh calibrate        # time 60 turns of emittance + spin
-run_paper_campaign.sh da_ma_varsol     # the same for VarSol (~6.5 h)                                        #   (SB 3T, 1000 particles); ~6 min
-run_paper_campaign.sh da_ma_varsol     # the same for VarSol (~6.5 h)/run_paper_campaign.sh emitt N_PART     # emittance + spin in one tracking run,
-run_paper_campaign.sh da_ma_varsol     # the same for VarSol (~6.5 h)                                        #   SB with trims, 3T then 2T, 10000
-run_paper_campaign.sh da_ma_varsol     # the same for VarSol (~6.5 h)                                        #   turns, seed 1. Add 'all' to also run
-run_paper_campaign.sh da_ma_varsol     # the same for VarSol (~6.5 h)                                        #   the two no-trims lattices
-run_paper_campaign.sh da_ma_varsol     # the same for VarSol (~6.5 h)/run_paper_campaign.sh da_ma_sb         # DA + MA, quantum radiation, 5000 turns:
-run_paper_campaign.sh da_ma_varsol     # the same for VarSol (~6.5 h)                                        #   SB 3T/2T with and without trims, then
-run_paper_campaign.sh da_ma_varsol     # the same for VarSol (~6.5 h)                                        #   solenoids off (~14 h)
-run_paper_campaign.sh da_ma_varsol     # the same for VarSol (~6.5 h)/run_paper_campaign.sh da_ma_varsol     # the same for VarSol (~6.5 h)
+#   ./run_paper_campaign.sh lattices         # rebuild the VarSol lattices (004c), done 2026-10-16
+#   ./run_paper_campaign.sh calibrate        # time 60 turns of emittance + spin
+#                                            #   (SB 3T, 1000 particles); ~6 min
+#   ./run_paper_campaign.sh emitt N_PART     # emittance + spin in one tracking run,
+#                                            #   SB with trims, 3T then 2T, 10000
+#                                            #   turns, seed 1. Add 'all' to also run
+#                                            #   the two no-trims lattices
+#   ./run_paper_campaign.sh da_ma_sb         # DA + MA, quantum radiation, 5000 turns:
+#                                            #   SB 3T/2T with and without trims, then
+#                                            #   solenoids off (~14 h)
+#   ./run_paper_campaign.sh da_ma_varsol     # the same for VarSol (~9.5 h; its DA
+#                                            #   grid has 1500 particles)
 #
 # Plan (paper/TODO.md, 2026-10-16): emitt 5000 on the remote machine (~2-3 days),
 # da_ma_sb and da_ma_varsol here on two nights.
