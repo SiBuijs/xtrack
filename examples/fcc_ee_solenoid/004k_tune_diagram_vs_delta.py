@@ -67,7 +67,7 @@ from xtrack.twiss import ClosedOrbitSearchError
 
 from aperture_study_io import (
     DATA_DIR,
-    PLOT_DIR,
+    PAPER_PLOT_DIR,
     RUN_PROVENANCE,
     UNKNOWN_PROVENANCE,
     old_lattice_path,
@@ -655,7 +655,7 @@ _SCAN_PROVENANCE = {}
 
 
 def _save_fig(fig, stem, data_provenance=None):
-    out_dir = PLOT_DIR / "Coupling_Studies" / "tune_diagram_vs_delta"
+    out_dir = PAPER_PLOT_DIR / "Tune_Diagrams"
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{stem}.pdf"
     fig.savefig(

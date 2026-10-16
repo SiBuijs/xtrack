@@ -198,6 +198,11 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   dirty flag, host, start time, command line) and every PDF saved through
   `save_figure_pdf` has the same in its Subject metadata (`pdfinfo`);
   `replot_from_npz` (via 012) handles DA, MA, EMIT, POL and TUNE.
+  Since 2026-10-16 the DA/MA/EMIT/POL/TUNE PDFs (and 004k's tune diagrams) go
+  to `~/cernbox/Pictures/FCC_Solenoid_Paper/` instead, by topic:
+  `DA_MA/Radiation_{mean,quantum,off}`, `Emittance`, `Spin`, `Tune_Diagrams`
+  (`paper_figure_dir`; override `FCC_SOLENOID_PAPER_PLOT_DIR`, and with only
+  `FCC_SOLENOID_PLOT_DIR` set they go to `PLOT_DIR/paper`).
 - `study_plots.py` (2026-10-16) — the figure functions for EMIT (014/018),
   POL (015/018) and TUNE (017), shared with the replot so a replotted figure
   is drawn by the same code. Change figure styling here, not in the scripts.

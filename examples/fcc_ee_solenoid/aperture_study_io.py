@@ -31,6 +31,45 @@ PLOT_DIR = Path(
         Path.home() / "cernbox" / "Pictures" / "FCC_Solenoid_Studies",
     )
 )
+# Paper figures (DA, MA, EMIT, POL, TUNE, and 004k's tune diagrams) go to the
+# paper folder, one subdirectory per topic -- see paper_figure_dir(). Override
+# with FCC_SOLENOID_PAPER_PLOT_DIR. Where only FCC_SOLENOID_PLOT_DIR is set
+# (remote boxes without CERNBox, test runs), they go to PLOT_DIR/paper so they
+# never land somewhere unexpected.
+if "FCC_SOLENOID_PAPER_PLOT_DIR" in os.environ:
+    PAPER_PLOT_DIR = Path(os.environ["FCC_SOLENOID_PAPER_PLOT_DIR"])
+elif "FCC_SOLENOID_PLOT_DIR" in os.environ:
+    PAPER_PLOT_DIR = PLOT_DIR / "paper"
+else:
+    PAPER_PLOT_DIR = Path.home() / "cernbox" / "Pictures" / "FCC_Solenoid_Paper"
+
+_PAPER_SUBDIRS = {
+    "EMIT": "Emittance",
+    "POL": "Spin",
+    "TUNE": "Tune_Diagrams",
+}
+
+
+def paper_figure_dir(stem: str) -> Path | None:
+    """Paper-folder subdirectory for a study figure, from its file stem:
+    DA/MA -> DA_MA/Radiation_<model> (from the 'rad<model>' tag; DA_MA itself
+    for files from before that tag), EMIT ->
+    Emittance, POL -> Spin, TUNE -> Tune_Diagrams. None for anything else,
+    which then stays in PLOT_DIR."""
+    study = stem.split("_", 1)[0]
+    if study in ("DA", "MA"):
+        model = next(
+            (token[3:] for token in stem.split("_")
+             if token in ("radoff", "radmean", "radquantum")),
+            None,
+        )
+        if model is None:
+            # Files from before the radiation tag: model not recorded.
+            return PAPER_PLOT_DIR / "DA_MA"
+        return PAPER_PLOT_DIR / "DA_MA" / f"Radiation_{model}"
+    if study in _PAPER_SUBDIRS:
+        return PAPER_PLOT_DIR / _PAPER_SUBDIRS[study]
+    return None
 
 
 
@@ -276,14 +315,14 @@ def _study_npz_path(stem: str) -> Path:
 
 
 def _study_pdf_path(stem: str) -> Path:
-    return PLOT_DIR / f"{stem}.pdf"
+    return (paper_figure_dir(stem) or PLOT_DIR) / f"{stem}.pdf"
 
 
 def save_figure_pdf(
     fig: plt.Figure, stem: str, *, data_provenance: dict[str, str] | None = None,
 ) -> Path:
-    PLOT_DIR.mkdir(parents=True, exist_ok=True)
     pdf_path = _study_pdf_path(stem)
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(
         pdf_path, bbox_inches="tight",
         metadata=pdf_metadata(data_provenance),

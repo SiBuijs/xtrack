@@ -30,7 +30,7 @@ Mention these paths in backticks (as here) rather than as `@`-imports, so they a
   - 004a templates → 004b install → 004c correct → 004d analysis;
   - 013 runs DA + MA + emittance + polarization (via 018).
 - Case flags: `--b0 {2.0,3.0}`, `--max-transverse-order N` (default 4), `--model {splineboris,varsol}`. Tags are threaded into every filename (`field_tag`, `order_tag` in `solenoid_params.py`).
-- Raw data goes to `data/` (gitignored), PDFs to `~/cernbox/Pictures/FCC_Solenoid_Studies`.
+- Raw data goes to `data/` (gitignored). Paper figures (DA, MA, EMIT, POL, TUNE, 004k tune diagrams) go to `~/cernbox/Pictures/FCC_Solenoid_Paper/<topic>/` (`aperture_study_io.paper_figure_dir`), all other PDFs to `~/cernbox/Pictures/FCC_Solenoid_Studies`.
 
 ## Conventions (use these everywhere, in code and text)
 
