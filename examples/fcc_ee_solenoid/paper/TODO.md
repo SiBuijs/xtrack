@@ -28,8 +28,9 @@ Canonical copy: `examples/fcc_ee_solenoid/paper/TODO.md` on branch `fcc_nonlocal
     - The irreproducibility came from a **rank-deficient optics match**: 15 knobs, 9 targets, condition number 3.7e7. xdeps' default `rcond = 1e-14` inverts the two near-null directions.
     - Fix: `OPTICS_RCOND = 1e-6` plus a staged pass 1, with no new targets.
     - This replaces the "beta-beat at sextupole → mid-bend quads" narrative of the September slides.
-- [ ] `SIM` Mid-bend trims off vs on (rcond fix active, 2 T and 3 T): compare Q″y, MA, max|k1|. If they aren't needed, the paper proposes **no new hardware**
-    - Q″y, max|k1| and convergence done 2026-10-15 (RESULTS L23–L26): the trims **are** needed at both fields. MA still to run on the `_notrims` lattices if the paper should show it; run with `013_run_da_and_ma.py --b0 {2.0,3.0} [--output-tag notrims] --da-cases sb_on --ma-cases sb_on --no-emitt` (tag added 2026-10-15; ~4–5 h per case at the 5000-turn default)
+- [x] `SIM` Mid-bend trims off vs on (rcond fix active, 2 T and 3 T): compare Q″y, MA, max|k1|. If they aren't needed, the paper proposes **no new hardware** → RESULTS L23–L26, L28–L29
+    - Q″y, max|k1| and convergence done 2026-10-15 (RESULTS L23–L26): the trims **are** needed at both fields.
+    - DA and MA (mean radiation, 5000 turns) done 2026-10-16 (L28–L29): DA unaffected. Without trims the 3T MA keeps every |δ| ≤ 0.0095 only up to x̂ = 2.9σx (7.3σx with trims). At 2T the trims make no difference to the MA at this grid resolution. Quantum reruns are listed under §4
 - [ ] `FIG` Singular values of the optics-match Jacobian (the gap between σ₇ ≈ 9.6 and σ₈ ≈ 4.9e-2), from `004g_coupling_svd_diagnostic.py` or 004c's diagnostics
 - [ ] `FIG` Q″y vs QD0→sdy1 phase error: the calibration (dQ″y/dμ = 2.42e7 left, 2.48e7 right, per unit tune of phase error, true Q″) and the 8 measured points. Note 10 reports agreement to ~0.2%. This explains the irreproducibility in one plot
 - [ ] `SIM` Show the sign flips of Q″y across repeated runs with `rcond = 1e-14`, and the stability with `1e-6`
@@ -37,6 +38,7 @@ Canonical copy: `examples/fcc_ee_solenoid/paper/TODO.md` on branch `fcc_nonlocal
 - [x] `CHECK` Commit the measurement scripts used for RESULTS L12–L18, L21–L22 (|C⁻|, Chao εy, closed-ring ET at the edges, IP/edge residuals) as a numbered script, so those rows can become `final` → `004n_figures_of_merit.py` (f071fb929); the rows are now `final`
 - [x] `CHECK` 004cc still carries a value-shift bug in its sextupole targets (note 10): fix it or retire 004cc → already fixed: the `sext` targets read betx/bety/dy at sdm1 correctly (checked 2026-10-15, 004cc lines 319–321); the bug was never committed (note 10). Note 10's other caveat stands: 004cc's chain B has no rcond
 - [ ] `WRITE` Scope decision: polarization (015/016/018 exist; note 05 says the tracked τ_depol has SNR ≈ 1). In the paper, or in the outlook?
+    - Decided 2026-10-16: keep running it together with the emittance study (018 tracks both in one go, at no extra cost). Whether the paper mentions it is decided later
 - [ ] `CHECK` εy definition: 014/018 use single-plane CS emittances, which are only approximate with coupling (00_overview, caveats). Switch to 4×4 eigen-emittances for the paper numbers
 
 ---
@@ -54,6 +56,7 @@ Canonical copy: `examples/fcc_ee_solenoid/paper/TODO.md` on branch `fcc_nonlocal
 - [ ] `WRITE` Write the εy budget paragraph from the information you already have (the IR solenoid's allowed share, and how 1.3 pm compares)
 - [ ] `READ` Find and state the DA requirement (injection) and its source
 - [ ] `READ` Find and state the MA requirement (injection δ = 0.0095, beamstrahlung tails, lifetime) and its source
+    - [ ] Also the injection amplitude (in σx) at which δ = 0.0095 has to survive: L29's verdict depends on it (3T without trims fails above 2.9σx)
 
 ## 1. Literature and prior art
 
@@ -159,7 +162,10 @@ Run each item for: solenoids off · 2 T · 3 T without mid-bend quads (to show t
 - [ ] `SIM` Orbit and vertical dispersion $D_y$ in the IR and around the ring
 - [ ] `SIM` Coupling: $\beta_{x2}/\beta_x$ and $\beta_{y1}/\beta_y$ along the straight; $|C^-|$ corrected vs uncorrected
 - [ ] `SIM` εy from Twiss and from tracking, with damping times (**the 2 T value is still missing**); decompose into coupling vs $D_y$ contributions
-- [ ] `SIM` DA with radiation (1000 particles, 10⁴ turns), **including 3 T after the mid-bend fix**
+- [ ] `SIM` DA with radiation (5000 turns, the default; the particle count follows from the grid in 009/010), **including 3 T after the mid-bend fix**
+    - Mean radiation done for SB-2T/3T with and without trims (L28–L29). Open:
+    - [ ] Solenoids off (`sb_off`) DA and MA at 5000 turns: the existing baseline runs used 10⁴ turns
+    - [ ] Quantum radiation (`--radiation quantum`) for all of the above, solenoids off included
     - Repo: `013_run_da_and_ma.py --b0 … [--max-transverse-order …]` runs DA + MA + emittance + polarization in one go (via 018). Pass `--seed` for reproducibility
 - [ ] `SIM` MA vs requirement, for all four configurations
 - [ ] `SIM` $\xi^{(1)}$ and $\xi^{(2)}$ in both planes, **including the baseline values for solenoids off and 2 T**
@@ -201,6 +207,8 @@ Run each item for: solenoids off · 2 T · 3 T without mid-bend quads (to show t
 - [ ] `FIG` DA comparison (contours overlaid in one plot rather than separate panels)
 - [ ] `FIG` MA comparison
 - [ ] `FIG` Tune footprint vs δ, before and after the mid-bend quads
+    - Styling done 2026-10-16 (004k, e867e7033). The "before" figure still uses the September lattice (`f89a90b2c`); consider the `_notrims` lattices instead, so before/after differ only in the trims and not also in the solver fix
+    - [ ] Replot into `~/cernbox/Pictures/FCC_Solenoid_Paper/Tune_Diagrams/` (`004k --replot`)
 - [ ] `FIG` β at sdm1r.0 before and after, plus the multi-start histogram
 - [ ] `FIG` Appendix: convergence log-log plot and symplecticity error
 - [ ] `FIG` Table 1: machine and solenoid parameters (E, Bρ, θc, a, L, B0, θ, compensation-solenoid parameters)
@@ -212,6 +220,9 @@ Run each item for: solenoids off · 2 T · 3 T without mid-bend quads (to show t
 - [ ] `CHECK` Replace "two orders of magnitude" with the exact factor (7.88×10⁻⁴ → 4.36×10⁻², ≈ ×55)
 - [ ] `CHECK` Fix the typo $\beta_{y2}/\beta_y$ → $\beta_{y1}/\beta_y$ (slide 20)
 - [ ] `CHECK` Tag the code and lattice versions behind every figure; keep the configs needed to reproduce them
+    - Since 584a6859e new figures and `.npz` data carry their commit, dirty flag, host and command line (`pdfinfo … | grep Subject`). Older figures in the paper folder are documented in `~/cernbox/Pictures/FCC_Solenoid_Paper/README.md`; keep it up to date as figures are added
+    - DA/MA/EMIT/POL/TUNE figures can be redrawn from data with `012_replot_aperture_from_data.py` (ac434e92c); figure styling lives in `study_plots.py`
+- [ ] `CHECK` Push `fcc_nonlocal_paper` and pull it on xsuite-sietse before the next remote runs (provenance stamping and replot changes of 2026-10-16)
 - [ ] `WRITE` Code and data availability statement
 - [ ] `WRITE` Acknowledgements (T. Pieloni, M. Seidel, V. Teotia for the field map; CHART funding)
 - [ ] `ASK` Check the FCC / CERN internal publication approval procedure and timeline
