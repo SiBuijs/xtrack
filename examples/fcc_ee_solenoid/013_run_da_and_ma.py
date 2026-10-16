@@ -113,6 +113,16 @@ def main():
         ),
     )
     parser.add_argument(
+        "--radiation",
+        choices=["off", "mean", "quantum"],
+        default=None,
+        help=(
+            "Radiation model forwarded to the DA and MA scripts' --radiation "
+            "(default: their own default, mean). The emittance + polarization "
+            "stage always tracks with quantum radiation."
+        ),
+    )
+    parser.add_argument(
         "--n-turns",
         type=int,
         metavar="N",
@@ -273,6 +283,9 @@ def main():
     if args.output_tag:
         da_args.extend(["--output-tag", args.output_tag])
         ma_args.extend(["--output-tag", args.output_tag])
+    if args.radiation is not None:
+        da_args.extend(["--radiation", args.radiation])
+        ma_args.extend(["--radiation", args.radiation])
     emitt_args.extend(["--max-transverse-order", str(args.max_transverse_order)])
     da_n_turns = args.da_n_turns if args.da_n_turns is not None else args.n_turns
     ma_n_turns = args.ma_n_turns if args.ma_n_turns is not None else args.n_turns
