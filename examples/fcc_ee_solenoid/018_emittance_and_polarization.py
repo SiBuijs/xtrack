@@ -73,20 +73,23 @@ EMIT_REFERENCE_DIVISOR = 3.0   # 014
 POL_REFERENCE_DIVISOR = 1.0    # 015
 
 
-def _lattice_paths(tag, order_tag_str=""):
+def _lattice_paths(tag, order_tag_str="", output_tag_str=""):
     # order_tag_str only applies to the SplineBoris path -- VariableSolenoid
     # is linear-only and has no transverse-order knob (see 00_overview.md).
+    # output_tag_str (004c --output-tag, e.g. '_notrims') applies to both.
     return (
-        HERE / f"fccee_z_lcc_splineboris_solenoids_coupling_corrected_{tag}{order_tag_str}.json",
-        HERE / f"fccee_z_lcc_varsol_solenoids_coupling_corrected_{tag}.json",
+        HERE / f"fccee_z_lcc_splineboris_solenoids_coupling_corrected_{tag}{order_tag_str}{output_tag_str}.json",
+        HERE / f"fccee_z_lcc_varsol_solenoids_coupling_corrected_{tag}{output_tag_str}.json",
     )
 
 
-def _build_cases(tag, order_tag_str=""):
+def _build_cases(tag, order_tag_str="", output_tag_str=""):
     """Build the case list for a given field_tag (e.g. '2T', '3T') and
     order_tag (e.g. '', '_o2' -- SplineBoris-only, see _lattice_paths)."""
-    splineboris_json, varsol_json = _lattice_paths(tag, order_tag_str)
-    sb_tag = f"{tag}{order_tag_str}"
+    splineboris_json, varsol_json = _lattice_paths(
+        tag, order_tag_str, output_tag_str)
+    sb_tag = f"{tag}{order_tag_str}{output_tag_str}"
+    varsol_tag = f"{tag}{output_tag_str}"
     return [
         dict(
             name="sb_on",
@@ -102,7 +105,7 @@ def _build_cases(tag, order_tag_str=""):
             lattice_json=varsol_json,
             with_solenoids=True,
             with_correctors=True,
-            title=f"VariableSolenoid ({tag}): solenoids powered + correction scheme",
+            title=f"VariableSolenoid ({varsol_tag}): solenoids powered + correction scheme",
         ),
         dict(
             name="sb_off",
@@ -651,6 +654,16 @@ def main():
     add_b0_argument(parser, default=MAIN_SOLENOID_B0)
     add_max_order_argument(parser)
     parser.add_argument(
+        "--output-tag",
+        default="",
+        metavar="TAG",
+        help=(
+            "Read the lattices written by 004c --output-tag TAG (e.g. notrims "
+            "-> ..._coupling_corrected_3T_notrims.json), for SB and VarSol. "
+            "The tag is also added to the saved file names."
+        ),
+    )
+    parser.add_argument(
         "--n-turns",
         type=int,
         default=N_TURNS,
@@ -749,7 +762,10 @@ def main():
 
     tag = field_tag(args.b0)
     order_tag_str = order_tag(args.max_transverse_order)
-    cases = _build_cases(tag, order_tag_str)
+    output_tag_str = f"_{args.output_tag}" if args.output_tag else ""
+    cases = _build_cases(tag, order_tag_str, output_tag_str)
+    # Saved file names carry both suffixes.
+    order_tag_str += output_tag_str
     cases_by_name = {case["name"]: case for case in cases}
 
     if args.list_cases:
