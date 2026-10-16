@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import os
+import shlex
+import socket
 import subprocess
+import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -24,6 +28,79 @@ PLOT_DIR = Path(
         Path.home() / "cernbox" / "Pictures" / "FCC_Solenoid_Studies",
     )
 )
+
+
+
+def _git_output(*args: str) -> str | None:
+    try:
+        return subprocess.run(
+            ["git", "-C", str(REPO_ROOT), *args],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
+def _capture_run_provenance() -> dict[str, str]:
+    """Commit, uncommitted-changes flag, host, start time and command line of
+    this run. Taken once at import (i.e. when the run starts), so edits made
+    while a long run is going don't end up in its record."""
+    commit = _git_output("rev-parse", "--short", "HEAD")
+    status = _git_output("status", "--porcelain", "--untracked-files=no")
+    if status is None:
+        dirty = "unknown"
+    else:
+        dirty = "yes" if status else "no"
+    return dict(
+        commit=commit or "unknown",
+        dirty=dirty,
+        host=socket.gethostname(),
+        started=datetime.now().isoformat(timespec="seconds"),
+        command=shlex.join(["python", *sys.argv]),
+    )
+
+
+RUN_PROVENANCE = _capture_run_provenance()
+# Stand-in for data saved before provenance was recorded.
+UNKNOWN_PROVENANCE = {key: "unknown" for key in RUN_PROVENANCE}
+
+
+def provenance_string(provenance: dict[str, str]) -> str:
+    return (
+        f"commit={provenance['commit']} dirty={provenance['dirty']} "
+        f"host={provenance['host']} started={provenance['started']} "
+        f"cmd={provenance['command']}"
+    )
+
+
+def pdf_metadata(data_provenance: dict[str, str] | None = None) -> dict[str, str]:
+    """PDF metadata recording how the figure was made. Read it back with
+    `pdfinfo file.pdf` (Subject line). When the figure is redrawn from saved
+    data, `data_provenance` is the run that produced the data and the current
+    run is recorded as the plotting run."""
+    if data_provenance is None or data_provenance == RUN_PROVENANCE:
+        subject = provenance_string(RUN_PROVENANCE)
+    else:
+        subject = (
+            f"data: {provenance_string(data_provenance)} | "
+            f"plotted: {provenance_string(RUN_PROVENANCE)}"
+        )
+    return {"Subject": subject}
+
+
+def _savez_with_provenance(npz_path: Path, **arrays) -> None:
+    for key, value in RUN_PROVENANCE.items():
+        arrays[f"provenance_{key}"] = value
+    np.savez(npz_path, **arrays)
+
+
+def provenance_from_npz(data) -> dict[str, str] | None:
+    """Provenance stored by _savez_with_provenance, or UNKNOWN_PROVENANCE for
+    files saved before it existed."""
+    if "provenance_commit" not in data.files:
+        return UNKNOWN_PROVENANCE
+    return {key: str(data[f"provenance_{key}"]) for key in RUN_PROVENANCE}
+
 
 ModelTag = Literal["SB", "VarSol"]
 StudyTag = Literal["DA", "MA", "EMIT", "POL", "TUNE"]
@@ -199,10 +276,15 @@ def _study_pdf_path(stem: str) -> Path:
     return PLOT_DIR / f"{stem}.pdf"
 
 
-def save_figure_pdf(fig: plt.Figure, stem: str) -> Path:
+def save_figure_pdf(
+    fig: plt.Figure, stem: str, *, data_provenance: dict[str, str] | None = None,
+) -> Path:
     PLOT_DIR.mkdir(parents=True, exist_ok=True)
     pdf_path = _study_pdf_path(stem)
-    fig.savefig(pdf_path, bbox_inches="tight")
+    fig.savefig(
+        pdf_path, bbox_inches="tight",
+        metadata=pdf_metadata(data_provenance),
+    )
     print(f"Saved plot: {pdf_path}")
     return pdf_path
 
@@ -285,7 +367,7 @@ def save_da_study(
         sext_window_order=int(sext_window_order),
     )
     npz_path = _study_npz_path(stem)
-    np.savez(npz_path, **arrays)
+    _savez_with_provenance(npz_path, **arrays)
     print(f"Saved DA data: {npz_path}")
 
     pdf_path = save_figure_pdf(fig, stem)
@@ -374,7 +456,7 @@ def save_ma_study(
         sext_window_order=int(sext_window_order),
     )
     npz_path = _study_npz_path(stem)
-    np.savez(npz_path, **arrays)
+    _savez_with_provenance(npz_path, **arrays)
     print(f"Saved MA data: {npz_path}")
 
     pdf_path = save_figure_pdf(fig, stem)
@@ -449,7 +531,7 @@ def save_emitt_study(
             np.nan if bunch_emitt_divisor is None else float(bunch_emitt_divisor)),
     )
     npz_path = _study_npz_path(stem)
-    np.savez(npz_path, **arrays)
+    _savez_with_provenance(npz_path, **arrays)
     print(f"Saved EMIT data: {npz_path}")
 
     pdf_path = save_figure_pdf(fig, stem)
@@ -539,7 +621,7 @@ def save_pol_study(
             np.nan if bunch_emitt_divisor is None else float(bunch_emitt_divisor)),
     )
     npz_path = _study_npz_path(stem)
-    np.savez(npz_path, **arrays)
+    _savez_with_provenance(npz_path, **arrays)
     print(f"Saved POL data: {npz_path}")
 
     pdf_path = save_figure_pdf(fig, stem)
@@ -635,7 +717,7 @@ def save_tune_study(
         sexamp=float(sexamp),
     )
     npz_path = _study_npz_path(stem)
-    np.savez(npz_path, **arrays)
+    _savez_with_provenance(npz_path, **arrays)
     print(f"Saved TUNE data: {npz_path}")
 
     pdf_path = save_figure_pdf(fig, stem)
@@ -751,7 +833,9 @@ def replot_from_npz(npz_path: Path | str, *, show: bool = False) -> Path:
         else:
             raise ValueError(f"Unrecognized study prefix in {npz_path.name}")
 
-        pdf_path = save_figure_pdf(fig, npz_path.stem)
+        pdf_path = save_figure_pdf(
+            fig, npz_path.stem, data_provenance=provenance_from_npz(data),
+        )
 
     if show:
         plt.show()

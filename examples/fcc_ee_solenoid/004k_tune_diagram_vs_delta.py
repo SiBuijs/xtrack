@@ -57,7 +57,14 @@ import numpy as np
 import xtrack as xt
 from xtrack.twiss import ClosedOrbitSearchError
 
-from aperture_study_io import DATA_DIR, PLOT_DIR, old_lattice_path
+from aperture_study_io import (
+    DATA_DIR,
+    PLOT_DIR,
+    RUN_PROVENANCE,
+    UNKNOWN_PROVENANCE,
+    old_lattice_path,
+    pdf_metadata,
+)
 from lattice_knobs import robust_twiss, set_lattice_knobs
 from solenoid_params import add_max_order_argument, field_tag, order_tag
 
@@ -589,11 +596,18 @@ def _data_path(generation="current"):
     )
 
 
-def _save_fig(fig, stem):
+# Provenance of the run that produced each generation's scan, so a --replot
+# figure records the scanning run rather than only the replotting one.
+_SCAN_PROVENANCE = {}
+
+
+def _save_fig(fig, stem, data_provenance=None):
     out_dir = PLOT_DIR / "Coupling_Studies" / "tune_diagram_vs_delta"
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{stem}.pdf"
-    fig.savefig(path, bbox_inches="tight")
+    fig.savefig(
+        path, bbox_inches="tight", metadata=pdf_metadata(data_provenance)
+    )
     print(f"Saved plot: {path}")
     return path
 
@@ -613,7 +627,13 @@ def _load_or_scan(generation, *, with_bare):
             )
         print(f"--replot: loading saved scan data from {data_path}")
         with open(data_path, "rb") as f:
-            return pickle.load(f)
+            saved = pickle.load(f)
+        # Older pickles hold the bare case list, without provenance.
+        if isinstance(saved, dict):
+            _SCAN_PROVENANCE[generation] = saved["provenance"]
+            return saved["cases"]
+        _SCAN_PROVENANCE[generation] = UNKNOWN_PROVENANCE
+        return saved
 
     scan_kw = dict(
         n_delta=_args.n_delta,
@@ -628,8 +648,9 @@ def _load_or_scan(generation, *, with_bare):
         cases.append(_scan_case(B0_VALUES[0], "bare", **scan_kw))
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     with open(data_path, "wb") as f:
-        pickle.dump(cases, f)
+        pickle.dump({"cases": cases, "provenance": RUN_PROVENANCE}, f)
     print(f"Saved scan data: {data_path}")
+    _SCAN_PROVENANCE[generation] = RUN_PROVENANCE
     return cases
 
 
@@ -692,7 +713,7 @@ def main():
             max_resonance_order=_args.max_resonance_order,
             qx_lim=qx_lim, qy_lim=qy_lim,
         )
-        _save_fig(fig, base_stem)
+        _save_fig(fig, base_stem, _SCAN_PROVENANCE.get("current"))
         if not _args.no_show:
             plt.show()
         return
@@ -733,7 +754,9 @@ def main():
         qx_lim=qx_lim, qy_lim=qy_lim,
         generation_note=f"old ring, {OLD_REV} (pre cut-bends, pre conditioning fix)",
     )
-    _save_fig(fig_old, f"{base_stem}_old-{OLD_REV}")
+    _save_fig(
+        fig_old, f"{base_stem}_old-{OLD_REV}", _SCAN_PROVENANCE.get("old")
+    )
 
     fig_new = _plot_tune_diagram(
         cases,
@@ -741,7 +764,10 @@ def main():
         qx_lim=qx_lim, qy_lim=qy_lim,
         generation_note=f"current ring, on the {OLD_REV} window",
     )
-    _save_fig(fig_new, f"{base_stem}_new_vs_old-{OLD_REV}")
+    _save_fig(
+        fig_new, f"{base_stem}_new_vs_old-{OLD_REV}",
+        _SCAN_PROVENANCE.get("current"),
+    )
 
     if not _args.no_show:
         plt.show()
