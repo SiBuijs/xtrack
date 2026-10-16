@@ -398,7 +398,7 @@ def _scan_case(b0, config, *, n_delta, delta_max, order_tag_str,
         f"Scanned {n_delta} delta values in [{-delta_max:.4g}, {delta_max:.4g}] "
         f"({n_failed} failed/skipped)"
     )
-    label = f"{tag} corrected" if solenoids_on else "bare (design ring)"
+    label = f"{tag} corrected" if solenoids_on else BARE_LABEL
     return dict(
         b0=float(b0),
         field_tag=tag,
@@ -415,6 +415,17 @@ def _scan_case(b0, config, *, n_delta, delta_max, order_tag_str,
 # --------------------------------------------------------------------------- #
 # Plotting
 # --------------------------------------------------------------------------- #
+BARE_LABEL = "No solenoids"
+
+
+def _case_label(case):
+    # The bare label is set here rather than taken from the case, so pickles
+    # saved with the old "bare (design ring)" label replot with the current one.
+    if case["config"] == "bare":
+        return BARE_LABEL
+    return case.get("label") or f"{case['field_tag']} {case['config']}"
+
+
 def _case_marker(field_tag_str, config):
     if config == "bare":
         return "s"
@@ -493,7 +504,7 @@ def _plot_tune_diagram(cases, *, max_resonance_order, qx_lim, qy_lim,
         qx = case["qx"]
         qy = case["qy"]
         finite = np.isfinite(qx) & np.isfinite(qy)
-        label = case.get("label") or f"{case['field_tag']} {case['config']}"
+        label = _case_label(case)
         if finite.sum() < 1:
             print(f"  WARNING: {label} has no converged points -- footprint not drawn.")
             continue
@@ -502,7 +513,7 @@ def _plot_tune_diagram(cases, *, max_resonance_order, qx_lim, qy_lim,
             qx[finite], qy[finite],
             c=d[finite], cmap=cmap, norm=norm,
             marker=mk, s=28,
-            edgecolors="k" if case["config"] == "corrected" else "none",
+            edgecolors="k",
             linewidths=0.3,
             zorder=3,
         )
@@ -525,7 +536,10 @@ def _plot_tune_diagram(cases, *, max_resonance_order, qx_lim, qy_lim,
                 zorder=4,
             )
         marker_handles.append(
-            plt.Line2D([], [], marker=mk, ls="none", color="0.3", label=label)
+            plt.Line2D(
+                [], [], marker=mk, ls="none",
+                color="0.3", markeredgecolor="k", label=label,
+            )
         )
     marker_handles.append(
         plt.Line2D(
@@ -559,13 +573,27 @@ def _plot_tune_diagram(cases, *, max_resonance_order, qx_lim, qy_lim,
     if generation_note is not None:
         title += f"\n{generation_note}"
     ax.set_title(title, fontsize=10)
-    leg1 = ax.legend(
-        handles=res_handles, title="resonance order",
-        loc="upper left", fontsize=8, framealpha=0.9,
-    )
-    ax.add_artist(leg1)
-    ax.legend(handles=marker_handles, loc="lower right", fontsize=8, framealpha=0.9)
     fig.tight_layout()
+    # Both legends in the top-right corner: resonance orders in the corner,
+    # the marker legend directly to its left, top edges aligned. The marker
+    # legend's anchor needs the drawn width of the order legend, hence the
+    # draw after tight_layout (which fixes the axes size).
+    leg_orders = ax.legend(
+        handles=res_handles, title="resonance order",
+        loc="upper right", fontsize=8, framealpha=0.9,
+    )
+    ax.add_artist(leg_orders)
+    fig.canvas.draw()
+    orders_box = leg_orders.get_window_extent().transformed(
+        ax.transAxes.inverted()
+    )
+    ax.legend(
+        handles=marker_handles,
+        loc="upper right",
+        bbox_to_anchor=(orders_box.x0 - 0.01, orders_box.y1),
+        borderaxespad=0.0,
+        fontsize=8, framealpha=0.9,
+    )
     return fig
 
 
@@ -666,7 +694,7 @@ def _report_spans(cases, heading):
         qy = case["qy"]
         finite = np.isfinite(case["qx"]) & np.isfinite(qy)
         if finite.sum() < 1:
-            print(f"  {case['label']:<22s}  (no converged points)")
+            print(f"  {_case_label(case):<22s}  (no converged points)")
             continue
         i0 = _nearest_delta_index(d, finite, 0.0)
         i1 = _nearest_delta_index(d, finite, MARK_DELTA)
@@ -674,7 +702,7 @@ def _report_spans(cases, heading):
         qy1 = f"{qy[i1]:.5f}" if i1 is not None else "--"
         span = float(qy[finite].max() - qy[finite].min())
         print(
-            f"  {case['label']:<22s}  Qy(0) = {qy0:>9s}  "
+            f"  {_case_label(case):<22s}  Qy(0) = {qy0:>9s}  "
             f"Qy({MARK_DELTA:g}) = {qy1:>9s}  span = {span:.4f}  "
             f"({int(finite.sum())}/{len(d)} converged)"
         )
