@@ -207,8 +207,8 @@ Run each item for: solenoids off · 2 T · 3 T without mid-bend quads (to show t
 - [ ] `FIG` DA comparison (contours overlaid in one plot rather than separate panels)
 - [ ] `FIG` MA comparison
 - [ ] `FIG` Tune footprint vs δ, before and after the mid-bend quads
-    - Styling done 2026-10-16 (004k, e867e7033). The "before" figure still uses the September lattice (`f89a90b2c`); consider the `_notrims` lattices instead, so before/after differ only in the trims and not also in the solver fix
-    - [ ] Replot into `~/cernbox/Pictures/FCC_Solenoid_Paper/Tune_Diagrams/` (`004k --replot`)
+    - 004k now draws the pair by default: `_notrims` vs standard lattices (same solver, so they differ only in the trims), on one shared window → `tune_diagram_vs_delta_2T3T_n61_dmax0p015_ord3_{notrims,trims}.pdf` (2026-10-16). Qy span over δ = ±0.015: 0.64 / 1.21 without trims vs 0.14 / 0.35 with (2T / 3T)
+    - [ ] Copy into `~/cernbox/Pictures/FCC_Solenoid_Paper/Tune_Diagrams/` (redraw: `004k --replot`)
 - [ ] `FIG` β at sdm1r.0 before and after, plus the multi-start histogram
 - [ ] `FIG` Appendix: convergence log-log plot and symplecticity error
 - [ ] `FIG` Table 1: machine and solenoid parameters (E, Bρ, θc, a, L, B0, θ, compensation-solenoid parameters)

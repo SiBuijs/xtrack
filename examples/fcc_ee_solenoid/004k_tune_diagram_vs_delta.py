@@ -40,6 +40,14 @@ this coupled optics -- they are recorded as NaN, reported, and skipped, same as
 017_tune_vs_delta.py. The old rings fail more often than the current ones, which
 is itself a statement about how well they closed.
 
+By default two figures are made: the corrected rings **without** the mid-bend
+trims (the ``_notrims`` lattices of ``004c --no-midbend-trims --output-tag
+notrims``) and **with** them (the standard lattices), sharing one window fitted
+to both footprints, so the two are drawn on identical horizontal and vertical
+scales. The bare footprint is drawn on both (with the solenoids off, every
+corrector and trim is gated to zero, so it is the same ring). ``--trims-only``
+makes the single with-trims figure instead.
+
 The (expensive) scan result is pickled to ``aperture_study_io.DATA_DIR``; rerun
 with ``--replot`` (same ``--b0`` / ``--max-transverse-order`` / ``--no-bare`` /
 ``--n-delta`` / ``--delta-max``) to regenerate the figure without re-twissing.
@@ -152,6 +160,12 @@ _parser.add_argument(
     "--no-bare",
     action="store_true",
     help="Skip the solenoids-OFF baseline (design-ring) footprints.",
+)
+_parser.add_argument(
+    "--trims-only",
+    action="store_true",
+    help="Make only the with-trims figure, instead of the default pair "
+    "(without / with mid-bend trims, on one shared window).",
 )
 _parser.add_argument(
     "--vs-old",
@@ -328,16 +342,25 @@ def _resolve_lattice(b0, order_tag_str, generation):
         return old_lattice_path(
             OLD_REV, LATTICE_NAME_TEMPLATE.format(tag=field_tag(b0), order="")
         )
+    suffix = "_notrims" if generation == "notrims" else ""
     path = HERE / LATTICE_NAME_TEMPLATE.format(
-        tag=field_tag(b0), order=order_tag_str
+        tag=field_tag(b0), order=order_tag_str + suffix
     )
     if not path.exists():
-        raise SystemExit(
-            f"Missing lattice: {path.name}\n"
-            f"Build it via 004b_install_solenoids_in_fcc_ring.py --b0 {b0:g} "
-            "[--max-transverse-order N] then "
-            f"004c_correct_solenoids_in_fcc_ring.py --b0 {b0:g} [--max-transverse-order N]."
-        )
+        if generation == "notrims":
+            build = (
+                f"004c_correct_solenoids_in_fcc_ring.py --b0 {b0:g} "
+                "[--max-transverse-order N] --no-midbend-trims "
+                '--output-tag notrims --input-tag ""'
+            )
+        else:
+            build = (
+                f"004b_install_solenoids_in_fcc_ring.py --b0 {b0:g} "
+                "[--max-transverse-order N] then "
+                f"004c_correct_solenoids_in_fcc_ring.py --b0 {b0:g} "
+                "[--max-transverse-order N]"
+            )
+        raise SystemExit(f"Missing lattice: {path.name}\nBuild it via {build}.")
     return path
 
 
@@ -347,7 +370,8 @@ def _scan_case(b0, config, *, n_delta, delta_max, order_tag_str,
 
     ``config`` is "corrected" (solenoids + correctors on) or "bare"
     (solenoids off -- the design ring). ``generation`` is "current" (the
-    working-tree lattice) or "old" (read from git at OLD_REV). Returns a dict
+    working-tree lattice), "notrims" (the working-tree lattice built without
+    the mid-bend trims) or "old" (read from git at OLD_REV). Returns a dict
     with the delta grid and the qx/qy arrays (NaN where the twiss did not
     converge).
     """
@@ -574,23 +598,22 @@ def _plot_tune_diagram(cases, *, max_resonance_order, qx_lim, qy_lim,
         title += f"\n{generation_note}"
     ax.set_title(title, fontsize=10)
     fig.tight_layout()
-    # Both legends in the top-right corner: resonance orders in the corner,
-    # the marker legend directly to its left, top edges aligned. The marker
-    # legend's anchor needs the drawn width of the order legend, hence the
+    # Both legends in the top-left corner: the marker legend in the corner,
+    # the resonance orders directly to its right, top edges aligned. The order
+    # legend's anchor needs the drawn width of the marker legend, hence the
     # draw after tight_layout (which fixes the axes size).
-    leg_orders = ax.legend(
-        handles=res_handles, title="resonance order",
-        loc="upper right", fontsize=8, framealpha=0.9,
+    leg_markers = ax.legend(
+        handles=marker_handles, loc="upper left", fontsize=8, framealpha=0.9,
     )
-    ax.add_artist(leg_orders)
+    ax.add_artist(leg_markers)
     fig.canvas.draw()
-    orders_box = leg_orders.get_window_extent().transformed(
+    markers_box = leg_markers.get_window_extent().transformed(
         ax.transAxes.inverted()
     )
     ax.legend(
-        handles=marker_handles,
-        loc="upper right",
-        bbox_to_anchor=(orders_box.x0 - 0.01, orders_box.y1),
+        handles=res_handles, title="resonance order",
+        loc="upper left",
+        bbox_to_anchor=(markers_box.x1 + 0.01, markers_box.y1),
         borderaxespad=0.0,
         fontsize=8, framealpha=0.9,
     )
@@ -617,7 +640,9 @@ def _data_path(generation="current"):
     reused and only the old one has to be paid for, once.
     """
     b0_tag, order_tag_str, bare_tag, scan_tag = _tags()
-    gen_tag = "" if generation == "current" else f"_old-{OLD_REV}"
+    gen_tag = {
+        "current": "", "notrims": "_notrims", "old": f"_old-{OLD_REV}",
+    }[generation]
     return DATA_DIR / (
         f"tune_diagram_vs_delta_{b0_tag}{order_tag_str}{bare_tag}_{scan_tag}"
         f"{gen_tag}.pkl"
@@ -650,7 +675,7 @@ def _load_or_scan(generation, *, with_bare):
                 f"--replot: no saved scan at {data_path}\n"
                 "Run once without --replot (same --b0 / --max-transverse-order "
                 "/ --no-bare / --n-delta / --delta-max"
-                + (" / --old-rev" if generation != "current" else "")
+                + (" / --old-rev" if generation == "old" else "")
                 + ") to create it."
             )
         print(f"--replot: loading saved scan data from {data_path}")
@@ -714,6 +739,48 @@ def _all_failed(cases):
     )
 
 
+def _plot_trims_pair(cases, base_stem):
+    """Without / with mid-bend trims, on one window fitted to both footprints.
+
+    The no-trims rings are scanned with solenoids on only; the bare footprint
+    (from the with-trims lattice) is drawn on both figures, since with the
+    solenoids off every corrector and trim is gated to zero.
+    """
+    notrims_cases = _load_or_scan("notrims", with_bare=False)
+    if _all_failed(notrims_cases):
+        raise SystemExit(
+            "Every no-trims case failed to converge at all delta points -- "
+            "reduce --delta-max or raise --n-delta."
+        )
+    bare_cases = [c for c in cases if c["config"] == "bare"]
+    notrims_cases = notrims_cases + bare_cases
+
+    _report_spans(notrims_cases, "Without mid-bend trims:")
+    _report_spans(cases, "With mid-bend trims:")
+
+    # One window for both figures: identical horizontal and vertical scales.
+    qx_lim, qy_lim = _compute_window(
+        notrims_cases + cases, pad=_args.pad,
+        qx_range=_args.qx_range, qy_range=_args.qy_range,
+    )
+    print(
+        f"\nShared window (fitted to both footprints): "
+        f"Qx {qx_lim[0]:.4f}..{qx_lim[1]:.4f}, "
+        f"Qy {qy_lim[0]:.4f}..{qy_lim[1]:.4f}"
+    )
+    for generation, gen_cases, note, suffix in (
+        ("notrims", notrims_cases, "without mid-bend trims", "_notrims"),
+        ("current", cases, "with mid-bend trims", "_trims"),
+    ):
+        fig = _plot_tune_diagram(
+            gen_cases,
+            max_resonance_order=_args.max_resonance_order,
+            qx_lim=qx_lim, qy_lim=qy_lim,
+            generation_note=note,
+        )
+        _save_fig(fig, f"{base_stem}{suffix}", _SCAN_PROVENANCE.get(generation))
+
+
 def main():
     b0_tag, order_tag_str, bare_tag, scan_tag = _tags()
     base_stem = (
@@ -729,6 +796,12 @@ def main():
         )
 
     plt.close("all")
+
+    if not _args.vs_old and not _args.trims_only:
+        _plot_trims_pair(cases, base_stem)
+        if not _args.no_show:
+            plt.show()
+        return
 
     if not _args.vs_old:
         _report_spans(cases, "Current ring:")
