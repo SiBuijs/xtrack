@@ -11,8 +11,7 @@
 #   ./run_paper_campaign.sh da_ma_sb         # DA + MA, quantum radiation, 5000 turns:
 #                                            #   SB 3T/2T with and without trims, then
 #                                            #   solenoids off (~14 h)
-#   ./run_paper_campaign.sh da_ma_varsol     # the same for VarSol (~9.5 h; its DA
-#                                            #   grid has 1500 particles)
+#   ./run_paper_campaign.sh da_ma_varsol     # the same for VarSol (~6.5 h)
 #
 # Plan (paper/TODO.md, 2026-10-16): emitt 5000 on the remote machine (~2-3 days),
 # da_ma_sb and da_ma_varsol here on two nights.

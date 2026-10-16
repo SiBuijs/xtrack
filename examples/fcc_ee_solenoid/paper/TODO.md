@@ -169,7 +169,7 @@ Run each item for: solenoids off · 2 T · 3 T without mid-bend quads (to show t
     - Weekend runs cancelled (power cut, 2026-10-17/18). Plan from Monday 2026-10-19, all through `run_paper_campaign.sh` (dry run first with `CAMPAIGN_TEST=1`):
     - [ ] Remote: `calibrate`, then emittance + spin in one tracking run (018 via `emitt 5000`): SB with trims, **3T then 2T**, 5000 particles, 10⁴ turns, seed 1. ~2 × 32 h at PCBE17534 speed, so ~2–3 days remotely; this machine stays free
     - [ ] Here, night 1: DA/MA quantum, SB 2T/3T with and without trims, plus solenoids off (`da_ma_sb`, ~14 h: start early in the evening)
-    - [ ] Here, night 2: DA/MA quantum, VarSol 2T/3T with and without trims (`da_ma_varsol`, ~9.5 h: the VarSol DA grid has 1500 particles vs 750 for SB)
+    - [ ] Here, night 2: DA/MA quantum, VarSol 2T/3T with and without trims (`da_ma_varsol`, ~6.5 h; VarSol DA grid reduced to 750 points like SB, 2026-10-16)
     - Emittance + spin without trims dropped (decision 2026-10-16): the trims were introduced to restore the MA, and everything after that uses the trimmed lattice. `emitt N_PART all` still runs them if needed
     - Repo: `013_run_da_and_ma.py --b0 … [--max-transverse-order …]` runs DA + MA + emittance + polarization in one go (via 018). Pass `--seed` for reproducibility
 - [ ] `SIM` MA vs requirement, for all four configurations

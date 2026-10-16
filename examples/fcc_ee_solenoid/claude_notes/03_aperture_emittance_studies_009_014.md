@@ -133,8 +133,8 @@ subprocesses with a shared CLI.
   010 says it "has a column-length bug for single delta" — i.e. 010
   intentionally avoids the shared helper). `theta in [0, pi/2]`
   (quarter-plane fan), per-case `nn_y_r`/`nn_x_theta` (sb_on: 25x30,
-  varsol_on: 30x50, sb_off: 25x30 — VarSol gets a finer grid, presumably
-  because its DA boundary needed more resolution).
+  varsol_on: 30x50 until 2026-10-16, now 25x30 like the others, so SB and
+  VarSol DA plots share one grid and the VarSol runs cost half as much).
 - **Grid-geometry history, both changes made 2026-07-13** (worth knowing
   both steps, not just the current state, since the first "fix" looked
   correct but produced a useless plot):

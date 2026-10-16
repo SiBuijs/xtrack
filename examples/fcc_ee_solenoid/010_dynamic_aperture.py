@@ -82,8 +82,10 @@ def _build_da_cases(tag, order_tag_str="", output_tag_str=""):
             with_solenoids=True,
             with_correctors=True,
             title=f"VariableSolenoid ({varsol_tag}): solenoids powered + correction scheme",
-            nn_y_r=30,
-            nn_x_theta=50,
+            # Same 25 x 30 = 750-point grid as SB (was 30 x 50 = 1500 until
+            # 2026-10-16), so the two models' DA plots are directly comparable.
+            nn_y_r=25,
+            nn_x_theta=30,
         ),
         dict(
             name="sb_off",
