@@ -1,7 +1,7 @@
 """Figures of merit of a corrected 004c lattice, for paper/RESULTS.md.
 
-Reads `fccee_z_lcc_splineboris_solenoids_coupling_corrected_{tag}.json` and
-writes nothing but a JSON summary to `data/figures_of_merit/`. Three knob
+Reads `fccee_z_lcc_{splineboris,varsol}_solenoids_coupling_corrected_{tag}.json`
+(`--model`, as 004c) and writes nothing but a JSON summary to `data/figures_of_merit/`. Three knob
 states of the same lattice (`lattice_knobs.set_lattice_knobs`): `on`
 (solenoids + corrections), `nocorr` (solenoids on, every correction knob off,
 compensation solenoids and doublet rotation included) and `off` (the bare
@@ -32,7 +32,7 @@ For `on`, against `off` (corrected - bare, closed ring):
   between the two edges, normalised with the bare W matrices.
 
 Usage: python 004n_figures_of_merit.py --b0 3.0 [--max-transverse-order N]
-       [--output-tag TAG]
+       [--output-tag TAG] [--model {splineboris,varsol}]
 """
 import argparse
 import json
@@ -61,14 +61,23 @@ add_b0_argument(parser, default=MAIN_SOLENOID_B0)
 add_max_order_argument(parser)
 parser.add_argument('--output-tag', default='',
                     help='Same as 004c --output-tag: selects the lattice.')
+parser.add_argument('--model', default='splineboris',
+                    choices=['splineboris', 'varsol'],
+                    help='Same as 004c --model (default: splineboris).')
 args = parser.parse_args()
 
-TAG = (f'{field_tag(args.b0)}{order_tag(args.max_transverse_order)}'
-       + (f'_{args.output_tag}' if args.output_tag else ''))
+OUTPUT_TAG = f'_{args.output_tag}' if args.output_tag else ''
+if args.model == 'splineboris':
+    TAG = f'{field_tag(args.b0)}{order_tag(args.max_transverse_order)}{OUTPUT_TAG}'
+    OUT_STEM = f'figures_of_merit_{TAG}'
+else:
+    # VarSol is linear-only: no transverse-order tag (as 004c).
+    TAG = f'{field_tag(args.b0)}{OUTPUT_TAG}'
+    OUT_STEM = f'figures_of_merit_varsol_{TAG}'
 LATTICE_JSON = (
-    HERE / f'fccee_z_lcc_splineboris_solenoids_coupling_corrected_{TAG}.json')
+    HERE / f'fccee_z_lcc_{args.model}_solenoids_coupling_corrected_{TAG}.json')
 OUT_DIR = HERE / 'data' / 'figures_of_merit'
-OUT_JSON = OUT_DIR / f'figures_of_merit_{TAG}.json'
+OUT_JSON = OUT_DIR / f'{OUT_STEM}.json'
 
 CHROM_POINTS = 21
 ARC_MIN_DISTANCE = 1500.0  # m from the nearest IP
