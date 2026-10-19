@@ -19,16 +19,29 @@ from solenoid_params import (
 
 _parser = argparse.ArgumentParser(
     description='Analyze and plot the corrected SplineBoris FCC lattice.')
+_parser.add_argument(
+    '--model',
+    choices=['splineboris', 'partialmap'],
+    default='splineboris',
+    help='Lattice to analyse (default: splineboris, 2 T and 3 T). partialmap = '
+         'the 2 T BNL field map up to 2.4 m from each IP (004b/004c '
+         '--model partialmap); needs --b0 2.0, analyses 2 T only and saves to '
+         'Coupling_Studies_partialmap/.',
+)
 add_b0_argument(_parser, default=MAIN_SOLENOID_B0)
 add_max_order_argument(_parser)
 _args = _parser.parse_args()
+PARTIALMAP = _args.model == 'partialmap'
+if PARTIALMAP and _args.b0 != 2.0:
+    raise SystemExit('--model partialmap is the 2 T BNL field map: use --b0 2.0.')
 FIELD_TAG = field_tag(_args.b0)
-ORDER_TAG = order_tag(_args.max_transverse_order)
+# The map's fit order is fixed in 004b, so --max-transverse-order does not apply.
+ORDER_TAG = '' if PARTIALMAP else order_tag(_args.max_transverse_order)
 
 HERE = Path(__file__).parent
 INPUT_LATTICE_JSON = (
     HERE / (
-        'fccee_z_lcc_splineboris_solenoids_coupling_corrected_'
+        f'fccee_z_lcc_{_args.model}_solenoids_coupling_corrected_'
         f'{FIELD_TAG}{ORDER_TAG}.json'
     )
 )
@@ -327,10 +340,12 @@ def _compute_ir_markers(table, uncut_line, tw, ip_plot, b0):
     """
     s_ip_ref = table['s', ip_plot]
 
-    main_range = _shrink_to_physical_extent(
-        _region_s_extent(table, s_ip_ref, f'sol_slice_{ip_plot}_'),
-        2 * half_length_for_b0(b0),
-    )
+    main_range = _region_s_extent(table, s_ip_ref, f'sol_slice_{ip_plot}_')
+    # The map has no engineering length to shrink to: its field fills the
+    # whole slice chain (|s| <= 2.399 m, tapered over the last 0.15 m).
+    if not PARTIALMAP:
+        main_range = _shrink_to_physical_extent(
+            main_range, 2 * half_length_for_b0(b0))
     comp_ranges = [
         _shrink_to_physical_extent(
             _region_s_extent(table, s_ip_ref, f'comp_sol_slice_left_{ip_plot}_'),
@@ -499,7 +514,8 @@ ax5.set_xlim(-20, 20)
 # 2T vs 3T betx2/bety1 comparison figure #
 ###########################################
 
-COMPARISON_TAGS = ['2T', '3T']
+# There is no 3 T map, so the partialmap run has the 2 T panel only.
+COMPARISON_TAGS = [FIELD_TAG] if PARTIALMAP else ['2T', '3T']
 COMPARISON_B0_BY_TAG = {'2T': 2.0, '3T': 3.0}
 
 
@@ -1230,7 +1246,8 @@ for _tag, (_tw_c, _, _, _, _tw_nc) in zip(COMPARISON_TAGS, _TAG_RESULTS):
 # off; no suffix = fully corrected.          #
 ##############################################
 
-COUPLING_STUDIES_PLOT_DIR = PLOT_DIR / 'Coupling_Studies'
+COUPLING_STUDIES_PLOT_DIR = PLOT_DIR / (
+    'Coupling_Studies_partialmap' if PARTIALMAP else 'Coupling_Studies')
 COUPLING_STUDIES_PLOT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Note the two betas_*.pdf below come from BETA_COMPARISON_FIGS, which are
@@ -1280,44 +1297,27 @@ def _save_single(fig_to_save, name):
     plt.close(fig_to_save)
 
 
-_save_single(_betx2_bety1_fig((-20, 20), '', True, tags=['2T']),
-             'coupledbetas_IR_2T.pdf')
-_save_single(_betx2_bety1_fig((-20, 20), '', True, tags=['3T']),
-             'coupledbetas_IR_3T.pdf')
-_save_single(
-    _betx2_bety1_fig((-1400, 1400), ' (full straight section)', False,
-                     tags=['2T']),
-    'coupledbetas_straight_2T.pdf')
-_save_single(
-    _betx2_bety1_fig((-1400, 1400), ' (full straight section)', False,
-                     tags=['3T']),
-    'coupledbetas_straight_3T.pdf')
+for _tag in COMPARISON_TAGS:
+    _save_single(_betx2_bety1_fig((-20, 20), '', True, tags=[_tag]),
+                 f'coupledbetas_IR_{_tag}.pdf')
+    _save_single(
+        _betx2_bety1_fig((-1400, 1400), ' (full straight section)', False,
+                         tags=[_tag]),
+        f'coupledbetas_straight_{_tag}.pdf')
 
-_save_single(_nocorr_fig((-20, 20), '', True, 'beta', tags=['2T']),
-             'betas_IR_coroff_2T.pdf')
-_save_single(_nocorr_fig((-20, 20), '', True, 'beta', tags=['3T']),
-             'betas_IR_coroff_3T.pdf')
-_save_single(
-    _nocorr_fig((-1400, 1400), ' (full straight)', False, 'beta',
-                tags=['2T']),
-    'betas_straight_coroff_2T.pdf')
-_save_single(
-    _nocorr_fig((-1400, 1400), ' (full straight)', False, 'beta',
-                tags=['3T']),
-    'betas_straight_coroff_3T.pdf')
+    _save_single(_nocorr_fig((-20, 20), '', True, 'beta', tags=[_tag]),
+                 f'betas_IR_coroff_{_tag}.pdf')
+    _save_single(
+        _nocorr_fig((-1400, 1400), ' (full straight)', False, 'beta',
+                    tags=[_tag]),
+        f'betas_straight_coroff_{_tag}.pdf')
 
-_save_single(_nocorr_fig((-20, 20), '', True, 'coupling', tags=['2T']),
-             'coupledbetas_IR_coroff_2T.pdf')
-_save_single(_nocorr_fig((-20, 20), '', True, 'coupling', tags=['3T']),
-             'coupledbetas_IR_coroff_3T.pdf')
-_save_single(
-    _nocorr_fig((-1400, 1400), ' (full straight)', False, 'coupling',
-                tags=['2T']),
-    'coupledbetas_straight_coroff_2T.pdf')
-_save_single(
-    _nocorr_fig((-1400, 1400), ' (full straight)', False, 'coupling',
-                tags=['3T']),
-    'coupledbetas_straight_coroff_3T.pdf')
+    _save_single(_nocorr_fig((-20, 20), '', True, 'coupling', tags=[_tag]),
+                 f'coupledbetas_IR_coroff_{_tag}.pdf')
+    _save_single(
+        _nocorr_fig((-1400, 1400), ' (full straight)', False, 'coupling',
+                    tags=[_tag]),
+        f'coupledbetas_straight_coroff_{_tag}.pdf')
 
 # BETA_COMPARISON_FIGS is drawn for the primary field tag only, so these two
 # already are single-case plots -- they just need the tag in the name. That
@@ -1329,6 +1329,7 @@ BETA_COMPARISON_FIGS[1].savefig(
     SINGLE_CASE_PLOT_DIR / f'betas_straight_{FIELD_TAG}.pdf',
     bbox_inches='tight')
 
-print(f'Saved 14 single-case figures to {SINGLE_CASE_PLOT_DIR}')
+print(f'Saved {6 * len(COMPARISON_TAGS) + 2} single-case figures to '
+      f'{SINGLE_CASE_PLOT_DIR}')
 
 plt.show()
