@@ -8,6 +8,13 @@ Written 2026-09-15. Companion to `00_overview.md`.
 > over**: note 09 shows the phase-target fix fails, and note 10 shows the real
 > problem was conditioning of the match (rank deficiency + no SVD truncation),
 > not the choice of targets. Read 10 first if you are here to fix something.
+>
+> **2026-10-20.** The diagnosis is now reproduced by a committed script,
+> `004o_q2y_phase_vs_beta_beat.py` (RESULTS L32), on the current SB 2T/3T
+> lattices with and without mid-bend trims. Calibration 2.418e7 / 2.482e7 as
+> below. Cancelling the phase errors with trombones returns Q″y to bare. Putting
+> the no-trims phase errors into the trims lattice gives the no-trims Q″y. The
+> β-beat at sdm1 is ~1e-6 in every lattice.
 
 The investigation was done with scratch scripts that were not committed; the
 key recipes are reproduced below. It applies to the corrected lattices that
