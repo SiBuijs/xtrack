@@ -32,9 +32,12 @@ The clue (second figure, `_ir_profile`), around ipa:
 - the vertical phase error accumulated outward from QD0, corrected - bare, along
   s. It builds up between QD0 and sdy1, where the trims act, and none of the
   optics targets (straight edge, sdm1) sees it;
-- the chromatic function W_y along s, out into the arcs. The -I pair confines
-  the final-focus W_y (~4e3) to the IR in the bare ring; a QD0 -> sdy1 phase
-  error lets it leak, and the arc W_y grows with the error.
+- the leaked chromatic wave |W_corrected - W_bare| (vector difference of the
+  Montague (A, B)) along s, out into the arcs. The -I pair confines the
+  final-focus W_y (~5e3) to the IR in the bare ring; a QD0 -> sdy1 phase error
+  lets part of it through. |W| itself barely shows it (the leak adds to the
+  bare arc wave at a varying angle); the difference is a constant-amplitude
+  free wave in the arcs, proportional to the summed phase errors (panel c).
 
 Writes data/q2y_phase_test/004o_q2y_phase_vs_beta_beat.json and
 004o_q2y_phase_vs_beta_beat{,_ir_profile}.pdf in the studies plot folder.
@@ -228,6 +231,12 @@ def ir_profile(line, elems):
 
     def rms(vv):
         return float(np.sqrt(np.mean(np.asarray(vv)[arc] ** 2)))
+    # The leaked chromatic wave: the corrected - bare chromatic vector (A, B).
+    # |W| itself barely changes, since the leak adds to the bare arc wave at a
+    # varying angle; the difference is the leak alone, and in the arcs it is a
+    # free wave of constant amplitude.
+    dw = np.hypot(np.asarray(tw1.ay_chrom) - np.asarray(tw0.ay_chrom),
+                  np.asarray(tw1.by_chrom) - np.asarray(tw0.by_chrom))
     markers = {}
     for side in SIDES:
         ee = elems[PROFILE_IP, side]
@@ -240,6 +249,8 @@ def ir_profile(line, elems):
         wy_bare=np.asarray(tw0.wy_chrom)[window].tolist(),
         wy_on=np.asarray(tw1.wy_chrom)[window].tolist(),
         wy_arc_rms_bare=rms(tw0.wy_chrom), wy_arc_rms_on=rms(tw1.wy_chrom),
+        dw=dw[window].tolist(), dw_arc_rms=rms(dw),
+        dw_arc_min=float(dw[arc].min()), dw_arc_max=float(dw[arc].max()),
         markers=markers)
 
 
@@ -391,8 +402,13 @@ def report(results):
     print(f'\n--- W_y rms in the arcs (> {ARC_MIN_DISTANCE:.0f} m from every IP) ---')
     for rr in results['lattices'].values():
         if 'profile' in rr:
-            print(f'{rr["label"]:20s} bare {rr["profile"]["wy_arc_rms_bare"]:6.2f}   '
-                  f'corrected {rr["profile"]["wy_arc_rms_on"]:6.2f}')
+            pp = rr['profile']
+            sum_dmu = sum(abs(ss['dmu']) for ss in rr['sides'].values())
+            print(f'{rr["label"]:20s} bare {pp["wy_arc_rms_bare"]:6.2f}   '
+                  f'corrected {pp["wy_arc_rms_on"]:6.2f}   leaked |dW| '
+                  f'{pp["dw_arc_rms"]:6.2f} ({pp["dw_arc_min"]:.2f}..'
+                  f'{pp["dw_arc_max"]:.2f})   sum|dmu| {sum_dmu:.3e}   ratio '
+                  f'{pp["dw_arc_rms"] / sum_dmu:.3g}')
     first = next(iter(results['lattices'].values()))['sides']
     print('\nChromatic weight sum(beta_y k2l Dx), bare: '
           + ', '.join(f'{side} sdm1 {ss["weight_sdm1"]:.3g} / sdy1 '
@@ -489,7 +505,7 @@ def plot_profile(results):
     prof = {kk: lat[kk]['profile'] for kk in keys}
     markers = prof[keys[0]]['markers']
 
-    fig, axs = plt.subplots(2, 1, figsize=(7.0, 7.0))
+    fig, axs = plt.subplots(3, 1, figsize=(7.0, 10.0))
     ax = axs[0]
     xlim = (-800, 500)
     plateaus = [1e4 * lat[kk]['sides'][f'{PROFILE_IP}_{side}']['dmu']
@@ -541,33 +557,67 @@ def plot_profile(results):
                  loc='left')
     ax.legend(fontsize=7, frameon=False, loc='upper right')
 
+    # (b) The leaked chromatic wave |W_corrected - W_bare| (vector difference).
+    # The bare W_y in grey only for orientation: the doublet's wave (~5e3) and
+    # its two steps down at sdy1 and sdy2.
     ax = axs[1]
-    ax.plot(prof[keys[0]]['s'], prof[keys[0]]['wy_bare'], color='0.15',
-            linewidth=1.0, linestyle='--',
-            label=f'bare ring (arc rms {prof[keys[0]]["wy_arc_rms_bare"]:.1f})')
+    ax.plot(prof[keys[0]]['s'], prof[keys[0]]['wy_bare'], color='0.75',
+            linewidth=1.0, label=r'bare-ring $W_y$ (orientation only)')
     for kk in keys:
-        ax.plot(prof[kk]['s'], prof[kk]['wy_on'], color=LATTICE_COLORS[kk],
-                linewidth=1.0,
-                label=f'{lat[kk]["label"]} (arc rms {prof[kk]["wy_arc_rms_on"]:.1f})')
+        ax.plot(prof[kk]['s'], prof[kk]['dw'], color=LATTICE_COLORS[kk],
+                linewidth=1.2,
+                label=f'{lat[kk]["label"]}: arc level {prof[kk]["dw_arc_rms"]:.1f}')
     ax.set_yscale('log')
-    # Room below the curves for the legend.
-    ax.set_ylim(1e-4, 3e4)
+    ax.set_ylim(1e-2, 3e4)
     ax.set_xlim(-PROFILE_HALF_WIDTH, PROFILE_HALF_WIDTH)
-    ax.set_ylabel(r'$W_y$')
+    ax.set_ylabel(r'$|\vec W_{y,\mathrm{corr}} - \vec W_{y,\mathrm{bare}}|$')
     ax.set_xlabel(f's from {PROFILE_IP} [m]')
-    ax.set_title(r'(b) $W_y$ leaks past the sdy pair into the arcs', loc='left')
+    ax.set_title('(b) The leaked chromatic wave: constant in the arcs', loc='left')
     ax.legend(fontsize=7, frameon=False, loc='lower center', ncol=2)
 
-    # All markers in (a); only the ends of the -I pairs in (b), where the
-    # others would sit on top of each other.
-    for ax, names in ((axs[0], list(markers)), (axs[1], ['sdy2l', 'sdy2r'])):
+    # (c) Arc level of the leaked wave vs the summed phase errors of the 8
+    # sides. One point per lattice; the error bar is its min..max in the arcs.
+    ax = axs[2]
+    xs_, ys_ = [], []
+    for kk in keys:
+        sum_dmu = sum(abs(ss['dmu']) for ss in lat[kk]['sides'].values())
+        pp = prof[kk]
+        ax.errorbar(1e4 * sum_dmu, pp['dw_arc_rms'],
+                    yerr=[[pp['dw_arc_rms'] - pp['dw_arc_min']],
+                          [pp['dw_arc_max'] - pp['dw_arc_rms']]],
+                    fmt='o', color=LATTICE_COLORS[kk], markersize=7,
+                    markeredgecolor='white', markeredgewidth=1.0,
+                    label=lat[kk]['label'], zorder=5)
+        xs_.append(sum_dmu)
+        ys_.append(pp['dw_arc_rms'])
+    xs_, ys_ = np.asarray(xs_), np.asarray(ys_)
+    slope = float(xs_ @ ys_ / (xs_ @ xs_))   # least squares through 0
+    xline = np.linspace(0, 1.1 * xs_.max(), 2)
+    ax.plot(1e4 * xline, slope * xline, color='0.5', linewidth=0.8,
+            linestyle='--', label=f'proportional, slope {slope:.2g} per unit tune')
+    ax.set_xlim(0, None)
+    ax.set_ylim(0, None)
+    ax.set_xlabel(r'$\Sigma\,|\Delta\mu_y|$ over the 8 sides [$10^{-4}\times 2\pi$]')
+    ax.set_ylabel(r'leaked wave in the arcs')
+    ax.set_title('(c) The leak is proportional to the QD0$\\to$sdy1 phase errors',
+                 loc='left')
+    ax.legend(fontsize=7, frameon=False, loc='upper left')
+    ax.grid(color='0.9', linewidth=0.6)
+    ax.set_axisbelow(True)
+
+    # All markers in (a); the -I sextupoles in (b), where the bare W_y steps.
+    # Vertical labels in (b): at +-3 km sdy1r and sdy2r are too close for
+    # horizontal ones.
+    for ax, names, rot in ((axs[0], list(markers), 0),
+                           (axs[1], ['sdy2l', 'sdy1l', 'sdy1r', 'sdy2r'], 90)):
         lo, hi = ax.get_xlim()
         for name in names:
             ss = markers[name]
             if lo < ss < hi:
                 ax.axvline(ss, color='0.75', linewidth=0.6, linestyle=':')
                 ax.text(ss, 1.0, name, transform=ax.get_xaxis_transform(),
-                        fontsize=6.5, color='0.4', ha='center', va='bottom')
+                        fontsize=6.5, color='0.4', ha='center', va='bottom',
+                        rotation=rot)
     fig.tight_layout()
     fig.savefig(OUT_PDF_PROFILE, metadata=pdf_metadata(results['provenance']))
     print(f'Saved {OUT_PDF_PROFILE}')
