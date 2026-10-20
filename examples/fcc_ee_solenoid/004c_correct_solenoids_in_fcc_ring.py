@@ -53,6 +53,15 @@ parser.add_argument(
          'alfy1 = 0, which see only the position part of the coupling. See '
          'COUPLING_AMP_TOL and claude_notes/11.')
 parser.add_argument(
+    '--phase-target', action='store_true',
+    help='Opt-in stage 3: after the three default passes, re-solve each half-'
+         'straight optics match with an extra muy target, the QD0 <-> sdy1 '
+         'vertical phase advance at its bare-ring value (PHASE_WEIGHT, '
+         'PHASE_TOL), then orbit, coupling and optics again. Passes 1-3 are '
+         'unchanged. Needs --output-tag (e.g. phase) and usually --input-tag "", '
+         'so the standard corrected lattice is not overwritten. See '
+         'claude_notes/08 and RESULTS L32.')
+parser.add_argument(
     '--no-midbend-trims', action='store_true',
     help='Do not install the mid-bend trim quadrupoles: the half-straight '
          'optics matches then vary the normal-quad trims only. Pair with '
@@ -84,6 +93,10 @@ parser.add_argument(
          'chromaticity numbers are not comparable with a full run. Default: '
          'all four.')
 args = parser.parse_args()
+
+if args.phase_target and not args.output_tag:
+    raise SystemExit('--phase-target writes a different lattice: give it its own '
+                     '--output-tag (e.g. --output-tag phase --input-tag "").')
 
 FIELD_TAG = field_tag(args.b0)
 # The transverse-order cap only applies to the SplineBoris model (VarSol is
@@ -665,6 +678,34 @@ OPTICS_STEP = 1e-7
 # reason, and cost an extra Jacobian per side to undo it.
 OPTICS_STAGE_SEXT = True
 
+# Stage 3 (--phase-target): the QD0 <-> sdy1 vertical phase advance as an extra
+# optics target, muy only (mux is uncontrollable with these knobs, note 09).
+#
+# Why this can work now when note 09's phase target did not: with the trims and
+# the rcond fix, a scratch Jacobian check on the 2T/3T trims lattices
+# (2026-10-20) found a direction of the 15 knobs that moves the phase but none
+# of the 8 other targets, with knob changes of <= 2.7e-4 and beta_y at sdy1/sdy2
+# moving <= 1.7e-4 (the -I strength condition intact). Taking that step on all 8
+# sides brought the ring Q''y from +4668 to -106 (3T) and -1248 to -149 (2T),
+# bare -150.6. RESULTS L32 shows the phase is the whole Q''y error.
+#
+# Why the large weight: at weight 10 that direction's singular value is 8e-8
+# (right halves) to 1e-6 (left) of the largest, so OPTICS_RCOND = 1e-6 cuts it
+# and the target would do nothing. The weight lifts it 80-1000x above the cutoff
+# while its Jacobian row (~1e4) stays far below the largest singular value
+# (~1.4e6), so the truncation of the other near-null directions is unchanged.
+# Lowering rcond instead would bring back the blow-ups described above.
+#
+# PHASE_TOL: 1e-7 in tune units is ~2.4 in Q''y per side (2.42e7 per unit).
+PHASE_WEIGHT = 1e4
+PHASE_TOL = 1e-7
+# Stage 3 only: factor on the weights of dx/dpx at the straight edge, see the
+# stage-3 block in the solve loop.
+PHASE_STAGE_DX_WEIGHT_FACTOR = 1e3
+# Stage 3 only: optics(+phase) -> orbit -> coupling cycles before the final
+# optics(+phase) solve.
+PHASE_STAGE_CYCLES = 3
+
 if args.optics_rcond is not None:
     OPTICS_RCOND = args.optics_rcond or None
 if args.optics_step is not None:
@@ -910,9 +951,18 @@ for ip_name in IP_NAMES:
         # that corrects muy drifts bety/dx at the sdy sextupoles, which breaks
         # the strength half of the -I cancellation and makes the chromatic
         # leak ~4x worse. Do not put it back as it was. See
-        # claude_notes/09_correcting_the_q2y_source.md.
+        # claude_notes/09_correcting_the_q2y_source.md. The opt-in stage 3
+        # (--phase-target, PHASE_WEIGHT) is a muy-only version that is kept
+        # disabled through passes 1-3.
         ph_start, ph_end = doublet_to_sdy1_range(table_half, ip_name, side)
         phase_ranges[ip_name, side] = (ph_start, ph_end)
+        phase_targets = []
+        if args.phase_target:
+            phase_targets = [xt.TargetRelPhaseAdvance(
+                'muy', float(np.mod(tw0['muy', ph_end] - tw0['muy', ph_start],
+                                    tw0.qy)),
+                start=ph_start, end=ph_end, tol=PHASE_TOL,
+                weight=PHASE_WEIGHT, tag='phase')]
         labels['optics', side] = (
             f'{ip_name} {side.upper()} OPTICS + horizontal dispersion '
             f'(betx/bety/alfx/alfy/dx/dpx at {name_boundary}, betx/bety at '
@@ -956,7 +1006,9 @@ for ip_name in IP_NAMES:
                     tol=1e-5,
                     tag='sext',
                     at=sext_corr),
-            ])
+            ] + phase_targets)
+        if phase_targets:
+            opt_optics[side].disable(target='phase')
 
         # Skew quadrupole knobs for the linear-coupling/vertical-dispersion
         # correction: all quadrupoles on this side, IP to boundary.
@@ -1011,6 +1063,38 @@ for ip_name in IP_NAMES:
         solve_and_report(opt_orbit[side], labels['orbit', side] + ' [pass 3/3]')
         solve_and_report(opt_optics[side], labels['optics', side] + ' [pass 3/3]',
                          broyden=OPTICS_BROYDEN, **OPTICS_SOLVE_KWARGS)
+        if args.phase_target:
+            # Stage 3: the same optics match plus the QD0 <-> sdy1 muy target,
+            # then orbit and coupling once more (the normal-quad trims move a
+            # little) and the optics again so it ends on all its targets.
+            opt_optics[side].enable(target='phase')
+            # Edge dx/dpx compete with the phase at the 1e-6 level inside the
+            # rcond-kept directions (ipa test, 3T: with the phase solved they
+            # end ~1e-6 off, tol 1e-8, and a pass without the phase target
+            # fixes them only by undoing the phase). Weighting them up keeps
+            # their directions above the cutoff too.
+            # (The optics match has dx/dpx targets at the edge only.)
+            dx_targets = [tt for tt in opt_optics[side].targets
+                          if isinstance(getattr(tt, 'tar', None), tuple)
+                          and tt.tar[0] in ('dx', 'dpx')]
+            assert len(dx_targets) == 2, [tt.tar for tt in dx_targets]
+            for tt in dx_targets:
+                tt.weight *= PHASE_STAGE_DX_WEIGHT_FACTOR
+            phase_label = labels['optics', side] + ' + QD0<->sdy1 muy'
+            # The phase solve moves the normal-quad trims more than a default
+            # pass 3 does (ipa test, 3T: max|k1| 6e-5 -> 3e-4), which leaves
+            # the orbit and coupling solves behind (Dy at the edge 1.2e-5 m
+            # after a single cycle). So cycle until the knock-on is gone.
+            for cycle in range(1, PHASE_STAGE_CYCLES + 1):
+                tag3 = f'[stage 3, cycle {cycle}/{PHASE_STAGE_CYCLES}]'
+                solve_and_report(opt_optics[side], f'{phase_label} {tag3}',
+                                 broyden=OPTICS_BROYDEN, **OPTICS_SOLVE_KWARGS)
+                solve_and_report(opt_orbit[side],
+                                 f'{labels["orbit", side]} {tag3}')
+                solve_and_report(opt_coupling[side],
+                                 f'{labels["coupling", side]} {tag3}', rcond=3e-3)
+            solve_and_report(opt_optics[side], f'{phase_label} [stage 3, final]',
+                             broyden=OPTICS_BROYDEN, **OPTICS_SOLVE_KWARGS)
 
     # Final state of every knob after the iterate pass. Must run before
     # generate_knob(): target_status() afterwards evaluates the optimizer on

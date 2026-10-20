@@ -150,6 +150,10 @@ Canonical copy: `examples/fcc_ee_solenoid/paper/TODO.md` on branch `fcc_nonlocal
     - Per side: the phase error and the β-beat at sdm1/sdy1/sdy2. Ring Q″y measured vs predicted from the phases (bare-ring trombone calibration)
     - Causal tests with pure phase trombones (β unchanged everywhere): cancel each side's phase error → Q″y back to bare; put the no-trims phase errors into the trims lattice → the no-trims Q″y
     - Evidence for the methods paragraph above; turns notes 08/12 (uncommitted scratch scripts) into a committed result
+- [ ] `SIM` Stage 3: target the QD0→sdy1 μy directly (`004c --phase-target --output-tag phase --input-tag ""`, opt-in: μy weight 1e4, tol 1e-7; edge Dx/Dpx weights ×1e3; 3 optics→orbit→coupling cycles + a final optics solve), SB 3T and 2T with trims, then 004n `--output-tag phase`. Run after night 2 (2026-10-21)
+    - Why: 004o (L32) shows the phase is the whole Q″y error. A scratch Jacobian check (2026-10-20) found a knob direction that fixes the phase without moving the other 8 targets: Q″y +4668 → −106 (3T), −1248 → −149 (2T), bare −150.6. But at weight 10, rcond 1e-6 truncates it
+    - Tested 2026-10-20 on ipa only, 3T (`--ips ipa`, no lattice written): all matches in tolerance (orbit 6/6, optics 9/9 incl. phase, coupling 6/6, both sides); phase error +5.2e-5/−3.4e-6 → −2.6e-8/−2.5e-8; max\|k1\| 3.2e-4; 67 s per IP. Needed: Dx/Dpx compete with the phase (a pass without the phase target undoes it), and one cycle left Dy at the edge 1.2e-5 m
+    - Check: every target in tolerance, the trims' max\|k1\| stays at a few 1e-4, the 004c phase report ≤ 1e-7, and |C⁻|/εy/edge residuals no worse than L13–L22. Then decide whether stage 3 becomes the default
 - [ ] `SIM` Repeat with the mid-bend quadrupoles; show convergence and determinism
 - [ ] `SIM` Try alternatives to the mid-bend quads (existing quads further out, sextupole retuning) to show they are necessary
 - [ ] `CHECK` Knob strengths vs hardware limits (FF skew components, mid-bend quad gradients), 2 T vs 3 T

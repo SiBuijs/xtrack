@@ -40,7 +40,8 @@ Writes data/q2y_phase_test/004o_q2y_phase_vs_beta_beat.json and
 004o_q2y_phase_vs_beta_beat{,_ir_profile}.pdf in the studies plot folder.
 Runtime ~15 min (18 Q'' fits of 21 twisses each).
 
-Usage: python 004o_q2y_phase_vs_beta_beat.py [--b0 2.0 3.0] [--replot]
+Usage: python 004o_q2y_phase_vs_beta_beat.py [--b0 2.0 3.0] [--replot] [--no-show]
+(--replot opens the saved results in seconds, for zooming and panning.)
 """
 import argparse
 import json
@@ -63,7 +64,9 @@ parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
 parser.add_argument('--b0', type=float, nargs='+', default=[2.0, 3.0],
                     help='Main-solenoid fields to test (default: 2.0 3.0).')
 parser.add_argument('--replot', action='store_true',
-                    help='Redraw the figure from the saved JSON, no tracking.')
+                    help='Redraw the figures from the saved JSON (seconds).')
+parser.add_argument('--no-show', action='store_true',
+                    help='Save the figures without opening them.')
 args = parser.parse_args()
 
 OUT_DIR = HERE / 'data' / 'q2y_phase_test'
@@ -559,3 +562,5 @@ else:
 report(results)
 plot(results)
 plot_profile(results)
+if not args.no_show:
+    plt.show()
