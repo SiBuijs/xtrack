@@ -146,6 +146,10 @@ Canonical copy: `examples/fcc_ee_solenoid/paper/TODO.md` on branch `fcc_nonlocal
     - [ ] Record βy and phase advance at sdm1r.0, $\xi_y^{(2)}$, knob strengths and convergence; plot histograms
 - [ ] `SIM` Decisive test: add the sextupole conditions as explicit targets and match with the **existing knobs only**, at 2 T and 3 T; record residuals and knobs at their limits
     - Repo: `004l_sextupole_target_ab.py` already A/Bs the sdm1 targets. Per note 09, the condition that matters is the QD0→sdy1 phase (plus the −I strength condition), and targeting it directly failed. Rephrase this test as "mid-bend trims off vs on, with the rcond fix" (Repo audit)
+- [ ] `SIM` Show that the Q″y error follows the QD0→sdy1 phase error, not the β-beat at the sdm1 sextupole 004c targets (`004o_q2y_phase_vs_beta_beat.py`): SB 3T and 2T, trims vs no trims
+    - Per side: the phase error and the β-beat at sdm1/sdy1/sdy2. Ring Q″y measured vs predicted from the phases (bare-ring trombone calibration)
+    - Causal tests with pure phase trombones (β unchanged everywhere): cancel each side's phase error → Q″y back to bare; put the no-trims phase errors into the trims lattice → the no-trims Q″y
+    - Evidence for the methods paragraph above; turns notes 08/12 (uncommitted scratch scripts) into a committed result
 - [ ] `SIM` Repeat with the mid-bend quadrupoles; show convergence and determinism
 - [ ] `SIM` Try alternatives to the mid-bend quads (existing quads further out, sextupole retuning) to show they are necessary
 - [ ] `CHECK` Knob strengths vs hardware limits (FF skew components, mid-bend quad gradients), 2 T vs 3 T

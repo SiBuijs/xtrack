@@ -79,6 +79,7 @@ fccee_z_lcc.json (external input, LCC optics, no solenoids)
               dy_match), not 004c's per-side scheme since 2026-09-15.
        004k:  off-momentum tune footprint on a resonance diagram
        004l:  A/B of the optics match with/without the sdm1 targets
+       004o:  Q''y follows the QD0->sdy1 phase, not the sdm1 beta beat
        004m:  beta functions of the old (pre mid-bend quads, pre rcond) vs
               current corrected rings, old ones read from git
        017:   tune vs delta, scan+fit vs twiss dqx/ddqx
@@ -389,6 +390,14 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   newest commit where both rings are pre-mid-bend-quads and
   pre-conditioning-fix. `957c3bea4` is NOT usable as old: there the 3T
   ring was already cut and the 2T was not.
+- `004o_q2y_phase_vs_beta_beat.py` (2026-10-20) — the committed version of
+  note 08's evidence, on the SB 2T/3T lattices with and without mid-bend trims.
+  Per side: the QD0→sdy1 phase error and the β-beat at sdm1/sdy1/sdy2. Ring:
+  Q″y measured vs predicted from the phase errors (trombone calibration in the
+  bare ring). Two causal tests with pure phase trombones at ±20 m: cancel the
+  phase errors, and put the no-trims errors into the trims lattice. Writes
+  `data/q2y_phase_test/004o_q2y_phase_vs_beta_beat.json` and a PDF in the
+  studies folder; `--replot` redraws from the JSON. ~15 min.
 - `004n_figures_of_merit.py` (2026-10-15) — the numbers for
   paper/RESULTS.md from one corrected lattice: tunes, |C⁻|, Q′, true Q″,
   Chao εx/εy, IP/straight-edge residuals vs bare, closed-ring Edwards–Teng
