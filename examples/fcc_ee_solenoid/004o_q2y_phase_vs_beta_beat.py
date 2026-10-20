@@ -28,9 +28,17 @@ and dispersion unchanged everywhere, so it separates (A) from (B):
    trombones. (A) predicts the no-trims Q''y, with the trims lattice's (small)
    beta beat at sdm1.
 
+The clue (second figure, `_ir_profile`), around ipa:
+- the vertical phase error accumulated outward from QD0, corrected - bare, along
+  s. It builds up between QD0 and sdy1, where the trims act, and none of the
+  optics targets (straight edge, sdm1) sees it;
+- the chromatic function W_y along s, out into the arcs. The -I pair confines
+  the final-focus W_y (~4e3) to the IR in the bare ring; a QD0 -> sdy1 phase
+  error lets it leak, and the arc W_y grows with the error.
+
 Writes data/q2y_phase_test/004o_q2y_phase_vs_beta_beat.json and
-004o_q2y_phase_vs_beta_beat.pdf in the studies plot folder. Runtime ~15 min
-(18 Q'' fits of 21 twisses each).
+004o_q2y_phase_vs_beta_beat{,_ir_profile}.pdf in the studies plot folder.
+Runtime ~15 min (18 Q'' fits of 21 twisses each).
 
 Usage: python 004o_q2y_phase_vs_beta_beat.py [--b0 2.0 3.0] [--replot]
 """
@@ -62,6 +70,11 @@ OUT_DIR = HERE / 'data' / 'q2y_phase_test'
 OUT_STEM = '004o_q2y_phase_vs_beta_beat'
 OUT_JSON = OUT_DIR / f'{OUT_STEM}.json'
 OUT_PDF = PLOT_DIR / f'{OUT_STEM}.pdf'
+OUT_PDF_PROFILE = PLOT_DIR / f'{OUT_STEM}_ir_profile.pdf'
+
+PROFILE_IP = 'ipa'
+PROFILE_HALF_WIDTH = 3000.0   # m around PROFILE_IP stored for the profile plot
+ARC_MIN_DISTANCE = 3000.0     # m from every IP: "arc" for the W_y rms
 
 CHROM_POINTS = 21          # as 004n, so Q''y matches RESULTS L20/L24
 CALIBRATION_DMU = 1e-4     # trombone step for dQ''y/dmu (linear up to >3e-4)
@@ -186,6 +199,47 @@ def chromatic_weight(line, tw0, names):
                      * tw0['dx', nn] for nn in names))
 
 
+def ir_profile(line, elems):
+    """Phase error from QD0 and W_y along s around PROFILE_IP, and the arc W_y
+    rms, for the bare (knobs off) and corrected (on) ring. Leaves the knobs on."""
+    set_lattice_knobs(line, with_solenoids=False, with_correctors=False)
+    tw0 = line.twiss4d(chrom=True)
+    set_lattice_knobs(line, with_solenoids=True, with_correctors=True)
+    tw1 = line.twiss4d(chrom=True)
+    s0 = np.asarray(tw0.s)
+    s = s0 - tw0['s', PROFILE_IP]
+    dmu = np.asarray(tw1.muy) - np.asarray(tw0.muy)
+    # Referenced to the QD0 end facing the IP, not to the IP marker (whose
+    # muy jumps with the waist position, claude_notes/08), and signed so that
+    # + means more phase from QD0 to s, as the per-side phase errors.
+    ref_r = elems[PROFILE_IP, 'right']['phase_range'][0]
+    ref_l = elems[PROFILE_IP, 'left']['phase_range'][1]
+    from_qd0 = np.where(
+        s > 0, dmu - (tw1['muy', ref_r] - tw0['muy', ref_r]),
+        -(dmu - (tw1['muy', ref_l] - tw0['muy', ref_l])))
+    window = np.abs(s) <= PROFILE_HALF_WIDTH
+    circ = s0[-1]
+    dist = np.min([np.abs((s0 - tw0['s', ip] + circ / 2) % circ - circ / 2)
+                   for ip in IP_NAMES], axis=0)
+    arc = dist > ARC_MIN_DISTANCE
+
+    def rms(vv):
+        return float(np.sqrt(np.mean(np.asarray(vv)[arc] ** 2)))
+    markers = {}
+    for side in SIDES:
+        ee = elems[PROFILE_IP, side]
+        for kk, nn in (('sdy1', ee['sdy1'][0]), ('sdy2', ee['sdy2'][0]),
+                       ('sdm1', ee['sdm1'])):
+            markers[f'{kk}{side[0]}'] = float(tw0['s', nn] - tw0['s', PROFILE_IP])
+    return dict(
+        s=s[window].tolist(),
+        dmu_from_qd0=from_qd0[window].tolist(),
+        wy_bare=np.asarray(tw0.wy_chrom)[window].tolist(),
+        wy_on=np.asarray(tw1.wy_chrom)[window].tolist(),
+        wy_arc_rms_bare=rms(tw0.wy_chrom), wy_arc_rms_on=rms(tw1.wy_chrom),
+        markers=markers)
+
+
 def check_trombones(line, tw_ref, elems, dmu, label):
     """The trombones must shift each phase by exactly dmu and leave beta
     unchanged; otherwise the tests below would not separate (A) from (B)."""
@@ -271,6 +325,7 @@ def run():
             q2y_cancel, q1y_cancel = q2y(line)
             set_trombones(line, tw1, {})
 
+            profile = ir_profile(line, elems)
             predicted = sum(ss['predicted_dq2y'] for ss in sides.values())
             results['lattices'][f'{ftag}_{"trims" if trims else "notrims"}'] = dict(
                 label=label, lattice=path.name, b0=b0, trims=trims,
@@ -279,7 +334,7 @@ def run():
                 dq2y_measured=q2y_on - q2y_bare,
                 dq2y_predicted_from_phase=predicted,
                 q2y_phase_cancelled=q2y_cancel, q1y_phase_cancelled=q1y_cancel,
-                sides=sides)
+                sides=sides, profile=profile)
             print(f'  Q\'\'y bare {q2y_bare:.1f}, corrected {q2y_on:.1f} '
                   f'(Delta {q2y_on - q2y_bare:+.1f}; from the phase errors '
                   f'{predicted:+.1f}); phase errors cancelled {q2y_cancel:.1f}')
@@ -330,6 +385,11 @@ def report(results):
             print(f'{rr["label"]:20s} {side:10s} {ss["dmu"]:+9.1e} '
                   f'{ss["beat_sdm1"]["y"]:12.1e} {ss["beat_sdm1"]["x"]:12.1e} '
                   f'{ss["beat_sdy1"]["y"]:12.1e} {ss["beat_sdy2"]["y"]:12.1e}')
+    print(f'\n--- W_y rms in the arcs (> {ARC_MIN_DISTANCE:.0f} m from every IP) ---')
+    for rr in results['lattices'].values():
+        if 'profile' in rr:
+            print(f'{rr["label"]:20s} bare {rr["profile"]["wy_arc_rms_bare"]:6.2f}   '
+                  f'corrected {rr["profile"]["wy_arc_rms_on"]:6.2f}')
     first = next(iter(results['lattices'].values()))['sides']
     print('\nChromatic weight sum(beta_y k2l Dx), bare: '
           + ', '.join(f'{side} sdm1 {ss["weight_sdm1"]:.3g} / sdy1 '
@@ -419,9 +479,83 @@ def plot(results):
     print(f'Saved {OUT_PDF}')
 
 
+def plot_profile(results):
+    """The clue: where the phase error builds up, and what it does to W_y."""
+    lat = results['lattices']
+    keys = [kk for kk in LATTICE_COLORS if kk in lat]
+    prof = {kk: lat[kk]['profile'] for kk in keys}
+    markers = prof[keys[0]]['markers']
+
+    fig, axs = plt.subplots(2, 1, figsize=(7.0, 7.0))
+    ax = axs[0]
+    xlim = (-800, 500)
+    plateaus = [1e4 * lat[kk]['sides'][f'{PROFILE_IP}_{side}']['dmu']
+                for kk in keys for side in SIDES]
+    ylim = (min(min(plateaus), 0) - 0.6, max(max(plateaus), 0) + 0.6)
+    lowest, off_scale = 0.0, []
+    for kk in keys:
+        ss = np.asarray(prof[kk]['s'])
+        dd = 1e4 * np.asarray(prof[kk]['dmu_from_qd0'])
+        ax.plot(ss, dd, color=LATTICE_COLORS[kk], linewidth=1.2,
+                label=lat[kk]['label'])
+        inside = (ss > xlim[0]) & (ss < xlim[1])
+        lowest = min(lowest, float(np.nanmin(dd[inside])))
+        off_scale.extend(ss[inside & (dd < ylim[0])])
+    ax.set_xlim(*xlim)
+    ax.set_ylim(*ylim)
+    if off_scale:
+        # The low-beta stretch around sdm1l (beta_y of a few m, so mu moves
+        # fast and a small beta change is a large local Delta mu). Every
+        # curve is back on its plateau before sdy1l.
+        s_lo, s_hi = min(off_scale), max(off_scale)
+        ax.annotate(f'off scale (down to {lowest:.0f}) between\n'
+                    f's = {s_lo:.0f} and {s_hi:.0f} m: low-$\\beta_y$ stretch',
+                    xy=((s_lo + s_hi) / 2, ylim[0]), xytext=(30, ylim[0] + 0.12),
+                    fontsize=7, color='0.3',
+                    arrowprops=dict(arrowstyle='->', color='0.5', linewidth=0.6))
+    ax.axhline(0, color='0.5', linewidth=0.6)
+    ax.set_ylabel(r'$\Delta\mu_y$ from QD0 [$10^{-4}\times 2\pi$]')
+    ax.set_xlabel(f's from {PROFILE_IP} [m]')
+    ax.set_title(r'(a) Vertical phase error from QD0 outward (corrected $-$ bare)',
+                 loc='left')
+    ax.legend(fontsize=7, frameon=False, loc='upper right')
+
+    ax = axs[1]
+    ax.plot(prof[keys[0]]['s'], prof[keys[0]]['wy_bare'], color='0.15',
+            linewidth=1.0, linestyle='--',
+            label=f'bare ring (arc rms {prof[keys[0]]["wy_arc_rms_bare"]:.1f})')
+    for kk in keys:
+        ax.plot(prof[kk]['s'], prof[kk]['wy_on'], color=LATTICE_COLORS[kk],
+                linewidth=1.0,
+                label=f'{lat[kk]["label"]} (arc rms {prof[kk]["wy_arc_rms_on"]:.1f})')
+    ax.set_yscale('log')
+    # Room below the curves for the legend.
+    ax.set_ylim(1e-4, 3e4)
+    ax.set_xlim(-PROFILE_HALF_WIDTH, PROFILE_HALF_WIDTH)
+    ax.set_ylabel(r'$W_y$')
+    ax.set_xlabel(f's from {PROFILE_IP} [m]')
+    ax.set_title(r'(b) $W_y$ leaks past the sdy pair into the arcs', loc='left')
+    ax.legend(fontsize=7, frameon=False, loc='lower center', ncol=2)
+
+    # All markers in (a); only the ends of the -I pairs in (b), where the
+    # others would sit on top of each other.
+    for ax, names in ((axs[0], list(markers)), (axs[1], ['sdy2l', 'sdy2r'])):
+        lo, hi = ax.get_xlim()
+        for name in names:
+            ss = markers[name]
+            if lo < ss < hi:
+                ax.axvline(ss, color='0.75', linewidth=0.6, linestyle=':')
+                ax.text(ss, 1.0, name, transform=ax.get_xaxis_transform(),
+                        fontsize=6.5, color='0.4', ha='center', va='bottom')
+    fig.tight_layout()
+    fig.savefig(OUT_PDF_PROFILE, metadata=pdf_metadata(results['provenance']))
+    print(f'Saved {OUT_PDF_PROFILE}')
+
+
 if args.replot:
     results = json.loads(OUT_JSON.read_text())
 else:
     results = run()
 report(results)
 plot(results)
+plot_profile(results)
