@@ -506,13 +506,31 @@ def plot_profile(results):
         off_scale.extend(ss[inside & (dd < ylim[0])])
     ax.set_xlim(*xlim)
     ax.set_ylim(*ylim)
+    # The number that sets Q''y: each curve's value at sdy1, i.e. the
+    # per-side QD0 -> sdy1 phase error. Labelled on the left; on the right all
+    # four are ~1e-6, so one note instead of four overlapping labels.
+    for kk in keys:
+        dmu_l = 1e4 * lat[kk]['sides'][f'{PROFILE_IP}_left']['dmu']
+        dmu_r = 1e4 * lat[kk]['sides'][f'{PROFILE_IP}_right']['dmu']
+        for ss, dd in ((markers['sdy1l'], dmu_l), (markers['sdy1r'], dmu_r)):
+            ax.plot(ss, dd, 'o', color=LATTICE_COLORS[kk], markersize=6,
+                    markeredgecolor='white', markeredgewidth=1.0, zorder=5)
+        ax.text(markers['sdy1l'] + 12, dmu_l + 0.08, f'{dmu_l:+.2f}',
+                fontsize=7, color='0.2', ha='left', va='bottom')
+    worst_r = max(abs(1e4 * lat[kk]['sides'][f'{PROFILE_IP}_right']['dmu'])
+                  for kk in keys)
+    ax.text(markers['sdy1r'] + 12, 0.15, f'all $|\\Delta\\mu_y|$ < {worst_r:.2f}',
+            fontsize=7, color='0.2', ha='left', va='bottom')
+    ax.text(0.01, 0.97, r'dots: value at sdy1 = the phase error that sets $Q^{\prime\prime}_y$',
+            transform=ax.transAxes, fontsize=7, color='0.2', va='top')
     if off_scale:
-        # The low-beta stretch around sdm1l (beta_y of a few m, so mu moves
-        # fast and a small beta change is a large local Delta mu). Every
-        # curve is back on its plateau before sdy1l.
+        # 3T only, both 3T lattices alike: beta_y is pinned at sdm1l.7 but not
+        # alpha_y, so beta_y is a few % off on either side (a waist shift).
+        # At beta_y ~ 6 m mu moves fast, so that is a large local Delta mu,
+        # given back before sdy1l. On-momentum, and it does not track Q''y.
         s_lo, s_hi = min(off_scale), max(off_scale)
-        ax.annotate(f'off scale (down to {lowest:.0f}) between\n'
-                    f's = {s_lo:.0f} and {s_hi:.0f} m: low-$\\beta_y$ stretch',
+        ax.annotate(f'off scale, down to {lowest:.0f} (3T only): local waist shift\n'
+                    'at sdm1l, given back before sdy1l',
                     xy=((s_lo + s_hi) / 2, ylim[0]), xytext=(30, ylim[0] + 0.12),
                     fontsize=7, color='0.3',
                     arrowprops=dict(arrowstyle='->', color='0.5', linewidth=0.6))
