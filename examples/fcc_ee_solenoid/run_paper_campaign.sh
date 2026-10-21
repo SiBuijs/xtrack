@@ -12,6 +12,11 @@
 #                                            #   SB 3T/2T with and without trims, then
 #                                            #   solenoids off (~14 h)
 #   ./run_paper_campaign.sh da_ma_varsol     # the same for VarSol (~6.5 h)
+#   ./run_paper_campaign.sh da_quantum       # DA only, quantum, on the zoomed
+#                                            #   20 x 80 sigma grid (010, 2026-10-21):
+#                                            #   SB and VarSol 3T/2T with and without
+#                                            #   trims, solenoids off, the 2T field
+#                                            #   map; then the field-map MA (quantum)
 #
 # Plan (paper/TODO.md, 2026-10-16): emitt 5000 on the remote machine (~2-3 days),
 # da_ma_sb and da_ma_varsol here on two nights.
@@ -70,6 +75,20 @@ da_ma_model() {
     done
 }
 
+# DA only, quantum radiation, for one model case at 3T and 2T, with and
+# without trims.
+da_model() {
+    local case_name=$1 model=$2
+    for b0 in 3.0 2.0; do
+        for trims in "" notrims; do
+            local tag=${b0%.0}T${trims:+_$trims}
+            run "da_quantum_${model}_${tag}" 013_run_da_and_ma.py --b0 "$b0" \
+                ${trims:+--output-tag "$trims"} \
+                --da-only --da-cases "$case_name" --radiation quantum $DA_MA_EXTRA
+        done
+    done
+}
+
 case "${1:-}" in
 lattices)
     # The VarSol lattices predate the W-matrix coupling targets (e749d4795).
@@ -92,6 +111,17 @@ da_ma_sb)
     ;;
 da_ma_varsol)
     da_ma_model varsol_on varsol
+    ;;
+da_quantum)
+    da_model sb_on sb
+    da_model varsol_on varsol
+    run da_quantum_off 013_run_da_and_ma.py --b0 2.0 \
+        --da-only --da-cases sb_off --radiation quantum $DA_MA_EXTRA
+    # 2 T BNL field map (only 2T, with trims, exists): DA, and its first MA.
+    run da_quantum_partialmap_2T 013_run_da_and_ma.py --b0 2.0 \
+        --da-only --da-cases partialmap_on --radiation quantum $DA_MA_EXTRA
+    run ma_quantum_partialmap_2T 013_run_da_and_ma.py --b0 2.0 \
+        --ma-only --ma-cases partialmap_on --radiation quantum $DA_MA_EXTRA
     ;;
 calibrate)
     # Figures and data of this short run go to a scratch folder / are removed,
@@ -123,7 +153,7 @@ emitt)
     done
     ;;
 *)
-    echo "usage: $0 {lattices|calibrate|emitt N_PART [all]|da_ma_sb|da_ma_varsol}" >&2
+    echo "usage: $0 {lattices|calibrate|emitt N_PART [all]|da_ma_sb|da_ma_varsol|da_quantum}" >&2
     exit 2
     ;;
 esac

@@ -37,6 +37,12 @@ def _lattice_paths(tag, order_tag_str="", output_tag_str=""):
         HERE / f"fccee_z_lcc_varsol_solenoids_coupling_corrected_{tag}{output_tag_str}.json",
     )
 
+
+def _partialmap_lattice_path(tag, output_tag_str=""):
+    # 2 T BNL field map (004b_install_partial_2T_map + 004c --model
+    # partialmap). Only 2T exists; no transverse-order knob, as for VarSol.
+    return HERE / f"fccee_z_lcc_partialmap_solenoids_coupling_corrected_{tag}{output_tag_str}.json"
+
 NEMITT_X = 6.33e-5
 NEMITT_Y = 1.69e-7
 ENERGY_SPREAD = 3.9e-4
@@ -87,6 +93,14 @@ def _build_ma_cases(tag, order_tag_str="", output_tag_str=""):
             with_solenoids=False,
             with_correctors=False,
             title=f"SplineBoris ({sb_tag}): solenoids unpowered",
+        ),
+        dict(
+            name="partialmap_on",
+            model="PartialMap",
+            lattice_json=_partialmap_lattice_path(tag, output_tag_str),
+            with_solenoids=True,
+            with_correctors=True,
+            title=f"BNL field map ({varsol_tag}): solenoids powered + correction scheme",
         ),
     ]
 
@@ -344,7 +358,7 @@ def main():
             "Cases to run (default: sb_on, varsol_on -- sb_off is skipped by "
             "default since the bare-machine baseline doesn't change; pass "
             "--cases sb_off explicitly to include it). "
-            "Available: sb_on, varsol_on, sb_off"
+            "Available: sb_on, varsol_on, sb_off, partialmap_on (2T only)"
         ),
     )
     parser.add_argument(

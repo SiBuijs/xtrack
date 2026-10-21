@@ -144,7 +144,7 @@ def provenance_from_npz(data) -> dict[str, str] | None:
     return {key: str(data[f"provenance_{key}"]) for key in RUN_PROVENANCE}
 
 
-ModelTag = Literal["SB", "VarSol"]
+ModelTag = Literal["SB", "VarSol", "PartialMap"]
 StudyTag = Literal["DA", "MA", "EMIT", "POL", "TUNE"]
 
 BUILD_DEFAULTS = {
@@ -790,7 +790,7 @@ def _plot_da_from_arrays(data: np.lib.npyio.NpzFile) -> plt.Figure:
     at_turn_mean = float(data["at_turn_mean"])
 
     sol = "Sol On" if bool(data["with_solenoids"]) else "Sol Off"
-    model = "SplineBoris" if str(data["model"]) == "SB" else "VariableSolenoid"
+    model = _MODEL_TITLE_NAMES[str(data["model"])]
     if bool(data["with_solenoids"]) and not bool(data["with_correctors"]):
         title = f"{model}: solenoids powered, correctors off"
     elif bool(data["with_solenoids"]):
@@ -841,7 +841,7 @@ def _plot_ma_from_arrays(data: np.lib.npyio.NpzFile) -> plt.Figure:
     at_turn_mean = float(data["at_turn_mean"])
 
     sol = "Sol On" if bool(data["with_solenoids"]) else "Sol Off"
-    model = "SplineBoris" if str(data["model"]) == "SB" else "VariableSolenoid"
+    model = _MODEL_TITLE_NAMES[str(data["model"])]
     if bool(data["with_solenoids"]) and not bool(data["with_correctors"]):
         title = f"{model}: solenoids powered, correctors off"
     elif bool(data["with_solenoids"]):
@@ -876,7 +876,9 @@ def _plot_ma_from_arrays(data: np.lib.npyio.NpzFile) -> plt.Figure:
     return fig
 
 
-_MODEL_TITLE_NAMES = {"SB": "SplineBoris", "VarSol": "VariableSolenoid"}
+_MODEL_TITLE_NAMES = {
+    "SB": "SplineBoris", "VarSol": "VariableSolenoid", "PartialMap": "BNL field map",
+}
 
 
 def _title_from_stem(stem: str) -> str:

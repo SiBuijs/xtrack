@@ -37,6 +37,12 @@ def _lattice_paths(tag, order_tag_str="", output_tag_str=""):
         HERE / f"fccee_z_lcc_varsol_solenoids_coupling_corrected_{tag}{output_tag_str}.json",
     )
 
+
+def _partialmap_lattice_path(tag, output_tag_str=""):
+    # 2 T BNL field map (004b_install_partial_2T_map + 004c --model
+    # partialmap). Only 2T exists; no transverse-order knob, as for VarSol.
+    return HERE / f"fccee_z_lcc_partialmap_solenoids_coupling_corrected_{tag}{output_tag_str}.json"
+
 NEMITT_X = 6.33e-5
 NEMITT_Y = 1.69e-7  # flat beam: sigma_x/sigma_y ~ 220 at the IP
 # Use the xtrack default (1 m), not the 5 cm limit from 009_momentum_acceptance.py:
@@ -51,6 +57,23 @@ GLOBAL_XY_LIMIT = 1.0
 MAX_AMP_SIGMA_X = 40.0
 Y_AXIS_SCAN_FACTOR = 6.0
 MAX_AMP_SIGMA_Y = MAX_AMP_SIGMA_X * Y_AXIS_SCAN_FACTOR
+# Quantum DA sits well inside 40 x 240 sigma (2026-10-21 runs), so its grid is
+# zoomed to 20 x 80 sigma for finer features. Non-default caps are tagged in
+# the filename (_amp20x80sig) so they never overwrite the 40 x 240 data.
+QUANTUM_MAX_AMP_SIGMA_X = 20.0
+QUANTUM_MAX_AMP_SIGMA_Y = 80.0
+
+
+def _amplitude_caps(radiation):
+    if radiation == "quantum":
+        return QUANTUM_MAX_AMP_SIGMA_X, QUANTUM_MAX_AMP_SIGMA_Y
+    return MAX_AMP_SIGMA_X, MAX_AMP_SIGMA_Y
+
+
+def _amplitude_tag(max_amp_sigma_x, max_amp_sigma_y):
+    if (max_amp_sigma_x, max_amp_sigma_y) == (MAX_AMP_SIGMA_X, MAX_AMP_SIGMA_Y):
+        return ""
+    return f"_amp{max_amp_sigma_x:g}x{max_amp_sigma_y:g}sig"
 # ~2 amplitude damping times in x and y (2590 turns each) and ~4 in z (1290
 # turns), see RESULTS L27. Losses after that are damped out, so 10_000 turns
 # (the default until 2026-10-15) only doubled the cost.
@@ -97,6 +120,16 @@ def _build_da_cases(tag, order_tag_str="", output_tag_str=""):
             nn_y_r=25,
             nn_x_theta=30,
         ),
+        dict(
+            name="partialmap_on",
+            model="PartialMap",
+            lattice_json=_partialmap_lattice_path(tag, output_tag_str),
+            with_solenoids=True,
+            with_correctors=True,
+            title=f"BNL field map ({varsol_tag}): solenoids powered + correction scheme",
+            nn_y_r=25,
+            nn_x_theta=30,
+        ),
     ]
 
 
@@ -121,7 +154,8 @@ def _compute_beam_sizes(line):
     return sigma_x, sigma_y, tw
 
 
-def _build_da_initial_conditions(*, nn_y_r, nn_x_theta):
+def _build_da_initial_conditions(*, nn_y_r, nn_x_theta, max_amp_sigma_x,
+                                 max_amp_sigma_y):
     # Unit polar grid (r in [0, 1]); on-momentum DA at delta=0.
     # Uses xpart directly (fcc_92 gen_grid has a column-length bug for single delta).
     x_unit, y_unit, _, _ = xp.generate_2D_polar_grid(
@@ -133,8 +167,8 @@ def _build_da_initial_conditions(*, nn_y_r, nn_x_theta):
     # Scale each plane independently by its own sigma-amplitude cap, so the
     # scan is a genuine ellipse in normalized (sigma_x, sigma_y) units rather
     # than a physical-radius circle. See MAX_AMP_SIGMA_X/Y comment above.
-    x_hat = x_unit * MAX_AMP_SIGMA_X
-    y_hat = y_unit * MAX_AMP_SIGMA_Y
+    x_hat = x_unit * max_amp_sigma_x
+    y_hat = y_unit * max_amp_sigma_y
     return xt.Table(
         dict(
             id=np.arange(len(x_hat), dtype=int),
@@ -273,9 +307,12 @@ def _run_dynamic_aperture(
     # On-momentum DA: scan (x_hat, y_hat), each in its own plane's sigma units,
     # at delta=0. For off-momentum DA, repeat with delta set to selected
     # momentum offsets.
+    max_amp_sigma_x, max_amp_sigma_y = _amplitude_caps(radiation)
     tt_init = _build_da_initial_conditions(
         nn_y_r=nn_y_r,
         nn_x_theta=nn_x_theta,
+        max_amp_sigma_x=max_amp_sigma_x,
+        max_amp_sigma_y=max_amp_sigma_y,
     )
     num_particles = len(tt_init)
     print(f"Tracking {num_particles} particles for {n_turns} turns")
@@ -334,8 +371,8 @@ def _run_dynamic_aperture(
         sigma_y=sigma_y,
         nn_y_r=nn_y_r,
         nn_x_theta=nn_x_theta,
-        max_amp_sigma_x=MAX_AMP_SIGMA_X,
-        max_amp_sigma_y=MAX_AMP_SIGMA_Y,
+        max_amp_sigma_x=max_amp_sigma_x,
+        max_amp_sigma_y=max_amp_sigma_y,
         nemitt_x=NEMITT_X,
         nemitt_y=NEMITT_Y,
         n_part=num_particles,
@@ -346,7 +383,7 @@ def _run_dynamic_aperture(
             sext_window_s_min=sext_window_s_min,
             sext_window_s_max=sext_window_s_max,
             sext_window_order=sext_window_order,
-        ),
+        ) + _amplitude_tag(max_amp_sigma_x, max_amp_sigma_y),
         sexamp=sexamp,
         x_offset=x_offset,
         y_offset=y_offset,
@@ -388,7 +425,7 @@ def main():
             "Cases to run (default: sb_on, varsol_on -- sb_off is skipped by "
             "default since the bare-machine baseline doesn't change; pass "
             "--cases sb_off explicitly to include it). "
-            "Available: sb_on, varsol_on, sb_off"
+            "Available: sb_on, varsol_on, sb_off, partialmap_on (2T only)"
         ),
     )
     parser.add_argument(

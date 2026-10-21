@@ -61,7 +61,7 @@ def main():
         metavar="CASE",
         help=(
             "DA cases for 010 (default: sb_on, varsol_on -- sb_off skipped by "
-            "default). Available: sb_on, varsol_on, sb_off"
+            "default). Available: sb_on, varsol_on, sb_off, partialmap_on (2T only)"
         ),
     )
     parser.add_argument(
@@ -70,7 +70,7 @@ def main():
         metavar="CASE",
         help=(
             "MA cases for 009 (default: sb_on, varsol_on -- sb_off skipped by "
-            "default). Available: sb_on, varsol_on, sb_off"
+            "default). Available: sb_on, varsol_on, sb_off, partialmap_on (2T only)"
         ),
     )
     parser.add_argument(
