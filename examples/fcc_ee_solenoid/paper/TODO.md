@@ -169,15 +169,18 @@ Run each item for: solenoids off · 2 T · 3 T without mid-bend quads (to show t
 - [ ] `SIM` Linear optics: β, Δβ/β and dispersion in the IR and the full straight; residual beta-beat around the ring
 - [ ] `SIM` Orbit and vertical dispersion $D_y$ in the IR and around the ring
 - [ ] `SIM` Coupling: $\beta_{x2}/\beta_x$ and $\beta_{y1}/\beta_y$ along the straight; $|C^-|$ corrected vs uncorrected
-- [ ] `SIM` εy from Twiss and from tracking, with damping times (**the 2 T value is still missing**); decompose into coupling vs $D_y$ contributions
+- [ ] `SIM` εy from Twiss and from tracking, with damping times; decompose into coupling vs $D_y$ contributions
+    - [x] Tracking, SB 2T and 3T with trims (5000 particles, 10⁴ turns, seed 1) → **RESULTS L36**: εx, εζ within ~1% of Twiss; εy −11% (3T), **+42% (2T)**; vertical damping rate ~22% below Twiss → `data/EMIT_Sol_On_SB_{2T,3T}_radquantum_5000p_10000t_xylim1m.npz`
+    - [ ] `CHECK` Why tracking gives 42% more εy than Twiss at 2T, and a slower vertical damping at both fields: test N_PART / turns, sextupoles off, solenoids off with the same settings
+    - [ ] `CHECK` Spin: tracking sees 10³–10⁵× less depolarisation than Twiss's τ_depol predicts, and Twiss gives 2T a shorter τ_depol than 3T (RESULTS L37). Find which is wrong before any polarisation number goes in the paper
 - [ ] `SIM` DA with radiation (5000 turns, the default; the particle count follows from the grid in 009/010), **including 3 T after the mid-bend fix**
     - Mean radiation done for SB-2T/3T with and without trims (L28–L29). Open:
-    - [ ] Solenoids off (`sb_off`) DA and MA at 5000 turns: the existing baseline runs used 10⁴ turns
-    - [ ] Quantum radiation (`--radiation quantum`) for all of the above, solenoids off included
+    - [x] Solenoids off (`sb_off`) DA and MA at 5000 turns: the existing baseline runs used 10⁴ turns → quantum radiation only (L33–L35); mean-radiation off still not run → `data/{DA,MA_X}_Sol_Off_SB_2T_radquantum_*.npz`
+    - [x] Quantum radiation (`--radiation quantum`) for all of the above, solenoids off included → **RESULTS L33 (DA), L34 (MA), L35 (DA, 20σx × 80σy grid, + MAP-2T)**: DA radiation-limited (16–20σx, 30–70σy, off no better); MA δ ≥ 0.0095 everywhere, 3T without trims loses one side (−0.0104), at 2T the trims cost ~10/210 particles at x̂ = 7.3σx → `data/{DA,MA_X}_*_radquantum_*.npz`
     - Weekend runs cancelled (power cut, 2026-10-17/18). Plan from Monday 2026-10-19, all through `run_paper_campaign.sh` (dry run first with `CAMPAIGN_TEST=1`):
-    - [ ] Remote: `calibrate`, then emittance + spin in one tracking run (018 via `emitt 5000`): SB with trims, **3T then 2T**, 5000 particles, 10⁴ turns, seed 1. ~2 × 32 h at PCBE17534 speed, so ~2–3 days remotely; this machine stays free
-    - [ ] Here, night 1: DA/MA quantum, SB 2T/3T with and without trims, plus solenoids off (`da_ma_sb`, ~14 h: start early in the evening)
-    - [ ] Here, night 2: DA/MA quantum, VarSol 2T/3T with and without trims (`da_ma_varsol`, ~6.5 h; VarSol DA grid reduced to 750 points like SB, 2026-10-16)
+    - [x] Remote: `calibrate`, then emittance + spin in one tracking run (018 via `emitt 5000`): SB with trims, **3T then 2T**, 5000 particles, 10⁴ turns, seed 1. ~2 × 32 h at PCBE17534 speed, so ~2–3 days remotely; this machine stays free → done 2026-10-21 (L36, L37) → `data/{EMIT,POL}_Sol_On_SB_{2T,3T}_radquantum_5000p_10000t_*.npz`
+    - [x] Here, night 1: DA/MA quantum, SB 2T/3T with and without trims, plus solenoids off (`da_ma_sb`, ~14 h: start early in the evening) → done 2026-10-20 (L33, L34) → `data/{DA,MA_X}_Sol_{On,Off}_SB_*_radquantum_*.npz`
+    - [x] Here, night 2: DA/MA quantum, VarSol 2T/3T with and without trims (`da_ma_varsol`, ~6.5 h; VarSol DA grid reduced to 750 points like SB, 2026-10-16) → done 2026-10-21 (L33, L34) → `data/{DA,MA_X}_Sol_On_VarSol_*_radquantum_*.npz`
     - Emittance + spin without trims dropped (decision 2026-10-16): the trims were introduced to restore the MA, and everything after that uses the trimmed lattice. `emitt N_PART all` still runs them if needed
     - Repo: `013_run_da_and_ma.py --b0 … [--max-transverse-order …]` runs DA + MA + emittance + polarization in one go (via 018). Pass `--seed` for reproducibility
 - [ ] `SIM` MA vs requirement, for all four configurations
@@ -185,6 +188,7 @@ Run each item for: solenoids off · 2 T · 3 T without mid-bend quads (to show t
 - [ ] `SIM` Tune footprint vs δ for all configurations
 - [ ] `SIM` Optional: amplitude detuning and frequency-map analysis to identify the resonances limiting MA
 - [ ] `SIM` If quantum excitation is stochastic, run several seeds for DA, MA and εy and report the spread
+    - Needed: L33–L35 are one unseeded realisation each and their case-to-case differences are not ordered (2026-10-22). 009/010 have no seed flag yet, so add one first
 - [ ] `DERIVE` Skew-sextupole hypothesis: re-derive the RDT ∝ $\int \beta_y^{3/2} \partial_x^2 B_x ds$, document the cancellation, and keep it as a short "ruled out" paragraph
     - Repo: 004a's β-weighted d²Bx/dx² diagnostic and `004e_sextupole_window_study.py`
 - [ ] `SIM` SR from the fringe fields: first reproduce Boscolo's 2 T power, then compute 3 T (power and critical energy)
@@ -195,6 +199,7 @@ Run each item for: solenoids off · 2 T · 3 T without mid-bend quads (to show t
 - [ ] `SIM` Orbit distortion from the non-axisymmetric dipole components; correct with the existing dipole correctors
 - [ ] `SIM` Apply the frozen matching procedure; record convergence and compare knob strengths with analytic 2 T
 - [ ] `SIM` The full figure-of-merit set from §4 (one new column in the summary table)
+    - Quantum DA and MA (partialmap, with trims) done: L34, L35. Behaves like the analytic 2T models
 - [ ] `SIM` Attribution: axisymmetric part only → add non-axisymmetric multipoles one at a time → full map
 - [ ] `SIM` If the correction fails or is only partial: identify the responsible component and the extra knobs needed
 - [ ] `SIM` SR power with the map fields, compared with analytic 2 T

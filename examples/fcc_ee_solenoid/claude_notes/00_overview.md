@@ -256,6 +256,7 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   scripts.
 - `03_aperture_emittance_studies_009_014.md` — 009/010/011/012/013/014 +
   `aperture_grid.py` + `aperture_study_io.py` + `lattice_knobs.py`.
+  2026-10-22: quantum DA/MA and tracked-emittance campaign results (L33–L36).
 - `04_bz_ramp_coupling_amplification.md` — **REMOVED 2026-07-22** (files
   `git rm`'d at user's request, no longer used; note kept for history only).
   Was a Maxwell-consistent linear-Bz-ramp perturbation used to probe whether
@@ -271,7 +272,8 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   merge of 014+015 into a single tracking run, why spin costs nothing when
   it is off, the `__bunchdiv<F>` provenance tag, the `--seed` determinism
   path, and the measurement that the tracked `tau_depol` is noise-dominated
-  (SNR ~ 1).
+  (SNR ~ 1). 2026-10-22: paper run, tracking vs Twiss depolarisation disagree by
+  10³–10⁵ (L37).
 - `07_main_b_scale_scans.md` — **MISSING from this checkout** and in no git
   commit, because `claude_notes/` was gitignored until 2026-10-14. It may
   still exist on another machine; see "Note history" below. The scale knobs themselves are now summarised in note 01

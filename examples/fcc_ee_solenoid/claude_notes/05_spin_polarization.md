@@ -272,3 +272,13 @@ A guard rejects `--pol-fit-start-turn >= --n-turns` *before* tracking, which
 short smoke runs will hit (use e.g. `--pol-fit-start-turn 20`).
 013 forwards these as `--emitt-no-pol`, `--emitt-pol-only`,
 `--emitt-pol-fit-start-turn`, `--emitt-bunch-divisor`, `--emitt-seed`.
+
+## Paper run, SB 2T/3T with trims, 5000 particles, 10⁴ turns, seed 1 (2026-10-22)
+
+RESULTS L37. Tracking loses 1.3e-5 (3T) / 1.4e-6 (2T) of P over 10⁴ turns; Twiss's
+τ_depol (127 s / 24 s) predicts 2.3e-2 / 0.12 over the same turns, 1.9e3 / 8.4e4
+times more. Twiss also gives 2T the *shorter* τ_depol. The July lattice gave Twiss
+τ_depol 2.18e10 s (above), so Twiss's estimate moved by ~8 orders between lattices.
+Unresolved which side is wrong; the tracking-fit τ_depol and derived P_eq are
+extrapolations far beyond the tracked span (and noise-dominated, as found earlier),
+so they are not quoted.

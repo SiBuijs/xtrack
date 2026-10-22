@@ -446,3 +446,23 @@ by 009 (010 deliberately avoids it, see above).
 - `replot_from_npz`: dispatches on the `{STUDY}_` filename prefix to
   `_plot_da_from_arrays`/`_plot_ma_from_arrays` (rebuild the same figure style
   as the live scripts) — **no EMIT branch**, see 012's note above.
+
+## Paper campaign results, quantum radiation (2026-10-22)
+
+Logged in `paper/RESULTS.md` L33–L36; read the numbers there, not here.
+
+- **Quantum DA is radiation-limited.** 16–20σx and 30–70σy along the axes for
+  every case, solenoids off included (mean radiation gave 190σy, L28). Case-to-case
+  differences are unordered and come from one unseeded realisation each: 009/010
+  have no seed flag, so add one before quoting differences.
+- **MA under quantum radiation.** δ ≥ 0.0095 at x̂ = 0 everywhere. 3T without trims
+  loses one side (−0.0104 SB, +0.0104 VarSol), so the trims restore the 3T MA as in
+  L29. At 2T the trims cost ~10 of 210 particles at x̂ = 7.3σx, the same in SB,
+  VarSol and the partialmap, and none without trims. The "largest x̂" metric is set
+  by single particles under quantum radiation (off scores 2.9σx), so count lost
+  particles instead.
+- **Tracked εy at 2T is 42% above the Twiss/Chao value** (1.03e-13 vs 7.22e-14,
+  flat from turn ~4000, 5000 particles, seed 1); 3T is 11% below. The fitted vertical
+  damping rate is ~22% below Twiss at both fields. Unexplained (TODO §4).
+- Summary script used for the DA/MA metrics (reproduces L28/L29 exactly): scratch,
+  not committed.
