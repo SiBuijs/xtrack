@@ -13,7 +13,10 @@ never writes back to the orbit. So switching spin on costs CPU only, and at a fi
 --seed the emittance results here are bit-identical to a 014 run.
 
 Bunch initial condition: 014's eq/3 (see --bunch-emitt-divisor), so the damping-rate
-fit still has a transient to fit. The polarization fit therefore starts at
+fit still has a transient to fit. --bunch-emitt-source tracked builds the bunch from
+the tracking-fit equilibrium (TRACKED_EQ_GEMITT, SB 2T/3T) instead of the Twiss one;
+with --bunch-emitt-divisor 1 that starts spin tracking from a bunch that is already
+at equilibrium. The polarization fit therefore starts at
 --pol-fit-start-turn (default 2000, matching 016's --turn-start) to skip both the
 unmatched-spin-IC relaxation in the first turns and the bulk of the damping
 transient. Note tau_z ~ 600 turns, so by turn 2000 the longitudinal plane -- which
@@ -71,6 +74,19 @@ POL_FIT_START_TURN = 2000
 # disk always means "same physics as the legacy script would have written".
 EMIT_REFERENCE_DIVISOR = 3.0   # 014
 POL_REFERENCE_DIVISOR = 1.0    # 015
+
+# Equilibrium geometric emittances (x, y, zeta) [m·rad, m·rad, m] from the
+# quantum-radiation tracking fit, used by --bunch-emitt-source tracked instead of
+# the 6D Twiss values. Hardcoded from paper/RESULTS.md L36: 018 at 05eb2de02,
+# --emitt-seed 1, 5000 particles, 10^4 turns, bunch at eq/3, SB with mid-bend
+# trims, --max-transverse-order 4. Keyed by (model, field tag incl. order/output
+# tags); any other lattice has no tracked value and is refused. At 2T the tracked
+# eps_y is 42% above Twiss; at 3T 11% below (still rising in the fit window).
+TRACKED_EQ_GEMITT = {
+    ("SB", "3T"): (7.275102e-10, 1.107372e-12, 1.879583e-06),
+    ("SB", "2T"): (7.150948e-10, 1.028770e-13, 1.848863e-06),
+}
+BUNCH_EMITT_SOURCES = ("twiss", "tracked")
 
 
 def _lattice_paths(tag, order_tag_str="", output_tag_str=""):
@@ -141,6 +157,24 @@ def _bunch_variant_tag(divisor, *, reference):
     if divisor == reference:
         return ""
     return f"__bunchdiv{format_tag_float(divisor)}"
+
+
+def _bunch_source_tag(source):
+    """'' for the Twiss equilibrium (the default), '__bunchtracked' otherwise."""
+    return "" if source == "twiss" else f"__bunch{source}"
+
+
+def _bunch_eq_gemitt(source, *, model, tag, twiss_eq):
+    """Equilibrium (x, y, zeta) emittances the bunch is generated from."""
+    if source == "twiss":
+        return twiss_eq
+    try:
+        return TRACKED_EQ_GEMITT[(model, tag)]
+    except KeyError:
+        known = ", ".join(f"{m} {t}" for m, t in TRACKED_EQ_GEMITT)
+        raise SystemExit(
+            f"--bunch-emitt-source tracked: no tracked equilibrium emittance for "
+            f"model {model!r}, tag {tag!r}. Available: {known}.") from None
 
 
 # --------------------------------------------------------------------------
@@ -303,11 +337,15 @@ def _run_emittance_and_polarization(
     run_emitt=True,
     run_pol=True,
     bunch_emitt_divisor=BUNCH_EMITT_DIVISOR,
+    bunch_emitt_source="twiss",
     pol_fit_start_turn=POL_FIT_START_TURN,
     seed=None,
 ):
     lattice_json = case["lattice_json"]
     title = case["title"]
+
+    # Fail before loading the lattice if there is no tracked value for this case.
+    _bunch_eq_gemitt(bunch_emitt_source, model=case["model"], tag=tag, twiss_eq=None)
 
     if not run_emitt and not run_pol:
         raise SystemExit("Nothing to do: both the emittance and polarization halves are disabled.")
@@ -393,12 +431,19 @@ def _run_emittance_and_polarization(
         np.random.seed(seed)
         print(f"RNG seeded with {seed} (bunch generation + quantum radiation)")
 
-    print(f"Bunch initial emittance: eq / {bunch_emitt_divisor:g}")
+    bunch_eq_x, bunch_eq_y, bunch_eq_z = _bunch_eq_gemitt(
+        bunch_emitt_source, model=case["model"], tag=tag, twiss_eq=(eq_x, eq_y, eq_z))
+    # Geometric -> normalised with the Twiss's own beta0*gamma0.
+    beta_gamma = float(tw.eq_nemitt_x) / eq_x
+    print(
+        f"Bunch initial emittance: eq / {bunch_emitt_divisor:g}, eq from "
+        f"{bunch_emitt_source}: x {bunch_eq_x:.6e}, y {bunch_eq_y:.6e}, "
+        f"zeta {bunch_eq_z:.6e}")
     particles = xp.generate_matched_gaussian_bunch(
         num_particles=n_part,
-        nemitt_x=tw.eq_nemitt_x / bunch_emitt_divisor,
-        nemitt_y=tw.eq_nemitt_y / bunch_emitt_divisor,
-        sigma_z=np.sqrt(tw.eq_gemitt_zeta / bunch_emitt_divisor * tw.bets0),
+        nemitt_x=bunch_eq_x * beta_gamma / bunch_emitt_divisor,
+        nemitt_y=bunch_eq_y * beta_gamma / bunch_emitt_divisor,
+        sigma_z=np.sqrt(bunch_eq_z / bunch_emitt_divisor * tw.bets0),
         line=line,
         particle_on_co=tw.particle_on_co,
         engine="single-rf-harmonic",
@@ -466,10 +511,11 @@ def _run_emittance_and_polarization(
                 f"[Twiss damp_turns: {damp_tw:.6e}]"
             )
 
-        # The bunch is generated with 1/bunch_emitt_divisor of the Twiss equilibrium
-        # emittance (see generate_matched_gaussian_bunch above), so that is the
-        # Twiss-predicted initial emittance for the fit comparison box.
-        twiss_eps_init = np.array([eq_x, eq_y, eq_z]) / bunch_emitt_divisor
+        # The bunch is generated with 1/bunch_emitt_divisor of the equilibrium
+        # emittance it was built from (Twiss, or tracked with
+        # --bunch-emitt-source tracked; see generate_matched_gaussian_bunch above),
+        # so that is the predicted initial emittance for the fit comparison box.
+        twiss_eps_init = np.array([bunch_eq_x, bunch_eq_y, bunch_eq_z]) / bunch_emitt_divisor
 
         fig_emitt = plot_emittance_evolution_figure(
             turns=turns,
@@ -510,10 +556,12 @@ def _run_emittance_and_polarization(
             variant=(
                 variant_suffix(sexamp=sexamp)
                 + _bunch_variant_tag(bunch_emitt_divisor, reference=EMIT_REFERENCE_DIVISOR)
+                + _bunch_source_tag(bunch_emitt_source)
             ),
             sexamp=sexamp,
             field_tag=tag,
             bunch_emitt_divisor=bunch_emitt_divisor,
+            bunch_emitt_source=bunch_emitt_source,
         )
         emitt_result = dict(
             turns=turns,
@@ -597,11 +645,13 @@ def _run_emittance_and_polarization(
             variant=(
                 variant_suffix(sexamp=sexamp)
                 + _bunch_variant_tag(bunch_emitt_divisor, reference=POL_REFERENCE_DIVISOR)
+                + _bunch_source_tag(bunch_emitt_source)
             ),
             sexamp=sexamp,
             field_tag=tag,
             fit_turn_start=pol_fit_start_turn,
             bunch_emitt_divisor=bunch_emitt_divisor,
+            bunch_emitt_source=bunch_emitt_source,
         )
         pol_result = dict(
             turns=turns,
@@ -728,6 +778,18 @@ def main():
         ),
     )
     parser.add_argument(
+        "--bunch-emitt-source",
+        choices=BUNCH_EMITT_SOURCES,
+        default="twiss",
+        help=(
+            "Equilibrium emittance the bunch is generated from (before "
+            "--bunch-emitt-divisor): 'twiss' (default, the 6D radiative Twiss) or "
+            "'tracked' (the hardcoded tracking-fit values in TRACKED_EQ_GEMITT, "
+            "RESULTS L36; SB 2T/3T with trims only). 'tracked' adds "
+            "'__bunchtracked' to the output filenames."
+        ),
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=None,
@@ -787,6 +849,7 @@ def main():
             run_emitt=run_emitt,
             run_pol=run_pol,
             bunch_emitt_divisor=args.bunch_emitt_divisor,
+            bunch_emitt_source=args.bunch_emitt_source,
             pol_fit_start_turn=args.pol_fit_start_turn,
             seed=args.seed,
         )

@@ -531,6 +531,7 @@ def save_emitt_study(
     sexamp: float = BUILD_DEFAULTS["sexamp"],
     field_tag: str = FIELD_TAG,
     bunch_emitt_divisor: float | None = None,
+    bunch_emitt_source: str = "twiss",
     title: str = "",
 ) -> tuple[Path, Path]:
     stem = make_study_stem(
@@ -575,6 +576,9 @@ def save_emitt_study(
         # 014_emittance_evolution.py does not pass it (it always used 3.0).
         bunch_emitt_divisor=(
             np.nan if bunch_emitt_divisor is None else float(bunch_emitt_divisor)),
+        # Which equilibrium the divisor applies to: 'twiss' or 'tracked' (018
+        # --bunch-emitt-source). Files written before 2026-10-22 lack the key: twiss.
+        bunch_emitt_source=str(bunch_emitt_source),
     )
     npz_path = _study_npz_path(stem)
     _savez_with_provenance(npz_path, **arrays)
@@ -615,6 +619,7 @@ def save_pol_study(
     field_tag: str = FIELD_TAG,
     fit_turn_start: int = 0,
     bunch_emitt_divisor: float | None = None,
+    bunch_emitt_source: str = "twiss",
     title: str = "",
 ) -> tuple[Path, Path]:
     stem = make_study_stem(
@@ -669,6 +674,9 @@ def save_pol_study(
         # 015_spin_polarization.py does not pass it (it always used 1.0).
         bunch_emitt_divisor=(
             np.nan if bunch_emitt_divisor is None else float(bunch_emitt_divisor)),
+        # Which equilibrium the divisor applies to: 'twiss' or 'tracked' (018
+        # --bunch-emitt-source). Files written before 2026-10-22 lack the key: twiss.
+        bunch_emitt_source=str(bunch_emitt_source),
     )
     npz_path = _study_npz_path(stem)
     _savez_with_provenance(npz_path, **arrays)

@@ -219,6 +219,14 @@ def main():
         ),
     )
     parser.add_argument(
+        "--emitt-bunch-source",
+        choices=("twiss", "tracked"),
+        help=(
+            "Equilibrium emittance 018's bunch is built from (018 default: twiss; "
+            "'tracked' uses the tracking-fit values hardcoded in 018, SB 2T/3T only)."
+        ),
+    )
+    parser.add_argument(
         "--emitt-bunch-divisor",
         type=float,
         metavar="F",
@@ -253,6 +261,7 @@ def main():
         or args.emitt_pol_only
         or args.emitt_pol_fit_start_turn is not None
         or args.emitt_bunch_divisor is not None
+        or args.emitt_bunch_source is not None
         or args.emitt_seed is not None
     )
     if emitt_half_flags and (args.no_emitt or args.da_only or args.ma_only):
@@ -311,6 +320,8 @@ def main():
             ["--pol-fit-start-turn", str(args.emitt_pol_fit_start_turn)])
     if args.emitt_bunch_divisor is not None:
         emitt_args.extend(["--bunch-emitt-divisor", str(args.emitt_bunch_divisor)])
+    if args.emitt_bunch_source is not None:
+        emitt_args.extend(["--bunch-emitt-source", args.emitt_bunch_source])
     if args.emitt_seed is not None:
         emitt_args.extend(["--seed", str(args.emitt_seed)])
     if args.x_offset is not None:
