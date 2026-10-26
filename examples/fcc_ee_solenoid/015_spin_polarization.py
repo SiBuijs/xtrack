@@ -5,12 +5,9 @@ quantum synchrotron radiation. Quantum energy-diffusion couples to spin
 precession through dn/ddelta, so the ensemble-averaged polarization
 P(t) = |<spin_vec>| slowly decoheres; over the trackable turn range this
 decay is fit (for n >= --turn-start, default 2000, dropping the initial
-decoherence transient) to its true functional form P(n) = P0 * exp(-n/tau_depol)
-(tau_depol is typically orders of magnitude larger than a feasible number of
-tracked turns, so this is normally deep in that exponential's linear-looking
-onset, but fitting the exponential form itself avoids the systematic bias a
-straight-line fit picks up as the decay becomes non-negligible over the
-tracked range).
+decoherence transient) with a straight line P(n) = P0 + slope*n, tau_depol =
+-1/slope: tau_depol is orders of magnitude beyond a feasible number of tracked
+turns, so the tracked range is deep in the linear onset of the decay.
 
 The polarization-buildup time (Sokolov-Ternov effect alone, no
 depolarization) and the asymptotic polarization P_inf are not things this
@@ -37,7 +34,11 @@ import xtrack as xt
 
 from aperture_study_io import save_pol_study, variant_suffix
 from lattice_knobs import robust_twiss, set_lattice_knobs
-from study_plots import plot_polarization_figure
+from study_plots import (
+    fit_linear_depolarization,
+    p_eq_from_tau_depol,
+    plot_polarization_figure,
+)
 from solenoid_params import (
     MAIN_SOLENOID_B0,
     add_b0_argument,
@@ -139,45 +140,6 @@ def _compute_polarization(mon, n_turns):
 
     polarization = np.sqrt(spin_x_mean**2 + spin_y_mean**2 + spin_z_mean**2)
     return spin_x_mean, spin_y_mean, spin_z_mean, polarization
-
-
-def _fit_exponential_depolarization(turns, polarization, t_rev0,
-                                    turn_start=FIT_TURN_START):
-    """Exponential fit P(n) = P0 * exp(-n / tau_depol), the actual functional
-    form of radiative depolarization (a straight-line fit is only its
-    linear-regime approximation for n << tau_depol).
-
-    Only turns >= turn_start are fitted, to exclude the initial spin-
-    decoherence transient (see FIT_TURN_START). P0 is the fitted value
-    extrapolated back to n=0, not P at turn_start.
-
-    Fit by linear regression of ln(P) vs n (equivalent to a weighted
-    nonlinear least-squares fit of P itself, and far more robust/cheap than
-    a general nonlinear solve here).
-
-    Returns (P0, slope [1/turn] -- initial dP/dn at n=0, for compatibility
-    with the linear-regime annotation/npz schema --, tau_depol [turns],
-    tau_depol [s]). tau_depol is inf if the fitted log-slope is non-negative
-    (no significant decay resolved above noise -- e.g. too few
-    turns/particles, or a case like sb_off where the true depolarization is
-    negligible on any feasible turn count).
-    """
-    mask = (np.isfinite(polarization) & (polarization > 0)
-            & (turns >= turn_start))
-    if mask.sum() < 2:
-        return np.nan, np.nan, np.nan, np.nan
-
-    log_slope, log_intercept = np.polyfit(
-        turns[mask], np.log(polarization[mask]), deg=1)
-    p0 = float(np.exp(log_intercept))
-    if log_slope < 0:
-        tau_depol_turns = -1.0 / log_slope
-        tau_depol_s = tau_depol_turns * t_rev0
-    else:
-        tau_depol_turns = np.inf
-        tau_depol_s = np.inf
-    slope = float(log_slope * p0)
-    return p0, slope, float(tau_depol_turns), float(tau_depol_s)
 
 
 def _run_polarization_evolution(
@@ -283,8 +245,7 @@ def _run_polarization_evolution(
     )
 
     fit_p0, fit_slope, fit_tau_depol_turns, fit_tau_depol_s = (
-        _fit_exponential_depolarization(
-            turns, polarization, t_rev0, turn_start=turn_start)
+        fit_linear_depolarization(turns, polarization, t_rev0, turn_start)
     )
 
     print(f"  P(0) tracked                = {polarization[0]:.6f}")
@@ -296,11 +257,7 @@ def _run_polarization_evolution(
         f"({fit_tau_depol_turns:.6e} turns)   [Twiss: {tau_depol_twiss_s:.6e} s]"
     )
 
-    if np.isfinite(fit_tau_depol_s) and fit_tau_depol_s > 0:
-        # Eq. 8.37: P_eq = P_inf / (1 + tau_pol / tau_depol).
-        p_eq_derived = p_inf / (1.0 + tau_pol_s / fit_tau_depol_s)
-    else:
-        p_eq_derived = np.nan
+    p_eq_derived = p_eq_from_tau_depol(p_inf, tau_pol_s, fit_tau_depol_s)
     print(
         f"  P_eq (derived, eq. 8.37)    = {p_eq_derived:.6e} "
         f"[Twiss direct: {p_eq_twiss:.6e}]"
@@ -310,7 +267,7 @@ def _run_polarization_evolution(
         turns=turns,
         polarization=polarization,
         fit_p0=fit_p0,
-        fit_tau_depol_turns=fit_tau_depol_turns,
+        fit_slope=fit_slope,
         fit_tau_depol_s=fit_tau_depol_s,
         p_inf=p_inf,
         tau_pol_s=tau_pol_s,
@@ -318,7 +275,6 @@ def _run_polarization_evolution(
         p_eq_twiss=p_eq_twiss,
         p_eq_derived=p_eq_derived,
         title=title,
-        t_rev0=t_rev0,
         turn_start=turn_start,
     )
     save_pol_study(

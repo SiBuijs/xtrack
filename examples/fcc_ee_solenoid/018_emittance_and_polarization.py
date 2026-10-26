@@ -46,7 +46,12 @@ from aperture_study_io import (
     variant_suffix,
 )
 from lattice_knobs import robust_twiss, set_lattice_knobs
-from study_plots import plot_emittance_evolution_figure, plot_polarization_figure
+from study_plots import (
+    fit_linear_depolarization,
+    p_eq_from_tau_depol,
+    plot_emittance_evolution_figure,
+    plot_polarization_figure,
+)
 from solenoid_params import (
     MAIN_SOLENOID_B0,
     add_b0_argument,
@@ -65,7 +70,7 @@ N_PART = 1000
 
 # Bunch is generated at eq_nemitt / BUNCH_EMITT_DIVISOR (014's initial condition).
 BUNCH_EMITT_DIVISOR = 3.0
-# First turn included in the inline exponential depolarization fit; matches 016's
+# First turn included in the inline linear depolarization fit; matches 016's
 # --turn-start default so the inline fit and the 016 refit agree out of the box.
 POL_FIT_START_TURN = 2000
 
@@ -283,42 +288,6 @@ def _compute_polarization(mon, n_turns):
 
     polarization = np.sqrt(spin_x_mean**2 + spin_y_mean**2 + spin_z_mean**2)
     return spin_x_mean, spin_y_mean, spin_z_mean, polarization
-
-
-def _fit_exponential_depolarization(turns, polarization, t_rev0, *, turn_start=0):
-    """Exponential fit P(n) = P0 * exp(-n / tau_depol), the actual functional
-    form of radiative depolarization (a straight-line fit is only its
-    linear-regime approximation for n << tau_depol).
-
-    Fit by linear regression of ln(P) vs n (equivalent to a weighted
-    nonlinear least-squares fit of P itself, and far more robust/cheap than
-    a general nonlinear solve here). Only turns >= turn_start are fitted, to
-    drop the early-turn transient (the initial all-along-y spin state relaxing
-    onto the invariant spin field, plus the tail of the emittance damping).
-
-    Returns (P0, slope [1/turn] -- initial dP/dn at n=0, for compatibility
-    with the linear-regime annotation/npz schema --, tau_depol [turns],
-    tau_depol [s]). P0 remains the n=0 extrapolation of the fitted exponential
-    regardless of turn_start. tau_depol is inf if the fitted log-slope is
-    non-negative (no significant decay resolved above noise -- e.g. too few
-    turns/particles, or a case like sb_off where the true depolarization is
-    negligible on any feasible turn count).
-    """
-    mask = np.isfinite(polarization) & (polarization > 0) & (turns >= turn_start)
-    if mask.sum() < 2:
-        return np.nan, np.nan, np.nan, np.nan
-
-    log_slope, log_intercept = np.polyfit(
-        turns[mask], np.log(polarization[mask]), deg=1)
-    p0 = float(np.exp(log_intercept))
-    if log_slope < 0:
-        tau_depol_turns = -1.0 / log_slope
-        tau_depol_s = tau_depol_turns * t_rev0
-    else:
-        tau_depol_turns = np.inf
-        tau_depol_s = np.inf
-    slope = float(log_slope * p0)
-    return p0, slope, float(tau_depol_turns), float(tau_depol_s)
 
 
 # --------------------------------------------------------------------------
@@ -579,23 +548,19 @@ def _run_emittance_and_polarization(
         )
 
         fit_p0, fit_slope, fit_tau_depol_turns, fit_tau_depol_s = (
-            _fit_exponential_depolarization(
-                turns, polarization, t_rev0, turn_start=pol_fit_start_turn)
+            fit_linear_depolarization(
+                turns, polarization, t_rev0, pol_fit_start_turn)
         )
 
         print(f"  P(0) tracked                = {polarization[0]:.6f}")
-        print(f"  P0 (fit intercept)          = {fit_p0:.6f}")
+        print(f"  P0 (linear fit intercept)   = {fit_p0:.6f}")
         print(
-            f"  tau_depol (fit, tracking)   = {fit_tau_depol_s:.6e} s "
+            f"  tau_depol (linear fit)      = {fit_tau_depol_s:.6e} s "
             f"({fit_tau_depol_turns:.6e} turns, fitted from turn "
             f"{pol_fit_start_turn})   [Twiss: {tau_depol_twiss_s:.6e} s]"
         )
 
-        if np.isfinite(fit_tau_depol_s) and fit_tau_depol_s > 0:
-            # Eq. 8.37: P_eq = P_inf / (1 + tau_pol / tau_depol).
-            p_eq_derived = p_inf / (1.0 + tau_pol_s / fit_tau_depol_s)
-        else:
-            p_eq_derived = np.nan
+        p_eq_derived = p_eq_from_tau_depol(p_inf, tau_pol_s, fit_tau_depol_s)
         print(
             f"  P_eq (derived, eq. 8.37)    = {p_eq_derived:.6e} "
             f"[Twiss direct: {p_eq_twiss:.6e}]"
@@ -605,10 +570,9 @@ def _run_emittance_and_polarization(
             turns=turns,
             polarization=polarization,
             fit_p0=fit_p0,
-            fit_tau_depol_turns=fit_tau_depol_turns,
+            fit_slope=fit_slope,
             fit_tau_depol_s=fit_tau_depol_s,
             turn_start=pol_fit_start_turn,
-            t_rev0=t_rev0,
             p_inf=p_inf,
             tau_pol_s=tau_pol_s,
             tau_depol_twiss_s=tau_depol_twiss_s,
@@ -759,7 +723,7 @@ def main():
         default=POL_FIT_START_TURN,
         metavar="N",
         help=(
-            "First turn included in the inline exponential depolarization fit "
+            "First turn included in the inline linear depolarization fit "
             f"(default: {POL_FIT_START_TURN}, matching 016's --turn-start). Drops "
             "the early-turn spin-IC transient and the bulk of the emittance damping."
         ),

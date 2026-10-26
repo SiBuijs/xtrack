@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.patches import FancyBboxPatch
 
 
 def analytic_emittance(turns, eps_init, eps_eq, damp_turn):
@@ -92,12 +93,107 @@ def plot_emittance_evolution_figure(
     return fig
 
 
+# Everything that happens in the polarization runs happens in the fifth and
+# sixth decimal of P (P = 1 down to ~0.99999). On that range matplotlib gives
+# up on plain ticks and prints an offset ("+9.9999e-1"), which hides the scale
+# and makes two figures look equally steep when they differ by 10x. So P is
+# plotted as its departure from 1 in units of 1e-6.
+P_PLOT_SCALE = 1e-6
+P_PLOT_UNIT = r"$10^{-6}$"
+
+
+def fit_linear_depolarization(turns, polarization, t_rev0, turn_start):
+    """Straight-line fit P(n) ~= P0 + slope*n over n >= turn_start.
+
+    tau_depol is far beyond any feasible turn count, so the tracked range is
+    deep in the linear onset of the decay and tau_depol = -1/slope (P ~= 1).
+    Returns (P0, slope [1/turn], tau_depol [turns], tau_depol [s]);
+    tau_depol is inf if the slope isn't negative (no resolvable decay).
+    """
+    mask = np.isfinite(polarization) & (turns >= turn_start)
+    if mask.sum() < 2:
+        return np.nan, np.nan, np.nan, np.nan
+
+    slope, intercept = np.polyfit(turns[mask], polarization[mask], deg=1)
+    if slope < 0:
+        tau_depol_turns = -1.0 / slope
+        tau_depol_s = tau_depol_turns * t_rev0
+    else:
+        tau_depol_turns = np.inf
+        tau_depol_s = np.inf
+    return float(intercept), float(slope), float(tau_depol_turns), float(tau_depol_s)
+
+
+def p_eq_from_tau_depol(p_inf, tau_pol_s, tau_depol_s):
+    """Eq. 8.37: P_eq = P_inf / (1 + tau_pol / tau_depol); nan if no decay."""
+    if np.isfinite(tau_depol_s) and tau_depol_s > 0:
+        return p_inf / (1.0 + tau_pol_s / tau_depol_s)
+    return np.nan
+
+
+def _sci(value, unit=""):
+    """Number as mathtext a x 10^b, for the summary table."""
+    if value is None or not np.isfinite(value):
+        return r"$\infty$" if value == np.inf else "n/a"
+    mantissa, exponent = f"{value:.3e}".split("e")
+    text = fr"${mantissa} \times 10^{{{int(exponent)}}}$"
+    return f"{text} {unit}" if unit else text
+
+
+def _framed_table(ax, columns, x_right, y_top, fontsize=7.5, row_pitch=0.055,
+                  col_gap=0.025):
+    """Small table in a rounded frame, right edge at x_right, top at y_top
+    (axes coordinates). columns[i][j] is the cell in column i, row j.
+
+    Every cell is its own text object at a fixed row height: mathtext cells
+    are taller than plain ones, so a newline-joined column would drift out of
+    line with its neighbours. Column widths are measured, so this has to run
+    after the axes are otherwise final. Returns the frame's bottom edge.
+    """
+    fig = ax.figure
+    placed, x_cursor = [], 0.0
+    for column in columns:
+        texts = [ax.text(x_cursor, y_top - j * row_pitch, cell,
+                         transform=ax.transAxes, ha="left", va="top",
+                         fontsize=fontsize, zorder=3)
+                 for j, cell in enumerate(column)]
+        fig.canvas.draw()
+        width = max(t.get_window_extent().transformed(
+            ax.transAxes.inverted()).width for t in texts)
+        placed.append((texts, x_cursor))
+        x_cursor += width + col_gap
+    # Laid out from zero, then shifted as a block so the table's right edge
+    # lands on x_right -- the total width is not known until it is measured.
+    shift = x_right - (x_cursor - col_gap)
+    for texts, x0 in placed:
+        for t in texts:
+            t.set_x(x0 + shift)
+    fig.canvas.draw()
+
+    boxes = [t.get_window_extent().transformed(ax.transAxes.inverted())
+             for texts, _ in placed for t in texts]
+    x0 = min(b.x0 for b in boxes)
+    y0 = min(b.y0 for b in boxes)
+    ax.add_patch(FancyBboxPatch(
+        (x0, y0), max(b.x1 for b in boxes) - x0, max(b.y1 for b in boxes) - y0,
+        boxstyle="round,pad=0.015", transform=ax.transAxes, zorder=2.5,
+        facecolor="white", edgecolor="0.6", linewidth=0.8, alpha=0.9))
+    return y0
+
+
+def _p_cell(value):
+    """Polarization for the table: 4 decimals, scientific once that hides it."""
+    if not np.isfinite(value):
+        return "n/a"
+    return f"${value:.4f}$" if abs(value) >= 1e-2 else _sci(value)
+
+
 def plot_polarization_figure(
     *,
     turns,
     polarization,
     fit_p0,
-    fit_tau_depol_turns,
+    fit_slope,
     fit_tau_depol_s,
     p_inf,
     tau_pol_s,
@@ -105,92 +201,58 @@ def plot_polarization_figure(
     p_eq_twiss,
     p_eq_derived,
     title,
-    t_rev0,
     turn_start,
 ):
+    """Tracked P(n) with its linear fit, and a box with the spin quantities:
+    P_inf and tau_pol (Twiss only -- tracking has no spin flip, so cannot
+    measure them), tau_depol and P_eq (Twiss vs fit)."""
     fig, ax = plt.subplots(figsize=(6.4, 4.8))
-    ax.plot(turns, polarization, label="tracked")
+
+    def to_plot(p):
+        return (np.asarray(p) - 1.0) / P_PLOT_SCALE
+
+    ax.plot(turns, to_plot(polarization), label="tracked")
     if turn_start > 0:
         ax.axvline(turn_start, color="0.5", ls=":", lw=1,
                    label=f"fit start (n={turn_start})")
-
-    if np.isfinite(fit_tau_depol_turns):
+    if np.isfinite(fit_slope):
         # Drawn only over the fitted range, so the figure cannot suggest the
         # fit describes the excluded transient.
         fit_turns = turns[turns >= turn_start]
-        fit_curve = fit_p0 * np.exp(-fit_turns / fit_tau_depol_turns)
-        ax.plot(fit_turns, fit_curve, "--", color="C3",
-                label="exponential fit")
+        ax.plot(fit_turns, to_plot(fit_p0 + fit_slope * fit_turns), "--",
+                color="C3", label="linear fit")
 
     ax.set_xlabel("turn")
-    ax.set_ylabel(r"Polarization $P = |\langle \vec{s}\rangle|$")
-    ax.legend(loc="lower right", fontsize=8)
-
-    # Each figure autoscales to its own data, and P sits so close to 1 that
-    # matplotlib falls back to offset notation ("1e-6 + 9.9999e-1"). Two
-    # figures can then differ by 10x in y-scale while looking identically
-    # steep -- a 2e-06 wobble fills the frame exactly like a 2e-05 one, so
-    # comparing two of these figures by eye gives the wrong answer, and can
-    # invert the ranking of which case depolarizes more. State the absolute
-    # excursion in the box so the figures are comparable as numbers, and
-    # state what Twiss's own tau_depol predicts over the same span so it is
-    # obvious that the tracked curve is orders of magnitude flatter than the
-    # analytic decay it is supposed to be measuring.
-    span_lines = []
-    if len(polarization) and np.isfinite(polarization[0]):
-        finite = polarization[np.isfinite(polarization)]
-        if finite.size:
-            drop_total = float(polarization[0] - finite[-1])
-            span_lines = [
-                "span (tracked):",
-                fr"  $\Delta P$ over run $= {drop_total:.3e}$",
-            ]
-            if np.isfinite(tau_depol_twiss_s) and tau_depol_twiss_s > 0:
-                tau_twiss_turns = tau_depol_twiss_s / t_rev0
-                n_span = float(turns[-1] - turns[0])
-                drop_twiss = float(
-                    polarization[0] * (1.0 - np.exp(-n_span / tau_twiss_turns)))
-                span_lines.append(
-                    fr"  $\Delta P$ if $\tau_\mathrm{{depol}}$(Twiss)"
-                    fr"$ = {drop_twiss:.3e}$")
-                if drop_total > 0:
-                    span_lines.append(
-                        fr"  ratio Twiss/tracked $= {drop_twiss / drop_total:.3g}$")
-
-    fit_lines = [f"fit (tracking, exponential decay, n>={turn_start}):"]
-    if np.isfinite(fit_tau_depol_turns):
-        fit_lines += [
-            fr"  $P_0 = {fit_p0:.6f}$",
-            fr"  $\tau_\mathrm{{depol}} = {fit_tau_depol_s:.3e}\ \mathrm{{s}}$",
-        ]
-    else:
-        fit_lines += ["  (no significant decay resolved)"]
-    twiss_lines = [
-        "Twiss:",
-        fr"  $P_\infty = {p_inf:.6f}$",
-        fr"  $\tau_\mathrm{{pol}} = {tau_pol_s:.3e}\ \mathrm{{s}}$",
-        fr"  $\tau_\mathrm{{depol}} = {tau_depol_twiss_s:.3e}\ \mathrm{{s}}$",
-        fr"  $P_\mathrm{{eq}} = {p_eq_twiss:.3e}$",
-    ]
-    derived_lines = [
-        r"Derived ($P_\infty,\tau_\mathrm{pol}$ Twiss + $\tau_\mathrm{depol}$ fit):",
-        fr"  $P_\mathrm{{eq}} = {p_eq_derived:.3e}$",
-    ]
-    info_text = "\n".join(span_lines + fit_lines + twiss_lines + derived_lines)
-    ax.text(
-        0.98,
-        0.98,
-        info_text,
-        transform=ax.transAxes,
-        ha="right",
-        va="top",
-        fontsize=6.5,
-        linespacing=1.4,
-        bbox=dict(boxstyle="round", facecolor="white", alpha=0.85, edgecolor="0.7"),
-    )
-
+    ax.set_ylabel(fr"$P - 1$  [{P_PLOT_UNIT}],   $P = |\langle \vec{{s}}\rangle|$")
+    ax.ticklabel_format(axis="x", style="plain", useOffset=False)
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="lower left", fontsize=8)
     ax.set_title(title)
+    # The frame is placed by measuring rendered text, so the axes have to be
+    # final first -- tight_layout after it would move everything.
     fig.tight_layout()
+
+    caption_top = _framed_table(
+        ax,
+        [
+            ["", "Twiss", "fit"],
+            [r"$P_\infty$", _p_cell(p_inf), "–"],
+            [r"$\tau_\mathrm{pol}$", _sci(tau_pol_s, "s"), "–"],
+            [r"$\tau_\mathrm{depol}$", _sci(tau_depol_twiss_s, "s"),
+             _sci(fit_tau_depol_s, "s")],
+            [r"$P_\mathrm{eq}$", _p_cell(p_eq_twiss), _p_cell(p_eq_derived)],
+        ],
+        x_right=0.98,
+        y_top=0.97,
+    )
+    # P_eq (fit) is not an independent measurement: it combines the fitted
+    # tau_depol with the Twiss P_inf and tau_pol.
+    ax.text(0.98, caption_top - 0.03,
+            r"fit: $\tau_\mathrm{depol} = -1/\mathrm{slope}$,  "
+            r"$P_\mathrm{eq} = P_\infty / (1 + \tau_\mathrm{pol} /"
+            r" \tau_\mathrm{depol})$",
+            transform=ax.transAxes, ha="right", va="top", fontsize=6.5,
+            color="0.35")
     return fig
 
 

@@ -651,6 +651,9 @@ def save_pol_study(
         tau_depol_twiss_s=float(tau_depol_twiss_s),
         spin_tune_fractional=float(spin_tune_fractional),
         t_rev0=float(t_rev0),
+        # Fit model of fit_p0/fit_slope/fit_tau_depol_*: "linear" since
+        # 2026-10-26. Files without this key hold a ln(P) exponential fit.
+        fit_model="linear",
         fit_p0=float(fit_p0),
         fit_slope=float(fit_slope),
         fit_tau_depol_turns=float(fit_tau_depol_turns),
@@ -974,20 +977,38 @@ def _pol_fit_turn_start(data, npz_path: Path) -> int:
 
 
 def _plot_pol_from_arrays(data, stem: str, npz_path: Path) -> plt.Figure:
+    turns = data["turns"]
+    polarization = data["polarization"]
+    turn_start = _pol_fit_turn_start(data, npz_path)
+    p_inf = float(data["p_inf"])
+    tau_pol_s = float(data["tau_pol_s"])
+    if "fit_model" in data.files and str(data["fit_model"]) == "linear":
+        fit_p0 = float(data["fit_p0"])
+        fit_slope = float(data["fit_slope"])
+        fit_tau_depol_s = float(data["fit_tau_depol_s"])
+        p_eq_derived = float(data["p_eq_derived"])
+    else:
+        # Written before 2026-10-26 with an exponential (ln P) fit; the figure
+        # now shows the linear fit, so redo it from the stored curve.
+        print(f"  {npz_path.name}: stored fit is exponential; refitting "
+              f"linearly from turn {turn_start} for the figure.")
+        fit_p0, fit_slope, _, fit_tau_depol_s = study_plots.fit_linear_depolarization(
+            turns, polarization, float(data["t_rev0"]), turn_start)
+        p_eq_derived = study_plots.p_eq_from_tau_depol(
+            p_inf, tau_pol_s, fit_tau_depol_s)
     return study_plots.plot_polarization_figure(
-        turns=data["turns"],
-        polarization=data["polarization"],
-        fit_p0=float(data["fit_p0"]),
-        fit_tau_depol_turns=float(data["fit_tau_depol_turns"]),
-        fit_tau_depol_s=float(data["fit_tau_depol_s"]),
-        p_inf=float(data["p_inf"]),
-        tau_pol_s=float(data["tau_pol_s"]),
+        turns=turns,
+        polarization=polarization,
+        fit_p0=fit_p0,
+        fit_slope=fit_slope,
+        fit_tau_depol_s=fit_tau_depol_s,
+        p_inf=p_inf,
+        tau_pol_s=tau_pol_s,
         tau_depol_twiss_s=float(data["tau_depol_twiss_s"]),
         p_eq_twiss=float(data["p_eq_twiss"]),
-        p_eq_derived=float(data["p_eq_derived"]),
+        p_eq_derived=p_eq_derived,
         title=_title_from_npz(data, stem),
-        t_rev0=float(data["t_rev0"]),
-        turn_start=_pol_fit_turn_start(data, npz_path),
+        turn_start=turn_start,
     )
 
 
