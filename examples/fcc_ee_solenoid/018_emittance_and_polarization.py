@@ -14,9 +14,10 @@ never writes back to the orbit. So switching spin on costs CPU only, and at a fi
 
 Bunch initial condition: 014's eq/3 (see --bunch-emitt-divisor), so the damping-rate
 fit still has a transient to fit. --bunch-emitt-source tracked builds the bunch from
-the tracking-fit equilibrium (TRACKED_EQ_GEMITT, SB 2T/3T) instead of the Twiss one;
-with --bunch-emitt-divisor 1 that starts spin tracking from a bunch that is already
-at equilibrium. The polarization fit therefore starts at
+the tracking-fit equilibrium instead of the Twiss one (TRACKED_EQ_GEMITT for SB 2T/3T,
+otherwise the fit saved by the default emittance run of the same case; see
+_bunch_eq_gemitt); with --bunch-emitt-divisor 1 that starts spin tracking from a
+bunch that is already at equilibrium. The polarization fit therefore starts at
 --pol-fit-start-turn (default 2000, matching 016's --turn-start) to skip both the
 unmatched-spin-IC relaxation in the first turns and the bulk of the damping
 transient. Note tau_z ~ 600 turns, so by turn 2000 the longitudinal plane -- which
@@ -40,7 +41,9 @@ import xtrack as xt
 from scipy.optimize import curve_fit
 
 from aperture_study_io import (
+    DATA_DIR,
     format_tag_float,
+    make_study_stem,
     save_emitt_study,
     save_pol_study,
     variant_suffix,
@@ -85,8 +88,9 @@ POL_REFERENCE_DIVISOR = 1.0    # 015
 # the 6D Twiss values. Hardcoded from paper/RESULTS.md L36: 018 at 05eb2de02,
 # --emitt-seed 1, 5000 particles, 10^4 turns, bunch at eq/3, SB with mid-bend
 # trims, --max-transverse-order 4. Keyed by (model, field tag incl. order/output
-# tags); any other lattice has no tracked value and is refused. At 2T the tracked
-# eps_y is 42% above Twiss; at 3T 11% below (still rising in the fit window).
+# tags); any other lattice falls back to its EMIT npz (_tracked_emit_npz_path).
+# At 2T the tracked eps_y is 42% above Twiss; at 3T 11% below (still rising in
+# the fit window).
 TRACKED_EQ_GEMITT = {
     ("SB", "3T"): (7.275102e-10, 1.107372e-12, 1.879583e-06),
     ("SB", "2T"): (7.150948e-10, 1.028770e-13, 1.848863e-06),
@@ -169,17 +173,51 @@ def _bunch_source_tag(source):
     return "" if source == "twiss" else f"__bunch{source}"
 
 
-def _bunch_eq_gemitt(source, *, model, tag, twiss_eq):
+def _tracked_emit_npz_path(case, *, tag, n_part, n_turns, sexamp):
+    """EMIT npz of the default emittance run of this case (Twiss bunch at eq/3,
+    quantum radiation) with the same particle and turn counts. This is the file
+    an emittance run started just before writes (run_paper_campaign.sh
+    emitt_spin), so the spin run can start from its fit without hardcoding."""
+    stem = make_study_stem(
+        "EMIT",
+        with_solenoids=case["with_solenoids"],
+        with_correctors=case["with_correctors"],
+        model=case["model"],
+        n_part=n_part,
+        n_turns=n_turns,
+        global_xy_limit=GLOBAL_XY_LIMIT,
+        radiation="quantum",
+        variant=variant_suffix(sexamp=sexamp),
+        field_tag=tag,
+    )
+    return DATA_DIR / f"{stem}.npz"
+
+
+def _bunch_eq_gemitt(source, *, case, tag, twiss_eq, n_part, n_turns, sexamp):
     """Equilibrium (x, y, zeta) emittances the bunch is generated from."""
     if source == "twiss":
         return twiss_eq
-    try:
-        return TRACKED_EQ_GEMITT[(model, tag)]
-    except KeyError:
+    if (case["model"], tag) in TRACKED_EQ_GEMITT:
+        return TRACKED_EQ_GEMITT[(case["model"], tag)]
+    npz_path = _tracked_emit_npz_path(
+        case, tag=tag, n_part=n_part, n_turns=n_turns, sexamp=sexamp)
+    if not npz_path.exists():
         known = ", ".join(f"{m} {t}" for m, t in TRACKED_EQ_GEMITT)
         raise SystemExit(
             f"--bunch-emitt-source tracked: no tracked equilibrium emittance for "
-            f"model {model!r}, tag {tag!r}. Available: {known}.") from None
+            f"model {case['model']!r}, tag {tag!r}: not hardcoded (available: "
+            f"{known}) and no emittance run at these settings ({npz_path.name} "
+            "missing). Run the emittance half first with the same --n-part and "
+            "--n-turns.")
+    with np.load(npz_path) as data:
+        eq = tuple(float(v) for v in data["fit_eps_eq"])
+        commit = str(data["provenance_commit"]) if "provenance_commit" in data.files else "unknown"
+    if not all(np.isfinite(v) and v > 0 for v in eq):
+        raise SystemExit(
+            f"--bunch-emitt-source tracked: the fit in {npz_path.name} is not "
+            f"usable (fit_eps_eq = {eq}).")
+    print(f"Tracked equilibrium from {npz_path.name} (commit {commit})")
+    return eq
 
 
 # --------------------------------------------------------------------------
@@ -314,7 +352,9 @@ def _run_emittance_and_polarization(
     title = case["title"]
 
     # Fail before loading the lattice if there is no tracked value for this case.
-    _bunch_eq_gemitt(bunch_emitt_source, model=case["model"], tag=tag, twiss_eq=None)
+    bunch_eq_kwargs = dict(
+        case=case, tag=tag, n_part=n_part, n_turns=n_turns, sexamp=sexamp)
+    _bunch_eq_gemitt(bunch_emitt_source, twiss_eq=None, **bunch_eq_kwargs)
 
     if not run_emitt and not run_pol:
         raise SystemExit("Nothing to do: both the emittance and polarization halves are disabled.")
@@ -401,7 +441,7 @@ def _run_emittance_and_polarization(
         print(f"RNG seeded with {seed} (bunch generation + quantum radiation)")
 
     bunch_eq_x, bunch_eq_y, bunch_eq_z = _bunch_eq_gemitt(
-        bunch_emitt_source, model=case["model"], tag=tag, twiss_eq=(eq_x, eq_y, eq_z))
+        bunch_emitt_source, twiss_eq=(eq_x, eq_y, eq_z), **bunch_eq_kwargs)
     # Geometric -> normalised with the Twiss's own beta0*gamma0.
     beta_gamma = float(tw.eq_nemitt_x) / eq_x
     print(
@@ -748,9 +788,10 @@ def main():
         help=(
             "Equilibrium emittance the bunch is generated from (before "
             "--bunch-emitt-divisor): 'twiss' (default, the 6D radiative Twiss) or "
-            "'tracked' (the hardcoded tracking-fit values in TRACKED_EQ_GEMITT, "
-            "RESULTS L36; SB 2T/3T with trims only). 'tracked' adds "
-            "'__bunchtracked' to the output filenames."
+            "'tracked' (the tracking-fit values: hardcoded in TRACKED_EQ_GEMITT "
+            "for SB 2T/3T with trims, RESULTS L36; otherwise read from the EMIT "
+            "npz of the default emittance run of the case with the same --n-part "
+            "and --n-turns). 'tracked' adds '__bunchtracked' to the output filenames."
         ),
     )
     parser.add_argument(

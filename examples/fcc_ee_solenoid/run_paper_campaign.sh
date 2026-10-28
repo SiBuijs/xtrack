@@ -8,6 +8,14 @@
 #                                            #   SB with trims, 3T then 2T, 10000
 #                                            #   turns, seed 1. Add 'all' to also run
 #                                            #   the two no-trims lattices
+#   ./run_paper_campaign.sh emitt_spin CASE B0 N_PART
+#                                            # emittance + spin for one case
+#                                            #   (e.g. varsol_on) and field, then
+#                                            #   a spin-only run from a bunch at the
+#                                            #   equilibrium that run just fitted
+#                                            #   (018 --bunch-emitt-source tracked
+#                                            #   reads its EMIT npz); 10000 turns,
+#                                            #   seed 1, with trims
 #   ./run_paper_campaign.sh da_ma_sb         # DA + MA, quantum radiation, 5000 turns:
 #                                            #   SB 3T/2T with and without trims, then
 #                                            #   solenoids off (~14 h)
@@ -37,11 +45,13 @@ LOG_DIR=data/logs_paper_campaign
 DA_MA_EXTRA=""
 EMITT_TURNS=10000
 EMITT_EXTRA=""
+POL_EXTRA=""
 if [ "${CAMPAIGN_TEST:-0}" = 1 ]; then
     LOG_DIR=data/logs_paper_campaign_test
     DA_MA_EXTRA="--n-turns 10"
     EMITT_TURNS=100
     EMITT_EXTRA="--emitt-pol-fit-start-turn 50"
+    POL_EXTRA="--pol-fit-start-turn 50"
     FCC_SOLENOID_PAPER_PLOT_DIR=$(mktemp -d)
     export FCC_SOLENOID_PAPER_PLOT_DIR MPLBACKEND=Agg
     # Only the test's own turn counts: real runs use 5000 / 10000 turns.
@@ -57,6 +67,7 @@ run() {
         echo "[$(date '+%F %T')] done  $name"
     else
         echo "[$(date '+%F %T')] FAILED $name (see $LOG_DIR/$name.log)"
+        return 1
     fi
 }
 
@@ -152,8 +163,25 @@ emitt)
             $EMITT_EXTRA
     done
     ;;
+emitt_spin)
+    usage="usage: $0 emitt_spin CASE B0 N_PART (e.g. varsol_on 3.0 5000)"
+    case_name=${2:?$usage}
+    b0=${3:?$usage}
+    n_part=${4:?$usage}
+    tag=${b0%.0}T
+    name=${case_name%_on}_${tag}_${n_part}p
+    # The spin run needs the EMIT npz of this emittance run, so it only starts
+    # if the emittance run succeeded.
+    run "emitt_${name}" 013_run_da_and_ma.py --b0 "$b0" --emitt-only \
+        --emitt-cases "$case_name" --n-part "$n_part" \
+        --emitt-n-turns "$EMITT_TURNS" --emitt-seed 1 $EMITT_EXTRA \
+    && run "pol_eq_${name}" 018_emittance_and_polarization.py \
+        --cases "$case_name" --b0 "$b0" --n-turns "$EMITT_TURNS" \
+        --n-part "$n_part" --no-emitt --bunch-emitt-divisor 1.0 \
+        --bunch-emitt-source tracked --seed 1 --no-show $POL_EXTRA
+    ;;
 *)
-    echo "usage: $0 {lattices|calibrate|emitt N_PART [all]|da_ma_sb|da_ma_varsol|da_quantum}" >&2
+    echo "usage: $0 {lattices|calibrate|emitt N_PART [all]|emitt_spin CASE B0 N_PART|da_ma_sb|da_ma_varsol|da_quantum}" >&2
     exit 2
     ;;
 esac
