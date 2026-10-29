@@ -274,6 +274,10 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   path, and the measurement that the tracked `tau_depol` is noise-dominated
   (SNR ~ 1). 2026-10-22: paper run, tracking vs Twiss depolarisation disagree by
   10³–10⁵ (L37).
+  2026-10-29: reruns from the tracked equilibrium, SB and VarSol (L38). The
+  plateau is spin decoherence scaling with εy, not depolarisation. SB vs
+  VarSol at 3T differ by ~2σ. Also the Sept. |∂n/∂δ| spike finding behind
+  the unreliable Twiss τ_depol.
 - `07_main_b_scale_scans.md` — **MISSING from this checkout** and in no git
   commit, because `claude_notes/` was gitignored until 2026-10-14. It may
   still exist on another machine; see "Note history" below. The scale knobs themselves are now summarised in note 01

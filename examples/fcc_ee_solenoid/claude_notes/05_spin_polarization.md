@@ -282,3 +282,45 @@ times more. Twiss also gives 2T the *shorter* τ_depol. The July lattice gave Tw
 Unresolved which side is wrong; the tracking-fit τ_depol and derived P_eq are
 extrapolations far beyond the tracked span (and noise-dominated, as found earlier),
 so they are not quoted.
+
+## Rerun from the tracked equilibrium (`__bunchtracked`), SB and VarSol 2T/3T (2026-10-29)
+
+RESULTS L38. Spin-only runs (`--no-emitt --bunch-emitt-divisor 1.0
+--bunch-emitt-source tracked`, 5000 particles, 10⁴ turns, seed 1), so the bunch
+starts at the equilibrium the emittance run fitted instead of ε_eq/3. SB at
+95aec15e9 (bunch at `TRACKED_EQ_GEMITT` = L36), VarSol at b8ebda810 through
+`run_paper_campaign.sh emitt_spin` (bunch at its own fresh EMIT fit).
+
+- **The plateau is not depolarisation and not bunch heating.** P drops in the
+  first ~1500 turns to a plateau and stays there, also from an equilibrium bunch.
+  This is the one-off decoherence of spins that start parallel, around each
+  particle's own invariant spin axis. It scales with εy: the 3T/2T plateau ratio
+  is 9.9 (SB) / 14.6 (VarSol) against an εy ratio of 10.8 / 14.7, while εx and
+  εζ are the same at both fields. The plots' y-axes follow the plateau, which is
+  why 2T looks like it decays and 3T looks flat.
+- **The start direction is negligible.** Spins start along ŷ, not n₀. The
+  ⟨s⟩ precession in the first 20 turns gives the angle between them: ≈ 0.8 mrad
+  for SB-3T and ≈ 0.09 mrad for VarSol-3T. That accounts for θ²/2 ≲ 3e-7,
+  ≤ 2% of the 3T plateau. The 10× difference in n₀ between the two models is
+  itself unexplained (TODO §4).
+- **After the plateau** (linear fit over turns 2000–10⁴; errors from 16 block
+  means of 500 turns, because the turn-by-turn noise is strongly
+  autocorrelated and the naive least-squares error is far too small): P drops
+  2.4e-7 (SB-2T), 2.3e-7 (VS-2T), 3.2 ± 1.1e-7 (SB-3T) and −0.1 ± 0.9e-7
+  (VS-3T). The 2T drops come from the figure fits; their `.npz` files are on
+  the run machines, so no 2T error yet. The 2T noise band is visibly narrower
+  than at 3T. SB-3T vs VS-3T is ~2σ from one seed.
+- **Twiss τ_depol is not a reference.** At the same field it differs between
+  SB and VarSol by up to 5 orders (2T: 24.3 s vs 1.09e7 s; 3T: 127 s vs
+  6.74e3 s), while tracking agrees at 2T. Only VS-2T has Twiss and tracking
+  agreeing (predicted drop 2.2e-7, tracked 2.3e-7).
+
+Earlier finding, recorded here for the first time (2026-09-22, the then
+`fccee_z_lcc_splineboris_solenoids_coupling_corrected_3T.json`; the scratch
+script `pol_integrand.py` is gone): the Twiss τ_depol (~900–970 s on that
+lattice) was set by isolated |∂n/∂δ| spikes. Of the 32573 elements, 3 ordinary
+arc dipoles (`dl1ac.904`, `dl1aa.870`, `dl1ab.519`, at 500–1270× their family
+median, neighbours 10 m away two orders lower) carried 50% of the
+`11/18 Σ κ³ |∂n/∂δ|² L` integral, and 28 carried 90%. Despiking to the
+family medians gave ~6.5e4 s. The compensating solenoids contributed 0.002%.
+Not yet checked on the current lattices.
