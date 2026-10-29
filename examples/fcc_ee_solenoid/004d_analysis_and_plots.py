@@ -4,8 +4,9 @@ import argparse
 import matplotlib.pyplot as plt
 import numpy as np
 import xtrack as xt
+from scipy.constants import c as clight
 
-from aperture_study_io import PLOT_DIR
+from aperture_study_io import PAPER_PLOT_DIR, pdf_metadata
 from solenoid_params import (
     COMP_SOLENOID_LENGTH,
     MAIN_SOLENOID_B0,
@@ -25,8 +26,8 @@ _parser.add_argument(
     default='splineboris',
     help='Lattice to analyse (default: splineboris, 2 T and 3 T). partialmap = '
          'the 2 T BNL field map up to 2.4 m from each IP (004b/004c '
-         '--model partialmap); needs --b0 2.0, analyses 2 T only and saves to '
-         'Coupling_Studies_partialmap/.',
+         '--model partialmap); needs --b0 2.0 and analyses 2 T only. Figure '
+         'names carry SB or PartialMap.',
 )
 add_b0_argument(_parser, default=MAIN_SOLENOID_B0)
 add_max_order_argument(_parser)
@@ -193,7 +194,11 @@ for ip_name in IP_NAMES:
     line[f'on_sol_{ip_name}'] = 0
     line[f'on_sol_corr_{ip_name}'] = 0
 
-tw_off = line.twiss6d(strengths=True)
+# 4d, like every other twiss behind an optics panel (tw4d below, and the
+# comparison case in _twiss_for_tag), so the 2 T and 3 T panels are computed
+# the same way whichever field is passed as --b0. The 6d twiss `tw` is kept
+# for the spin and energy-loss figure (fig2) and the qs print only.
+tw_off = line.twiss4d(strengths=True)
 
 
 ####################################
@@ -382,7 +387,7 @@ def _compute_ir_markers(table, uncut_line, tw, ip_plot, b0):
 
 
 IR_MARKERS = _compute_ir_markers(
-    table_before_cuts, env.fccee_p_ring, tw, IP_PLOT, _args.b0)
+    table_before_cuts, env.fccee_p_ring, tw4d, IP_PLOT, _args.b0)
 
 
 # Marker bars are drawn in axes-fraction coordinates, so they keep the same
@@ -428,6 +433,73 @@ def _mark_solenoid_regions(ax, markers):
         ax.axvline(s_pos, color='grey', linewidth=0.8, linestyle='--')
 
 
+##################################################################
+# Flag the betas inside the solenoid field (W in kinetic momenta) #
+##################################################################
+
+# Inside the solenoid bodies the twiss reports W in kinetic momenta (see the
+# block comment above RDT_CASES). The betas only read the position rows of W,
+# but xtrack renormalises every eigenvector at every element with the
+# symplectic form (lattice_functions_from_W.py, _renormalize_eigenvectors),
+# and that norm does use the momentum rows. So the reported betas there are
+# off by the ratio of the kinetic and canonical norms. Masking them would also
+# remove the IP, which sits inside the main solenoid, so they are drawn dotted
+# instead, and _kinetic_beta_error prints how large the effect can be.
+
+BRHO = (line.particle_ref.p0c[0] / clight
+        / abs(line.particle_ref.q0))   # T m
+
+FIELD_FLAG_LABEL = r'dotted: $B_s \neq 0$, $W$ in kinetic momenta'
+
+
+def _in_solenoid_field(tw_tbl):
+    """True on the rows whose element carries a longitudinal field.
+
+    `bs` is the slice's mean B_s in T. It is zero everywhere with the
+    solenoids off, so an off-case twiss is never flagged."""
+    return np.abs(np.asarray(tw_tbl.bs, dtype=float)) > 0.0
+
+
+def _plot_flagging_field(ax, tw_tbl, values, **kwargs):
+    """Plot `values` along s: solid outside the solenoid field, dotted inside.
+
+    Only the solid part carries the label. The dotted part takes one extra row
+    on each side so the two pieces join without a gap."""
+    s = np.asarray(tw_tbl.s, dtype=float)
+    v = np.asarray(values, dtype=float)
+    in_field = _in_solenoid_field(tw_tbl)
+    dotted_rows = in_field.copy()
+    dotted_rows[1:] |= in_field[:-1]
+    dotted_rows[:-1] |= in_field[1:]
+    ax.plot(s, np.where(in_field, np.nan, v), **kwargs)
+    dotted_kwargs = {k: val for k, val in kwargs.items()
+                     if k not in ('label', 'linestyle')}
+    ax.plot(s, np.where(dotted_rows, v, np.nan), linestyle=':',
+            **dotted_kwargs)
+
+
+def _add_field_flag_legend_entry(ax):
+    """An empty line that only puts FIELD_FLAG_LABEL in the legend."""
+    ax.plot([], [], color='0.35', linestyle=':', label=FIELD_FLAG_LABEL)
+
+
+def _kinetic_beta_error(tw_tbl):
+    """First-order estimate of the relative error of the reported betas
+    inside the field, for mode 1 (betx, bety1) and mode 2 (bety, betx2).
+
+    With a = B_s / (2 B rho), the canonical momenta are px - a y, py + a x, and
+    the symplectic form gains -2a dx^dy. For an eigenvector normalised in the
+    kinetic form, the canonical norm is 1 + 2a (y_r x_i - x_r y_i), and every
+    beta of that mode scales by its inverse. Only the position rows of W enter,
+    and the phase rotation xtrack applies to each mode leaves this term alone.
+    Zero outside the field."""
+    w = np.asarray(tw_tbl.W_matrix, dtype=float)
+    a = np.asarray(tw_tbl.bs, dtype=float) / (2.0 * BRHO)
+    cross_1 = w[:, 0, 0] * w[:, 2, 1] - w[:, 0, 1] * w[:, 2, 0]
+    cross_2 = w[:, 0, 2] * w[:, 2, 3] - w[:, 0, 3] * w[:, 2, 2]
+    return 2.0 * np.abs(a * cross_1), 2.0 * np.abs(a * cross_2)
+
+
 #########
 # Plots #
 #########
@@ -439,18 +511,18 @@ ax1 = fig1.add_subplot(5, 1, 1)
 tw_off.plot(ax=ax1)
 
 ax2 = fig1.add_subplot(5, 1, 2, sharex=ax1)
-ax2.plot(tw.s, tw.bs)
+ax2.plot(tw4d.s, tw4d.bs)
 ax2.set_ylabel(r'$B_s$ [T]')
 ax2.grid(True)
 
 ax3 = fig1.add_subplot(5, 1, 3, sharex=ax1)
-ax3.plot(tw.s, tw.y * 1e3)
+ax3.plot(tw4d.s, tw4d.y * 1e3)
 ax3.set_ylabel('y [mm]')
 ax3.set_ylim(-0.2, 0.2)
 ax3.grid(True)
 
 ax4 = fig1.add_subplot(5, 1, 4, sharex=ax1)
-ax4.plot(tw.s, tw.dy * 1e3)
+ax4.plot(tw4d.s, tw4d.dy * 1e3)
 ax4.set_ylabel(r'$D_y$ [mm]')
 ax4.set_ylim(-0.2, 0.2)
 ax4.grid(True)
@@ -462,8 +534,11 @@ ax5 = fig1.add_subplot(5, 1, 5, sharex=ax1)
 # these are betx2/betx1 and bety1/bety2 -- the two are exact mirrors of each
 # other, which an unnormalised pair is not: betx2 and bety1 are metres of very
 # different size simply because betx and bety are.
-ax5.plot(tw.s, tw.betx2 / tw.betx, label=r'$\beta_{x2}/\beta_x$')
-ax5.plot(tw.s, tw.bety1 / tw.bety, label=r'$\beta_{y1}/\beta_y$')
+_plot_flagging_field(ax5, tw4d, tw4d.betx2 / tw4d.betx, color='C0',
+                     label=r'$\beta_{x2}/\beta_x$')
+_plot_flagging_field(ax5, tw4d, tw4d.bety1 / tw4d.bety, color='C1',
+                     label=r'$\beta_{y1}/\beta_y$')
+_add_field_flag_legend_entry(ax5)
 ax5.set_ylabel(r'$\beta_{x2}/\beta_x$,  $\beta_{y1}/\beta_y$')
 ax5.legend(loc='best')
 ax5.grid(True)
@@ -531,18 +606,24 @@ def _twiss_for_tag(tag):
     correction there is nothing in the ring to couple the planes, so betx2 and
     bety1 should sit at numerical zero throughout.
 
-    The fourth entry carries the coupling RDTs for the summary box: the two
-    twisses above are 6d for the primary tag, and coupling_edw_teng belongs on a
-    4d twiss (see the block comment above RDT_CASES), so it is a separate object
-    rather than a flag on those. For the primary tag it is the tw4d computed at
-    the top of the script; for the others it is the on-case twiss, which is 4d
-    already and only needs the flag."""
+    Every twiss here is 4d, for the primary tag as well, so a panel does not
+    depend on which field was passed as --b0. The fourth entry carries the
+    coupling RDTs (coupling_edw_teng) and is the on-case twiss itself.
+
+    The other field's lattice is loaded with the same --max-transverse-order
+    tag as the primary one, so the file names, which carry ORDER_TAG, describe
+    both panels."""
     if tag == FIELD_TAG:
-        return tw, tw_off, IR_MARKERS, tw4d, tw_nocorr
+        return tw4d, tw_off, IR_MARKERS, tw4d, tw_nocorr
 
     input_json = (
-        HERE / f'fccee_z_lcc_splineboris_solenoids_coupling_corrected_{tag}.json'
+        HERE / ('fccee_z_lcc_splineboris_solenoids_coupling_corrected_'
+                f'{tag}{ORDER_TAG}.json')
     )
+    if not input_json.exists():
+        raise SystemExit(
+            f'{input_json.name} not found: the {tag} panel needs the {tag} '
+            'lattice at the same --max-transverse-order (004b/004c).')
     env_cmp = xt.load(input_json)
     line_cmp = env_cmp.fccee_p_ring.copy(shallow=True)
     line_cmp.particle_ref.anomalous_magnetic_moment = 0.00115965218128
@@ -646,12 +727,12 @@ def _rdt_ring_average(tw_et, rdt):
     7.2e-3). This is the mean strength of the driving term, and it is the |f|
     that the panels plot.
 
-    The solenoid-body NaNs (see the block comment above RDT_CASES) are dropped
-    from the numerator, the denominator staying the full circumference. 12 m of
-    90.6 km, so a 1.3e-4 effect; the masking is here only so the sum is a number
-    rather than NaN.
+    The rows inside the solenoid field (see the block comment above RDT_CASES)
+    are dropped from the numerator, the denominator staying the full
+    circumference. They used to come back NaN; they now come back finite but
+    meaningless (|f1001| up to ~8), so they are excluded by B_s, not by NaN.
     """
-    f = np.abs(np.asarray(rdt))
+    f = np.where(_in_solenoid_field(tw_et), np.nan, np.abs(np.asarray(rdt)))
     # append=nan: the last row is _end_point and opens no interval.
     dl = np.diff(np.asarray(tw_et.s), append=np.nan)
     # dl > 0 is what excludes the thin elements. Weight 0 would contribute 0
@@ -713,10 +794,12 @@ def _betx2_bety1_fig(xlim, title_suffix, mark_ir_regions, tags=None):
         # betx2/betx1 and bety1/bety2). Dimensionless, and the two planes
         # become directly comparable: as metres, betx2 and bety1 differ mostly
         # because betx and bety do, which says nothing about the coupling.
-        ax.plot(tw_tag.s, tw_tag.betx2 / tw_tag.betx, color='C0',
-                label=r'$\beta_{x2}/\beta_x$ (solenoids on)')
-        ax.plot(tw_tag.s, tw_tag.bety1 / tw_tag.bety, color='C1',
-                label=r'$\beta_{y1}/\beta_y$ (solenoids on)')
+        _plot_flagging_field(
+            ax, tw_tag, tw_tag.betx2 / tw_tag.betx, color='C0',
+            label=r'$\beta_{x2}/\beta_x$ (solenoids on)')
+        _plot_flagging_field(
+            ax, tw_tag, tw_tag.bety1 / tw_tag.bety, color='C1',
+            label=r'$\beta_{y1}/\beta_y$ (solenoids on)')
         # The uncoupled baseline -- see _twiss_for_tag. Expect these to lie on
         # zero: they are here to show what the solenoid does against a ring
         # that has no other coupling source, not because they carry structure.
@@ -726,6 +809,7 @@ def _betx2_bety1_fig(xlim, title_suffix, mark_ir_regions, tags=None):
         ax.plot(tw_off_tag.s, tw_off_tag.bety1 / tw_off_tag.bety, color='C1',
                 linestyle='--', linewidth=1.0,
                 label=r'$\beta_{y1}/\beta_y$ (solenoids off)')
+        _add_field_flag_legend_entry(ax)
         ax.set_ylabel(r'$\beta_{x2}/\beta_x$,  $\beta_{y1}/\beta_y$')
         ax.set_title(f'{tag} main solenoid{title_suffix}')
         # Largest ratio actually inside this figure's s-window. Taken from the
@@ -825,8 +909,10 @@ def _nocorr_fig(xlim, title_suffix, mark_ir_regions, quantity, tags=None):
             axs, tags, results):
         ax_disp = None
         if quantity == 'beta':
-            ax.plot(tw_nc.s, tw_nc.betx, color='C0', label=r'$\beta_x$')
-            ax.plot(tw_nc.s, tw_nc.bety, color='C1', label=r'$\beta_y$')
+            _plot_flagging_field(ax, tw_nc, tw_nc.betx, color='C0',
+                                 label=r'$\beta_x$')
+            _plot_flagging_field(ax, tw_nc, tw_nc.bety, color='C1',
+                                 label=r'$\beta_y$')
             ax.set_ylabel(r'$\beta_{x,y}$ [m]')
             curves = (np.asarray(tw_nc.betx, dtype=float),
                       np.asarray(tw_nc.bety, dtype=float))
@@ -840,14 +926,15 @@ def _nocorr_fig(xlim, title_suffix, mark_ir_regions, quantity, tags=None):
                          label=r'$D_y$')
             ax_disp.set_ylabel(r'$D_{x,y}$ [mm]')
         else:
-            ax.plot(tw_nc.s, tw_nc.betx2 / tw_nc.betx, color='C0',
-                    label=r'$\beta_{x2}/\beta_x$')
-            ax.plot(tw_nc.s, tw_nc.bety1 / tw_nc.bety, color='C1',
-                    label=r'$\beta_{y1}/\beta_y$')
+            _plot_flagging_field(ax, tw_nc, tw_nc.betx2 / tw_nc.betx,
+                                 color='C0', label=r'$\beta_{x2}/\beta_x$')
+            _plot_flagging_field(ax, tw_nc, tw_nc.bety1 / tw_nc.bety,
+                                 color='C1', label=r'$\beta_{y1}/\beta_y$')
             ax.set_ylabel(r'$\beta_{x2}/\beta_x$,  $\beta_{y1}/\beta_y$')
             curves = (np.asarray(tw_nc.betx2 / tw_nc.betx, dtype=float),
                       np.asarray(tw_nc.bety1 / tw_nc.bety, dtype=float))
 
+        _add_field_flag_legend_entry(ax)
         ax.set_title(f'{tag} main solenoid, correctors off{title_suffix}')
         if ax_disp is None:
             leg = ax.legend(loc='upper right', fontsize=8, framealpha=0.9)
@@ -936,9 +1023,17 @@ fig4d = _nocorr_fig((-1400, 1400), ' (full straight)', False, 'coupling')
 # insensitive to that, but keep it in mind before comparing phases to MAD-X.
 #
 # IMPORTANT -- these curves have holes, and the holes are in the IR. Measured
-# on the corrected 3T ring: 1208 of 32573 points come back NaN, in exactly
-# eight contiguous blocks of 151, i.e. two per IP, centred at +-13.0 m and
-# spanning the compensating-solenoid bodies.
+# on the corrected 3T ring (2026-09-22): 1208 of 32573 points came back NaN, in
+# exactly eight contiguous blocks of 151, i.e. two per IP, centred at +-13.0 m
+# and spanning the compensating-solenoid bodies. On the current lattices
+# (2026-10-29) they come back finite instead, but just as meaningless: |f1001|
+# up to 8.3, 1704 of the 1840 points above 0.1 lie in the field, while W is
+# still non-symplectic there exactly as described below. So every row with
+# B_s != 0 is masked explicitly (_in_solenoid_field) in the RDT panels and
+# statistics. The other 136 points above 0.1 are NOT in the field: they sit at
+# the rotated final-focus quads (e.g. qf1ar.1, |f1001| = 3.72 on the 2T ring,
+# none next to a field row), where the betx2/betx curves stay smooth. Not
+# understood yet, and still included in the printed max and ring average.
 #
 # Traced to the momentum convention of tw4d.W_matrix, not to Edwards-Teng.
 # _get_edwards_teng_initial takes sqrt(det(B + conj(C)) + (tr A - tr D)^2 / 4)
@@ -962,6 +1057,8 @@ fig4d = _nocorr_fig((-1400, 1400), ' (full straight)', False, 'coupling')
 # slices come off the same kinetic-momentum W, so the IR panels of the figures
 # above are in that convention too -- fine for judging whether the coupling
 # correction zeroes them, but do not read them as canonical Twiss functions.
+# Those stretches are drawn dotted (_plot_flagging_field), and the script
+# prints a first-order estimate of the error (_kinetic_beta_error).
 
 RDT_CASES = (
     (r'$|f_{1001}|$  (difference resonance, $q_x - q_y$)', tw4d.f1001,
@@ -981,7 +1078,9 @@ def _coupling_rdt_fig(xlim, title_suffix, mark_ir_regions):
         # Labelled so these panels carry a top-right legend like the
         # betx2/bety1 ones, with the ring-average frame hanging under it. The
         # label adds what the ylabel does not say: which lattice this is.
-        ax.plot(tw4d.s, np.abs(rdt), color='C0',
+        ax.plot(tw4d.s,
+                np.where(_in_solenoid_field(tw4d), np.nan, np.abs(rdt)),
+                color='C0',
                 label=fr'${symbol}$ ({FIELD_TAG}, solenoids on)')
         ax.set_ylabel(label, fontsize=_fs(9))
         ax.set_title(f'coupling RDT{title_suffix}', fontsize=_fs(10))
@@ -1060,27 +1159,27 @@ def _autoscale_y_to_xlim(ax, xlim, margin=0.1):
         ax.set_ylim(y_min - pad, y_max + pad)
 
 
-# tw_off and tw are twissed on the same already-cut line (only knob *values*
+# tw_off and tw4d are twissed on the same already-cut line (only knob *values*
 # change between them), so they share an element grid and tw_off.betx can be
-# subtracted from tw.betx directly. Guard anyway, and interpolate onto tw.s
-# if that ever stops holding.
-if np.array_equal(np.asarray(tw.name), np.asarray(tw_off.name)):
+# subtracted from tw4d.betx directly. Guard anyway, and interpolate onto
+# tw4d.s if that ever stops holding.
+if np.array_equal(np.asarray(tw4d.name), np.asarray(tw_off.name)):
     BETX_OFF, BETY_OFF = tw_off.betx, tw_off.bety
     DX_OFF, DY_OFF = tw_off.dx, tw_off.dy
 else:
     print('NOTE: solenoid-on/off twiss grids differ; interpolating for the '
           'beta-beat.')
-    BETX_OFF = np.interp(tw.s, tw_off.s, tw_off.betx)
-    BETY_OFF = np.interp(tw.s, tw_off.s, tw_off.bety)
-    DX_OFF = np.interp(tw.s, tw_off.s, tw_off.dx)
-    DY_OFF = np.interp(tw.s, tw_off.s, tw_off.dy)
+    BETX_OFF = np.interp(tw4d.s, tw_off.s, tw_off.betx)
+    BETY_OFF = np.interp(tw4d.s, tw_off.s, tw_off.bety)
+    DX_OFF = np.interp(tw4d.s, tw_off.s, tw_off.dx)
+    DY_OFF = np.interp(tw4d.s, tw_off.s, tw_off.dy)
 
 # Relative beta-beat (the standard definition). For the raw difference in
 # metres instead, drop the division and the 100 and relabel the y-axis --
 # note a raw difference is dominated by wherever beta is largest, which over
 # a full straight section spans several orders of magnitude.
-BEAT_X = (tw.betx - BETX_OFF) / BETX_OFF * 100.0
-BEAT_Y = (tw.bety - BETY_OFF) / BETY_OFF * 100.0
+BEAT_X = (tw4d.betx - BETX_OFF) / BETX_OFF * 100.0
+BEAT_Y = (tw4d.bety - BETY_OFF) / BETY_OFF * 100.0
 
 # (xlim, title suffix, mark the IR solenoid/quad annotations?, beta y-scale,
 #  legend location)
@@ -1119,12 +1218,15 @@ def _beta_comparison_fig(xlim, title_suffix, mark_ir_regions, yscale,
 
     # beta is the Edwards-Teng mode-1/mode-2 beta once the solenoids couple
     # the planes, so "beta_x with solenoids" is really beta_{x1}.
-    ax_beta.plot(tw.s, tw.betx, color='C0', label=r'$\beta_x$ (solenoids on)')
-    ax_beta.plot(tw.s, tw.bety, color='C1', label=r'$\beta_y$ (solenoids on)')
-    ax_beta.plot(tw.s, BETX_OFF, color='C0', linestyle='--',
+    _plot_flagging_field(ax_beta, tw4d, tw4d.betx, color='C0',
+                         label=r'$\beta_x$ (solenoids on)')
+    _plot_flagging_field(ax_beta, tw4d, tw4d.bety, color='C1',
+                         label=r'$\beta_y$ (solenoids on)')
+    ax_beta.plot(tw4d.s, BETX_OFF, color='C0', linestyle='--',
                  label=r'$\beta_x$ (solenoids off)')
-    ax_beta.plot(tw.s, BETY_OFF, color='C1', linestyle='--',
+    ax_beta.plot(tw4d.s, BETY_OFF, color='C1', linestyle='--',
                  label=r'$\beta_y$ (solenoids off)')
+    _add_field_flag_legend_entry(ax_beta)
     ax_beta.set_ylabel(r'$\beta_{x,y}$ [m]')
     ax_beta.set_yscale(yscale)
     ax_beta.set_xlabel('s [m]')
@@ -1141,13 +1243,14 @@ def _beta_comparison_fig(xlim, title_suffix, mark_ir_regions, yscale,
     # brush against the red main-solenoid bar, but that is a pale translucent
     # patch against a saturated line, so the two do not read alike.
     ax_disp = ax_beta.twinx()
-    ax_disp.plot(tw.s, tw.dx * 1e3, color='C2', linewidth=1.0,
+    ax_disp.plot(tw4d.s, tw4d.dx * 1e3, color='C2', linewidth=1.0,
                  label=r'$D_x$ (solenoids on)')
-    ax_disp.plot(tw.s, tw.dy * 1e3, color='C3', linewidth=1.0,
+    ax_disp.plot(tw4d.s, tw4d.dy * 1e3, color='C3', linewidth=1.0,
                  label=r'$D_y$ (solenoids on)')
-    ax_disp.plot(tw.s, DX_OFF * 1e3, color='C2', linewidth=1.0, linestyle='--',
-                 label=r'$D_x$ (solenoids off)')
-    ax_disp.plot(tw.s, DY_OFF * 1e3, color='C3', linewidth=1.0, linestyle='--',
+    ax_disp.plot(tw4d.s, DX_OFF * 1e3, color='C2', linewidth=1.0,
+                 linestyle='--', label=r'$D_x$ (solenoids off)')
+    ax_disp.plot(tw4d.s, DY_OFF * 1e3, color='C3', linewidth=1.0,
+                 linestyle='--',
                  label=r'$D_y$ (solenoids off)')
     ax_disp.set_ylabel(r'$D_{x,y}$ [mm]')
 
@@ -1196,8 +1299,8 @@ print(f'tw4d qx = {tw4d.qx:.12g}, qy = {tw4d.qy:.12g}')
 print(f'tw6d qx = {tw.qx:.12g}, qy = {tw.qy:.12g}, qs = {tw.qs:.12g}')
 
 _in_straight = (
-    (tw.s >= STRAIGHT_SECTION_S_RANGE[0])
-    & (tw.s <= STRAIGHT_SECTION_S_RANGE[1])
+    (tw4d.s >= STRAIGHT_SECTION_S_RANGE[0])
+    & (tw4d.s <= STRAIGHT_SECTION_S_RANGE[1])
 )
 print(f'max |dbetx/betx| = {np.nanmax(np.abs(BEAT_X[_in_straight])):.4g} %, '
       f'max |dbety/bety| = {np.nanmax(np.abs(BEAT_Y[_in_straight])):.4g} % '
@@ -1211,17 +1314,19 @@ _in_straight_4d = (
     & (tw4d.s <= STRAIGHT_SECTION_S_RANGE[1])
 )
 for _rdt_name, _rdt in (('f1001', tw4d.f1001), ('f1010', tw4d.f1010)):
-    _abs = np.abs(_rdt)
-    # nan-aware throughout: the solenoid bodies come back NaN by construction,
-    # see the block comment above RDT_CASES. Report the count so a change in
-    # it is visible rather than silently absorbed into the statistics.
-    _n_nan = int((~np.isfinite(_abs)).sum())
+    # The rows inside the solenoid field are masked (block comment above
+    # RDT_CASES). Report how many, and how many NaNs are left outside it, so a
+    # change in either is visible rather than absorbed into the statistics.
+    _in_field_4d = _in_solenoid_field(tw4d)
+    _abs = np.where(_in_field_4d, np.nan, np.abs(_rdt))
+    _n_nan = int((~np.isfinite(np.abs(_rdt)) & ~_in_field_4d).sum())
     print(f'|{_rdt_name}|: max = {np.nanmax(_abs):.4g} (ring), '
           f'{np.nanmax(_abs[_in_straight_4d]):.4g} ({IP_PLOT} straight), '
           f'median = {np.nanmedian(_abs):.4g} (ring), '
           f'length-weighted ring average = '
           f'{_rdt_ring_average(tw4d, _rdt):.4g}, '
-          f'{_n_nan} NaN pts (solenoid bodies)')
+          f'{int(_in_field_4d.sum())} pts in the field masked, '
+          f'{_n_nan} NaN pts outside it')
 
 # What the straight's correctors are worth, as numbers behind fig4a-fig4d.
 # Solenoids and doublet rotations stay on in the "off" column; only
@@ -1239,97 +1344,90 @@ for _tag, (_tw_c, _, _, _, _tw_nc) in zip(COMPARISON_TAGS, _TAG_RESULTS):
           f'{np.nanmax(_ratio[_win]):15.4g}   (IR window)')
 
 
-##############################################
-# Save the beta / coupled-beta figures       #
-#                                            #
-# "coroff" = the straight's corrector knobs  #
-# off; no suffix = fully corrected.          #
-##############################################
-
-COUPLING_STUDIES_PLOT_DIR = PLOT_DIR / (
-    'Coupling_Studies_partialmap' if PARTIALMAP else 'Coupling_Studies')
-COUPLING_STUDIES_PLOT_DIR.mkdir(parents=True, exist_ok=True)
-
-# Note the two betas_*.pdf below come from BETA_COMPARISON_FIGS, which are
-# drawn for the primary field tag only -- unlike the other six, which carry a
-# 2 T and a 3 T panel each. A run with a different --b0 therefore overwrites
-# those two with the other case's curves while leaving the rest unchanged.
-BETA_COMPARISON_FIGS[0].savefig(
-    COUPLING_STUDIES_PLOT_DIR / 'betas_IR.pdf', bbox_inches='tight')
-BETA_COMPARISON_FIGS[1].savefig(
-    COUPLING_STUDIES_PLOT_DIR / 'betas_straight.pdf', bbox_inches='tight')
-fig4a.savefig(
-    COUPLING_STUDIES_PLOT_DIR / 'betas_IR_coroff.pdf', bbox_inches='tight')
-fig4b.savefig(
-    COUPLING_STUDIES_PLOT_DIR / 'betas_straight_coroff.pdf',
-    bbox_inches='tight')
-fig3.savefig(
-    COUPLING_STUDIES_PLOT_DIR / 'coupledbetas_IR.pdf', bbox_inches='tight')
-fig4.savefig(
-    COUPLING_STUDIES_PLOT_DIR / 'coupledbetas_straight.pdf',
-    bbox_inches='tight')
-fig4c.savefig(
-    COUPLING_STUDIES_PLOT_DIR / 'coupledbetas_IR_coroff.pdf',
-    bbox_inches='tight')
-fig4d.savefig(
-    COUPLING_STUDIES_PLOT_DIR / 'coupledbetas_straight_coroff.pdf',
-    bbox_inches='tight')
+# How far the betas drawn dotted (B_s != 0) can be off; see
+# _kinetic_beta_error. Mode 1 is betx and bety1, mode 2 is bety and betx2.
 print()
-print(f'Saved 8 combined figures to {COUPLING_STUDIES_PLOT_DIR}')
+print('--- betas inside B_s != 0 (drawn dotted): first-order relative error ---')
+for _tag, (_tw_c, _, _, _, _) in zip(COMPARISON_TAGS, _TAG_RESULTS):
+    _err_1, _err_2 = _kinetic_beta_error(_tw_c)
+    _win = ((np.asarray(_tw_c.s) >= -20) & (np.asarray(_tw_c.s) <= 20))
+    print(f'{_tag}: mode 1 {np.nanmax(_err_1[_win]):.2e}, '
+          f'mode 2 {np.nanmax(_err_2[_win]):.2e} ({IP_PLOT} IR window); '
+          f'mode 1 {np.nanmax(_err_1):.2e}, mode 2 {np.nanmax(_err_2):.2e} '
+          f'(ring)')
 
 
 #################################################
-# The same plots, one field case per file       #
+# Save the beta / coupled-beta figures          #
+#                                               #
+# "coroff" = the straight's corrector knobs     #
+# off; no suffix = fully corrected.             #
 #################################################
 
-SINGLE_CASE_PLOT_DIR = COUPLING_STUDIES_PLOT_DIR / 'plots'
-SINGLE_CASE_PLOT_DIR.mkdir(parents=True, exist_ok=True)
+# Paper figures, so they go to the paper folder with the run's provenance in
+# the PDF metadata (`pdfinfo <file> | grep Subject`), as 004k does for the
+# tune diagrams. Override the folder with FCC_SOLENOID_PAPER_PLOT_DIR, e.g.
+# for test runs. The names carry the model, the field(s) shown and ORDER_TAG:
+#   <figure>_<model>_2T3T: one panel per field, from any --b0 run
+#   <figure>_<model>_<field>: the same figure for one field only
+# betas_IR / betas_straight (beta and dispersion, solenoids on vs off) are
+# drawn for the --b0 field only, so they exist in the <field> form only; run
+# once with --b0 2.0 and once with --b0 3.0 to get both.
+OPTICS_PLOT_DIR = PAPER_PLOT_DIR / 'Optics_Plots'
+OPTICS_PLOT_DIR.mkdir(parents=True, exist_ok=True)
+MODEL_LABEL = 'PartialMap' if PARTIALMAP else 'SB'
+ALL_TAGS_LABEL = ''.join(COMPARISON_TAGS)
 
 
-def _save_single(fig_to_save, name):
-    """Write a one-panel figure and close it.
+def _save_optics_pdf(fig_to_save, figure_name, tags_label, close=False):
+    """Write one figure to OPTICS_PLOT_DIR with the provenance metadata.
 
-    Closing matters: these exist only as files. Left open they would add a
-    dozen windows to the plt.show() at the end, which is exactly the pile-up
-    that makes 004a unpleasant to run interactively.
-    """
-    fig_to_save.savefig(SINGLE_CASE_PLOT_DIR / name, bbox_inches='tight')
-    plt.close(fig_to_save)
+    Close the one-field figures: they exist only as files, and left open they
+    would add a dozen windows to the plt.show() at the end."""
+    path = OPTICS_PLOT_DIR / (
+        f'{figure_name}_{MODEL_LABEL}_{tags_label}{ORDER_TAG}.pdf')
+    fig_to_save.savefig(path, bbox_inches='tight', metadata=pdf_metadata())
+    print(f'Saved plot: {path}')
+    if close:
+        plt.close(fig_to_save)
 
 
-for _tag in COMPARISON_TAGS:
-    _save_single(_betx2_bety1_fig((-20, 20), '', True, tags=[_tag]),
-                 f'coupledbetas_IR_{_tag}.pdf')
-    _save_single(
-        _betx2_bety1_fig((-1400, 1400), ' (full straight section)', False,
-                         tags=[_tag]),
-        f'coupledbetas_straight_{_tag}.pdf')
+for _fig, _name in (
+        (fig3, 'coupledbetas_IR'),
+        (fig4, 'coupledbetas_straight'),
+        (fig4a, 'betas_IR_coroff'),
+        (fig4b, 'betas_straight_coroff'),
+        (fig4c, 'coupledbetas_IR_coroff'),
+        (fig4d, 'coupledbetas_straight_coroff')):
+    _save_optics_pdf(_fig, _name, ALL_TAGS_LABEL)
 
-    _save_single(_nocorr_fig((-20, 20), '', True, 'beta', tags=[_tag]),
-                 f'betas_IR_coroff_{_tag}.pdf')
-    _save_single(
-        _nocorr_fig((-1400, 1400), ' (full straight)', False, 'beta',
-                    tags=[_tag]),
-        f'betas_straight_coroff_{_tag}.pdf')
+_save_optics_pdf(BETA_COMPARISON_FIGS[0], 'betas_IR', FIELD_TAG)
+_save_optics_pdf(BETA_COMPARISON_FIGS[1], 'betas_straight', FIELD_TAG)
 
-    _save_single(_nocorr_fig((-20, 20), '', True, 'coupling', tags=[_tag]),
-                 f'coupledbetas_IR_coroff_{_tag}.pdf')
-    _save_single(
-        _nocorr_fig((-1400, 1400), ' (full straight)', False, 'coupling',
-                    tags=[_tag]),
-        f'coupledbetas_straight_coroff_{_tag}.pdf')
-
-# BETA_COMPARISON_FIGS is drawn for the primary field tag only, so these two
-# already are single-case plots -- they just need the tag in the name. That
-# also removes the overwrite noted at the combined-figure block above: a run
-# at each --b0 now leaves one file per case instead of clobbering.
-BETA_COMPARISON_FIGS[0].savefig(
-    SINGLE_CASE_PLOT_DIR / f'betas_IR_{FIELD_TAG}.pdf', bbox_inches='tight')
-BETA_COMPARISON_FIGS[1].savefig(
-    SINGLE_CASE_PLOT_DIR / f'betas_straight_{FIELD_TAG}.pdf',
-    bbox_inches='tight')
-
-print(f'Saved {6 * len(COMPARISON_TAGS) + 2} single-case figures to '
-      f'{SINGLE_CASE_PLOT_DIR}')
+# One-field versions of the two-field figures. With a single field (the
+# partial map) the figures above already are those.
+if len(COMPARISON_TAGS) > 1:
+    for _tag in COMPARISON_TAGS:
+        _save_optics_pdf(
+            _betx2_bety1_fig((-20, 20), '', True, tags=[_tag]),
+            'coupledbetas_IR', _tag, close=True)
+        _save_optics_pdf(
+            _betx2_bety1_fig((-1400, 1400), ' (full straight section)', False,
+                             tags=[_tag]),
+            'coupledbetas_straight', _tag, close=True)
+        _save_optics_pdf(
+            _nocorr_fig((-20, 20), '', True, 'beta', tags=[_tag]),
+            'betas_IR_coroff', _tag, close=True)
+        _save_optics_pdf(
+            _nocorr_fig((-1400, 1400), ' (full straight)', False, 'beta',
+                        tags=[_tag]),
+            'betas_straight_coroff', _tag, close=True)
+        _save_optics_pdf(
+            _nocorr_fig((-20, 20), '', True, 'coupling', tags=[_tag]),
+            'coupledbetas_IR_coroff', _tag, close=True)
+        _save_optics_pdf(
+            _nocorr_fig((-1400, 1400), ' (full straight)', False, 'coupling',
+                        tags=[_tag]),
+            'coupledbetas_straight_coroff', _tag, close=True)
 
 plt.show()

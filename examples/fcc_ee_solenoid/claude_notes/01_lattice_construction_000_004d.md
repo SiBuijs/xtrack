@@ -327,13 +327,21 @@ either side of each IP for smooth plots. `FIGURE_SCALE = 2.0` doubles every
 figure, enlarging fonts and ticks but deliberately not legends or line
 widths.
 
-Twisses: `tw_off` (6d, solenoids and corrections off), `tw4d` (on, with
+Twisses: `tw_off` (4d since 2026-10-29, was 6d; solenoids and corrections
+off), `tw4d` (on, with
 `polarization_analysis`, `radiation_integrals`, `coupling_edw_teng=True`),
 `tw` (6d, on, polarization), `two` (open twiss from the bare start),
 `tw_nocorr` (on, but with the straight's orbit/optics/coupling corrector
 knobs at zero, keeping the compensation solenoids and doublet rotation on;
 see `_twiss_without_correctors`), and `tw_rad` (mean radiation +
 `compensate_radiation_energy_loss`, for dE/ds).
+
+Since 2026-10-29 every optics panel uses 4d twisses: `tw4d` and `tw_off` for
+the --b0 field, and the comparison field's own 4d twisses. Before, the --b0
+panel was 6d and the other field's 4d, so the 2T/3T figures depended on which
+field was passed. The 6d `tw` is now only used for fig2 (spin, dE/ds) and the
+qs print. The other field's lattice is loaded with the same ORDER_TAG (it used
+to be the default order regardless), and the script stops if it is missing.
 
 Figures, in order:
 - fig1/fig2: the original 002-style multi-panel views (optics/Bs/y/Dy/
@@ -352,17 +360,43 @@ Figures, in order:
   NaN points in eight blocks spanning the **compensation-solenoid bodies**,
   traced to W being in kinetic momenta inside solenoids, which is not
   symplectic. So Edwards-Teng (and the betx/bety/betx2/bety1 read off the
-  same W) are not canonical inside solenoid bodies.
+  same W) are not canonical inside solenoid bodies. The betas only use the
+  position rows of W, but `_renormalize_eigenvectors` rescales every mode at
+  every element with the symplectic norm, which uses the momentum rows. Since
+  2026-10-29 the solenoids-on betas are drawn **dotted where B_s != 0**
+  (`_plot_flagging_field`, legend entry `FIELD_FLAG_LABEL`), rather than
+  masked, which would remove the IP. `_kinetic_beta_error` prints a
+  first-order estimate of the error per mode: with a = B_s/(2 B rho), the
+  canonical norm of a kinetically normalised mode is 1 + 2a (y_r x_i - x_r y_i).
+  On the current lattices that is <= 2.2e-3 (2T) and <= 5.1e-3 (3T), so the
+  dotted betas are good to ~0.5%.
+  **2026-10-29: the in-field RDTs are no longer NaN.** On the current 3T
+  lattice Edwards-Teng returns finite values there (0 NaN, |f1001| up to 8.3
+  in the compensation solenoids; 1704 of the 1840 points above 0.1 are in the
+  field), while W is still non-symplectic exactly as before (max
+  |W^T S W - S| = 66 inside vs 1.6e-4 outside, median ratio to
+  2|a| sqrt(betx bety) = 1.000). Not traced which change did it. 004d now
+  masks every B_s != 0 row explicitly in the RDT panels, the printed
+  statistics and `_rdt_ring_average`, instead of relying on the NaNs. The
+  other 136 points above 0.1 are outside the field, at the rotated
+  final-focus quads (qf1ar.1, |f1001| = 3.72 on the 2T ring), where
+  betx2/betx is smooth. Unexplained; the printed RDT max and ring average
+  still include them, so do not quote those.
 - **beta_x/beta_y with and without solenoids** (`_beta_comparison_fig`),
   `BETA_COMPARISON_RANGES` = IR ±20 m and full straight ±1400 m, **both
   linear**. The beta-beat panel was removed; `max |dbetx/betx|` and
   `max |dbety/bety|` over the straight are printed at the end instead,
   together with ring-wide f1001/f1010 statistics.
 
-Saved PDFs, to `PLOT_DIR / 'Coupling_Studies'`: 8 combined figures
-(`betas_{IR,straight}[_coroff].pdf`, `coupledbetas_{IR,straight}[_coroff].pdf`),
-and 14 single-field-case versions in `Coupling_Studies/plots/`
-(`*_2T.pdf`/`*_3T.pdf`).
+Saved PDFs (since 2026-10-29): to the paper folder,
+`PAPER_PLOT_DIR / 'Optics_Plots'`, with the run's provenance in the PDF
+Subject. Names are `<figure>_<SB|PartialMap>_<fields><ORDER_TAG>.pdf`:
+`coupledbetas_{IR,straight}[_coroff]` and `betas_{IR,straight}_coroff` as
+`_2T3T` (both fields) and `_2T`/`_3T` (one field); `betas_{IR,straight}`
+(beta and dispersion, solenoids on vs off) for the --b0 field only, so run
+once per field. Until then they went to `PLOT_DIR / 'Coupling_Studies'`
+(`Coupling_Studies_partialmap` for the map), single-field versions in
+`plots/`, without provenance.
 
 - **Linear vs log beta axes (2026-09-18, still relevant).** `tw_off.plot()`
   in fig1 is linear, and its default colours are `betx` black, `bety` red and

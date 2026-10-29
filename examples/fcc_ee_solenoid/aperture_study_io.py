@@ -31,8 +31,9 @@ PLOT_DIR = Path(
         Path.home() / "cernbox" / "Pictures" / "FCC_Solenoid_Studies",
     )
 )
-# Paper figures (DA, MA, EMIT, POL, TUNE, and 004k's tune diagrams) go to the
-# paper folder, one subdirectory per topic -- see paper_figure_dir(). Override
+# Paper figures (DA, MA, EMIT, POL, TUNE, 004k's tune diagrams and 004d's
+# optics plots) go to the paper folder, one subdirectory per topic -- see
+# paper_figure_dir(); 004k and 004d build their folder from PAPER_PLOT_DIR. Override
 # with FCC_SOLENOID_PAPER_PLOT_DIR. Where only FCC_SOLENOID_PLOT_DIR is set
 # (remote boxes without CERNBox, test runs), they go to PLOT_DIR/paper so they
 # never land somewhere unexpected.
