@@ -362,14 +362,13 @@ Figures, in order:
   symplectic. So Edwards-Teng (and the betx/bety/betx2/bety1 read off the
   same W) are not canonical inside solenoid bodies. The betas only use the
   position rows of W, but `_renormalize_eigenvectors` rescales every mode at
-  every element with the symplectic norm, which uses the momentum rows. Since
-  2026-10-29 the solenoids-on betas are drawn **dotted where B_s != 0**
-  (`_plot_flagging_field`, legend entry `FIELD_FLAG_LABEL`), rather than
-  masked, which would remove the IP. `_kinetic_beta_error` prints a
-  first-order estimate of the error per mode: with a = B_s/(2 B rho), the
-  canonical norm of a kinetically normalised mode is 1 + 2a (y_r x_i - x_r y_i).
-  On the current lattices that is <= 2.2e-3 (2T) and <= 5.1e-3 (3T), so the
-  dotted betas are good to ~0.5%.
+  every element with the symplectic norm, which uses the momentum rows.
+  First-order estimate of the error (2026-10-29): with a = B_s/(2 B rho), the
+  canonical norm of a kinetically normalised mode is
+  1 + 2a (y_r x_i - x_r y_i), computed from W's position rows. On the current
+  lattices that is <= 2.2e-3 (2T) and <= 5.1e-3 (3T), so the betas there are
+  good to ~0.5% and are plotted as they are. (A dotted flag for the B_s != 0
+  stretches was tried in 7719da9a1 and removed again by request: not needed.)
   **2026-10-29: the in-field RDTs are no longer NaN.** On the current 3T
   lattice Edwards-Teng returns finite values there (0 NaN, |f1001| up to 8.3
   in the compensation solenoids; 1704 of the 1840 points above 0.1 are in the
