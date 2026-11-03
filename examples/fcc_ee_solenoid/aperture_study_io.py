@@ -144,7 +144,7 @@ def provenance_from_npz(data) -> dict[str, str] | None:
     return {key: str(data[f"provenance_{key}"]) for key in RUN_PROVENANCE}
 
 
-ModelTag = Literal["SB", "VarSol", "PartialMap"]
+ModelTag = Literal["SB", "VarSol", "PartialMap", "BFE", "PartialMapBFE"]
 StudyTag = Literal["DA", "MA", "EMIT", "POL", "TUNE"]
 
 BUILD_DEFAULTS = {
@@ -889,6 +889,7 @@ def _plot_ma_from_arrays(data: np.lib.npyio.NpzFile) -> plt.Figure:
 
 _MODEL_TITLE_NAMES = {
     "SB": "SplineBoris", "VarSol": "VariableSolenoid", "PartialMap": "BNL field map",
+    "BFE": "BFieldExpansion", "PartialMapBFE": "BNL field map (BFE)",
 }
 
 

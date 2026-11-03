@@ -96,8 +96,69 @@ def bfe_field_tesla(element, x, y, s_local, *, rigidity0):
     return (fv['Bx'] * rigidity0, fv['By'] * rigidity0, fv['Bs'] * rigidity0)
 
 
-def ksol_integral(element):
-    """Integrated Bs/(B rho) of one BFieldExpansion slice, including kscale."""
+# --- Model-agnostic access to solenoid slices (SplineBoris or BFE) --------- #
+# The pipeline scripts use these instead of hard-coding xt.SplineBoris, so the
+# same code installs, scales and inspects either element type.
+
+FIELD_ELEMENT_TYPES = (xt.SplineBoris, xt.BFieldExpansion)
+FIELD_ELEMENT_TYPE_NAMES = tuple(cls.__name__ for cls in FIELD_ELEMENT_TYPES)
+
+
+def is_field_element(element):
+    """True for a SplineBoris or BFieldExpansion solenoid slice."""
+    return isinstance(element, FIELD_ELEMENT_TYPES)
+
+
+def scale_attr(element):
+    """Name of the overall field multiplier: 'scale_b' (SB) or 'kscale' (BFE)."""
+    if isinstance(element, xt.BFieldExpansion):
+        return 'kscale'
+    if isinstance(element, xt.SplineBoris):
+        return 'scale_b'
+    raise TypeError(f'not a solenoid slice: {type(element).__name__}')
+
+
+def get_scale(element):
+    """Current overall field multiplier (None, as SB may store it, -> 1)."""
+    value = getattr(element, scale_attr(element), 1.0)
+    return 1.0 if value is None else float(value)
+
+
+def coefficient_attrs(element):
+    """(skew, normal) transverse-coefficient arrays: ('bx', 'by') for SB
+    (Hermite data, 5 per row) or ('ksc', 'knc') for BFE (polynomial
+    coefficients). Both are linear in the field, so scaling or zeroing a
+    whole row means the same thing for either."""
+    if isinstance(element, xt.BFieldExpansion):
+        return ('ksc', 'knc')
+    if isinstance(element, xt.SplineBoris):
+        return ('bx', 'by')
+    raise TypeError(f'not a solenoid slice: {type(element).__name__}')
+
+
+def transverse_order(element):
+    """Highest transverse multipole row stored (SB multipole_order - 1)."""
+    if isinstance(element, xt.BFieldExpansion):
+        return element.order
+    return element.multipole_order - 1
+
+
+def ksol_integral(element, *, rigidity0):
+    """Integrated Bs/(B rho) of one slice, including its field multiplier."""
     if isinstance(element, xt.BFieldExpansion):
         return float(element.ksoll[0])
-    raise TypeError(f'not a BFieldExpansion: {type(element).__name__}')
+    if isinstance(element, xt.SplineBoris):
+        return get_scale(element) * element.bs[4] * element.length / rigidity0
+    raise TypeError(f'not a solenoid slice: {type(element).__name__}')
+
+
+def bs_mean_tesla(element, *, rigidity0):
+    """Mean Bs over one slice in T, including its field multiplier."""
+    return ksol_integral(element, rigidity0=rigidity0) * rigidity0 / element.length
+
+
+def field_tesla(element, x, y, s_local, *, rigidity0):
+    """(Bx, By, Bs) in T at local s, for either element type."""
+    if isinstance(element, xt.BFieldExpansion):
+        return bfe_field_tesla(element, x, y, s_local, rigidity0=rigidity0)
+    return tuple(element.get_field(x, y, s_local))
