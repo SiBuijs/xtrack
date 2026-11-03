@@ -8,12 +8,15 @@ import numpy as np
 import xtrack as xt
 
 from solenoid_params import (
+    FIELD_MAP_MODELS,
     MAIN_SOLENOID_B0,
     add_b0_argument,
     add_max_order_argument,
     field_tag,
+    is_bfe_model,
     order_tag,
 )
+from bfe_setup import check_bfe_nominal_field, is_field_element, ksol_integral
 
 
 HERE = Path(__file__).parent
@@ -23,11 +26,14 @@ parser = argparse.ArgumentParser(
 )
 parser.add_argument(
     '--model',
-    choices=['splineboris', 'varsol', 'partialmap'],
+    choices=['splineboris', 'bfe', 'varsol', 'partialmap', 'partialmap_bfe'],
     default='splineboris',
     help='Solenoid model to correct (default: splineboris). partialmap = the '
          '2 T BNL field map up to 2.4 m from each IP '
-         '(004b_install_partial_2T_map_in_fcc_ring.py); needs --b0 2.0.',
+         '(004b_install_partial_2T_map_in_fcc_ring.py); needs --b0 2.0. '
+         'bfe / partialmap_bfe = the same with the solenoid slices converted '
+         'to BFieldExpansion (004b --model bfe / partialmap_bfe), valid at '
+         'nominal field only (bfe_setup.check_bfe_nominal_field).',
 )
 add_b0_argument(parser, default=MAIN_SOLENOID_B0)
 add_max_order_argument(parser)
@@ -111,6 +117,10 @@ _MODEL_LATTICE_PATHS = {
         f'temp_fcc_ee_lcc_splineboris_solenoids_{FIELD_TAG}{ORDER_TAG}{IN_TAG}.json',
         f'fccee_z_lcc_splineboris_solenoids_coupling_corrected_{FIELD_TAG}{ORDER_TAG}{OUT_TAG}.json',
     ),
+    'bfe': (
+        f'temp_fcc_ee_lcc_bfe_solenoids_{FIELD_TAG}{ORDER_TAG}{IN_TAG}.json',
+        f'fccee_z_lcc_bfe_solenoids_coupling_corrected_{FIELD_TAG}{ORDER_TAG}{OUT_TAG}.json',
+    ),
     'varsol': (
         f'temp_fcc_ee_lcc_varsol_solenoids_{FIELD_TAG}{IN_TAG}.json',
         f'fccee_z_lcc_varsol_solenoids_coupling_corrected_{FIELD_TAG}{OUT_TAG}.json',
@@ -118,12 +128,13 @@ _MODEL_LATTICE_PATHS = {
 }
 # The field map exists at 2 T only; its order is fixed by the fit in 004b, so
 # --max-transverse-order does not apply either.
-_MODEL_LATTICE_PATHS['partialmap'] = (
-    f'temp_fcc_ee_lcc_partialmap_solenoids_{FIELD_TAG}{IN_TAG}.json',
-    f'fccee_z_lcc_partialmap_solenoids_coupling_corrected_{FIELD_TAG}{OUT_TAG}.json',
-)
-if args.model == 'partialmap' and args.b0 != 2.0:
-    raise SystemExit('--model partialmap is the 2 T BNL field map: use --b0 2.0.')
+for _map_model in FIELD_MAP_MODELS:
+    _MODEL_LATTICE_PATHS[_map_model] = (
+        f'temp_fcc_ee_lcc_{_map_model}_solenoids_{FIELD_TAG}{IN_TAG}.json',
+        f'fccee_z_lcc_{_map_model}_solenoids_coupling_corrected_{FIELD_TAG}{OUT_TAG}.json',
+    )
+if args.model in FIELD_MAP_MODELS and args.b0 != 2.0:
+    raise SystemExit(f'--model {args.model} is the 2 T BNL field map: use --b0 2.0.')
 
 INPUT_LATTICE_JSON = HERE / _MODEL_LATTICE_PATHS[args.model][0]
 OUTPUT_LATTICE_JSON = HERE / _MODEL_LATTICE_PATHS[args.model][1]
@@ -200,8 +211,8 @@ def measure_ksol_l_main_solenoid(line, env, ip_name):
 
         if element_type == 'VariableSolenoid':
             ksol_l += element.ks_profile.mean() * element.length
-        elif element_type == 'SplineBoris':
-            ksol_l += element.scale_b * element.bs[4] * element.length / rigidity0
+        elif is_field_element(element):  # SplineBoris or BFieldExpansion
+            ksol_l += ksol_integral(element, rigidity0=rigidity0)
 
     return ksol_l
 
@@ -1215,6 +1226,12 @@ if chrom_off is not None and chrom_on_corr is not None:
     print(f'  {"change (AFTER - BEFORE)":38s} '
           f'd(d2qx)={chrom_on_corr["d2qx"] - chrom_off["d2qx"]:+13.4f}  '
           f'd(d2qy)={chrom_on_corr["d2qy"] - chrom_off["d2qy"]:+13.4f}')
+
+if is_bfe_model(args.model):
+    # BFE scales the in-solenoid corrector kicks with kscale (SB does not):
+    # the corrected state must sit at nominal field. Raises otherwise.
+    check_bfe_nominal_field(line)
+    print('BFE nominal-field check passed (corrector slices at kscale = 1)')
 
 if WRITE_OUTPUT_LATTICE:
     env.to_json(OUTPUT_LATTICE_JSON)
