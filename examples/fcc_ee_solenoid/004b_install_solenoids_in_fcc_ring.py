@@ -13,14 +13,28 @@ from solenoid_params import (
     MAIN_SOLENOID_CORRECTOR_DS_END,
     add_b0_argument,
     add_max_order_argument,
+    add_model_argument,
     corrector_ds_start_for_b0,
     field_tag,
+    is_bfe_model,
     order_tag,
+)
+from bfe_setup import (
+    FIELD_ELEMENT_TYPE_NAMES,
+    bs_mean_tesla,
+    coefficient_attrs,
+    get_scale,
+    is_field_element,
+    sb_line_to_bfe_line,
+    scale_attr,
+    transverse_order,
 )
 
 
 _parser = argparse.ArgumentParser(
-    description='Install SplineBoris solenoids and correctors in the FCC ring.')
+    description='Install SplineBoris (or BFieldExpansion) solenoids and '
+                'correctors in the FCC ring.')
+add_model_argument(_parser, choices=('splineboris', 'bfe'))
 add_b0_argument(_parser, default=MAIN_SOLENOID_B0)
 add_max_order_argument(_parser)
 _parser.add_argument(
@@ -41,7 +55,7 @@ INPUT_LATTICE_JSON = HERE / 'fccee_z_lcc.json'
 INPUT_SOLENOID_LINES_JSON = HERE / f'004_solenoid_lines_{FIELD_TAG}{ORDER_TAG}.json'
 OUTPUT_LATTICE_JSON = (
     HERE
-    / f'temp_fcc_ee_lcc_splineboris_solenoids_{FIELD_TAG}{ORDER_TAG}{OUT_TAG}.json')
+    / f'temp_fcc_ee_lcc_{_args.model}_solenoids_{FIELD_TAG}{ORDER_TAG}{OUT_TAG}.json')
 
 IP_NAMES = ['ipa', 'ipd', 'ipg', 'ipj']
 
@@ -67,6 +81,17 @@ solenoid_templates = {
 
 main_solenoid_template = solenoid_templates['main_solenoid']
 comp_solenoid_template = solenoid_templates['compensation_solenoid']
+
+# --model bfe: the same SplineBoris templates, every slice converted to
+# xt.BFieldExpansion (bfe_setup.py). The field is identical to round-off;
+# scale_b becomes kscale. The templates stay the single source of the field.
+if is_bfe_model(_args.model):
+    rigidity0 = main_solenoid_template.particle_ref.rigidity0[0]
+    main_solenoid_template = sb_line_to_bfe_line(
+        main_solenoid_template, rigidity0=rigidity0)
+    comp_solenoid_template = sb_line_to_bfe_line(
+        comp_solenoid_template, rigidity0=rigidity0)
+    print('Converted the solenoid templates to BFieldExpansion')
 
 
 #########################################################
@@ -142,22 +167,26 @@ for ip_name in IP_NAMES:
             element_name = f'{element_prefix}_{ii:0{name_width}d}'
             cloned_element = template_element.copy()
 
-            saved_scale_b = getattr(cloned_element, 'scale_b', 1.0)
-            if saved_scale_b is None:
-                saved_scale_b = 1.0
-
             env.elements[element_name] = cloned_element
-            env.ref[element_name].scale_b = float(saved_scale_b) * knob_ref
+            if not is_field_element(cloned_element):
+                element_names.append(element_name)
+                continue
 
-            if (
-                isinstance(cloned_element, xt.SplineBoris)
-                and cloned_element.multipole_order >= 3
-            ):
+            # scale_b (SplineBoris) or kscale (BFieldExpansion).
+            saved_scale = get_scale(cloned_element)
+            setattr(env.ref[element_name], scale_attr(cloned_element),
+                    saved_scale * knob_ref)
+
+            # sext_amp scales the sextupole row: Hermite data (SB bx/by) or
+            # polynomial coefficients (BFE ksc/knc), both linear in the field.
+            if transverse_order(cloned_element) >= 2:
                 sext_ref = env.ref['sext_amp']
                 ref = env.ref[element_name]
-                for k in range(5):
-                    ref.bx[2, k] = float(cloned_element.bx[2, k]) * sext_ref
-                    ref.by[2, k] = float(cloned_element.by[2, k]) * sext_ref
+                for attr in coefficient_attrs(cloned_element):
+                    values = np.asarray(getattr(cloned_element, attr))
+                    ref_attr = getattr(ref, attr)
+                    for k in range(values.shape[1]):
+                        ref_attr[2, k] = float(values[2, k]) * sext_ref
 
             element_names.append(element_name)
 
@@ -189,7 +218,8 @@ for ip_name in IP_NAMES:
     table_corrector_right = table_region.rows[
         s_ip + MAIN_SOLENOID_CORRECTOR_DS_START:
         s_ip + MAIN_SOLENOID_CORRECTOR_DS_END:'s']
-    assert np.all(table_corrector_right.element_type == 'SplineBoris')
+    assert np.all(np.isin(table_corrector_right.element_type,
+                          FIELD_ELEMENT_TYPE_NAMES))
     assert all(
         env_name.startswith(f'sol_slice_{ip_name}_')
         for env_name in table_corrector_right.env_name)
@@ -209,7 +239,8 @@ for ip_name in IP_NAMES:
     table_corrector_left = table_region.rows[
         s_ip - MAIN_SOLENOID_CORRECTOR_DS_END:
         s_ip - MAIN_SOLENOID_CORRECTOR_DS_START:'s']
-    assert np.all(table_corrector_left.element_type == 'SplineBoris')
+    assert np.all(np.isin(table_corrector_left.element_type,
+                          FIELD_ELEMENT_TYPE_NAMES))
     assert all(
         env_name.startswith(f'sol_slice_{ip_name}_')
         for env_name in table_corrector_left.env_name)
@@ -275,8 +306,10 @@ if SET_SOLENOID_KNOBS_FOR_PLOT:
         env[f'on_sol_{ip_name}'] = ON_SOL_VALUE_FOR_PLOT
         env[f'on_comp_sol_{ip_name}'] = ON_COMP_SOL_VALUE_FOR_PLOT
 
-table = line.get_table(attr=True)
-idx_splineboris = np.where(table.element_type == 'SplineBoris')[0]
+table = line.get_table()
+idx_splineboris = np.where(
+    np.isin(table.element_type, FIELD_ELEMENT_TYPE_NAMES))[0]
+rigidity0_ring = line.particle_ref.rigidity0[0]
 
 s_bs_plot_chunks = []
 bs_plot_chunks = []
@@ -286,8 +319,9 @@ bs_integral_compensation_solenoids = 0.0
 
 for ii in idx_splineboris:
     name = table.name[ii]
-    bs_mean = table.bs[ii]
-    length = table.length[ii]
+    # From the element (the table's bs column exists for SplineBoris only).
+    bs_mean = bs_mean_tesla(line[name], rigidity0=rigidity0_ring)
+    length = line[name].length
     s_ring = np.array([table.s_start[ii], table.s_end[ii]])
     bs_local = np.array([bs_mean, bs_mean])
     bs_integral = bs_mean * length
@@ -347,7 +381,8 @@ bs = np.concatenate(bs_plot_chunks)
 plt.close('all')
 
 fig_bs_ring, ax_bs_ring = plt.subplots(figsize=(12, 5))
-ax_bs_ring.plot(s_bs, bs, '-', color='C0', label='SplineBoris $B_s$')
+ax_bs_ring.plot(s_bs, bs, '-', color='C0',
+                label=f'{table.element_type[idx_splineboris[0]]} $B_s$')
 ax_bs_ring.axhline(0.0, color='0.4', linewidth=0.8)
 ax_bs_ring.set_xlabel('ring s [m]')
 ax_bs_ring.set_ylabel('$B_s$ [T]')
@@ -361,7 +396,8 @@ ax_bs_ring.grid(True, alpha=0.3)
 ax_bs_ring.legend(loc='best')
 fig_bs_ring.tight_layout()
 
-print(f'Found {len(idx_splineboris)} SplineBoris elements')
+print(f'Found {len(idx_splineboris)} solenoid slices '
+      f'({table.element_type[idx_splineboris[0]]})')
 print(f'Extracted {len(s_bs)} B_s plot samples from line attributes')
 print(
     f'Integral main solenoids: '

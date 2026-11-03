@@ -67,6 +67,12 @@ def splineboris_to_bfe(element, *, rigidity0,
         ksc=np.array([_hermite_row(row, length, rigidity0) for row in bx]),
         knc=np.array([_hermite_row(row, length, rigidity0) for row in by]),
         kscale=scale if keep_scale else 1.0,
+        # One allocated entry each so 004b can attach the in-solenoid
+        # corrector kicks as knl[0]/ksl[0] expressions (BFE array shapes are
+        # fixed at construction). NB: kscale multiplies them too, unlike
+        # SplineBoris' scale_b -- see check_bfe_nominal_field().
+        knl=[0.0],
+        ksl=[0.0],
         s_start=0.0,
         num_integration_steps=num_integration_steps,
         pkin_const=True,
@@ -162,3 +168,31 @@ def field_tesla(element, x, y, s_local, *, rigidity0):
     if isinstance(element, xt.BFieldExpansion):
         return bfe_field_tesla(element, x, y, s_local, rigidity0=rigidity0)
     return tuple(element.get_field(x, y, s_local))
+
+
+def check_bfe_nominal_field(line, *, tol=1e-12):
+    """Refuse BFE slices whose corrector kick would be rescaled by kscale.
+
+    BFieldExpansion multiplies knl/ksl by kscale, SplineBoris' scale_b does
+    not. 004b puts the in-solenoid correctors on the main-solenoid slices as
+    knl[0]/ksl[0], so BFE reproduces SB only where those slices sit at
+    kscale = 1 (on_sol = main_b_scale = 1). Decision 2026-11-03: --model bfe
+    is valid at nominal field only; main_b_scale scans and solenoid-off cases
+    with live correctors stay on SplineBoris. Raises ValueError otherwise.
+    """
+    bad = []
+    for name in line.element_names:
+        element = line[name]
+        if not isinstance(element, xt.BFieldExpansion):
+            continue
+        kicks = np.r_[np.asarray(element.knl), np.asarray(element.ksl)]
+        if np.any(kicks != 0) and abs(element.kscale - 1.0) > tol:
+            bad.append((name, float(element.kscale)))
+    if bad:
+        name, kscale = bad[0]
+        raise ValueError(
+            f'{len(bad)} BFieldExpansion slices carry corrector kicks at '
+            f'kscale != 1 (first: {name}, kscale={kscale:.6g}); BFE scales '
+            'knl/ksl with kscale, SplineBoris does not. --model bfe is only '
+            'valid with on_sol = main_b_scale = 1.')
+    return True
