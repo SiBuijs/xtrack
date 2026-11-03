@@ -359,6 +359,15 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   the same QD0→sdy1 phase mechanism (calibration agrees to 0.3% / 3%). The
   trims are needed at both fields. `004c --no-midbend-trims` reproduces it.
 
+- `13_bfieldexpansion_refactor.md` — (2026-11-03, branch
+  `bfieldexpansion_refactor`, exploratory) SplineBoris → BFieldExpansion,
+  phase 1 (linear optics): `--model bfe / partialmap_bfe` through 004b/004c/004n
+  via `bfe_setup.py`. Same lattice: BFE = converged SB (3T Q″y 4668.447 vs
+  4668.448; SB at 10 steps 4668.487). Corrected rings differ by Q″y −6.0 at 3T
+  because 004c lands on a different near-null-space solution (note 10), not
+  because of the element. BFE valid at nominal field only (kscale scales the
+  corrector knl); no radiation; spin silently ignored in line tracking.
+
 ## Scripts without a dedicated note (summarised 2026-10-14 from docstrings)
 
 - `000c_field_map_y_s_plane.py` — figure: main-solenoid (By, Bz) field
