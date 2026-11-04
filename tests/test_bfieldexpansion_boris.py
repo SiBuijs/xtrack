@@ -110,12 +110,11 @@ def test_boris_api_and_serialization():
 
     with pytest.raises(ValueError, match='only supports'):
         element.integrator = 'yoshida4'
-    with pytest.raises(ValueError, match='straight'):
-        xt.BFieldExpansion(length=1., h=0.3, integrator='boris')
+    # Curved elements support Boris as well
     bent = xt.BFieldExpansion(length=1., h=0.3)
-    with pytest.raises(ValueError, match='straight'):
-        bent.integrator = 'boris'
-    assert bent.integrator == 'rk4'
+    bent.integrator = 'boris'
+    assert bent.integrator == 'boris'
+    assert xt.BFieldExpansion(length=1., h=0.3, integrator='boris').integrator == 'boris'
 
 
 def test_boris_uniform_field_matches_exact_helix():
@@ -445,3 +444,176 @@ def test_spin_requires_boris():
         make_element('rk4', 10).track(particles)
     make_element('boris', 10).track(particles)
     assert np.all(particles.state == 1)
+
+
+# ---------------------------------------------------------------------------
+# Curved frame: the half drifts are exact sector bends in the design field
+# b0 = h, the kicks apply By - b0 (and Bx), the rotation Bs.
+# ---------------------------------------------------------------------------
+
+def make_bent_element(integrator='boris', num_integration_steps=40,
+                      pkin_const=False, h=0.4):
+    # Design dipole plus s-dependent dipole error, quadrupole, sextupole,
+    # skew quadrupole and a solenoid ramp, all in curved-frame components.
+    return xt.BFieldExpansion(
+        length=1.0, h=h, k0=h, s_start=0.05,
+        knc=[[0.0, 0.02, -0.02], [0.3, -0.2, 0.1], [2.0, 1.0]],
+        ksc=[[0.], [0.05, 0.05]], ksolc=[0.1, 0.3, -0.3],
+        integrator=integrator, num_integration_steps=num_integration_steps,
+        pkin_const=pkin_const)
+
+
+def make_bent_particles():
+    return xt.Particles(
+        p0c=2e9, x=[1e-3, -2e-3, 4e-3, 0.], px=[2e-4, -1e-3, 3e-3, 0.],
+        y=[-1.5e-3, 2e-3, 3e-3, 0.], py=[1e-4, 5e-4, -2e-3, 0.],
+        zeta=[0., 1e-3, -1e-3, 0.], delta=[1e-3, -2e-3, 5e-3, 0.],
+        chi=[1., 1.01, 0.99, 1.], mass_ratio=[1., 1.01, 1., 1.])
+
+
+@pytest.mark.parametrize('pkin_const', [False, True])
+def test_boris_bent_converges_to_rk4_at_second_order(pkin_const):
+    # The bent RK4 integrates the canonical Hamiltonian, independently of the
+    # kinetic-momentum formulation of the Boris step.
+    reference = track(make_bent_element('rk4', 4000, pkin_const),
+                      make_bent_particles())
+    errors = []
+    for nstep in (20, 40, 80, 160):
+        particles = track(make_bent_element('boris', nstep, pkin_const),
+                          make_bent_particles())
+        assert np.all(particles.state == 1)
+        xo.assert_allclose(particles.s, reference.s, rtol=0, atol=1e-15)
+        errors.append(max(np.max(np.abs(getattr(particles, name)
+                                        - getattr(reference, name)))
+                          for name in (*COORDS, 'ax', 'ay')))
+    orders = np.log2(np.array(errors[:-1]) / np.array(errors[1:]))
+    xo.assert_allclose(orders, 2., rtol=0, atol=0.05)
+    assert errors[-1] < 3e-7
+
+
+@pytest.mark.parametrize('pkin_const', [False, True])
+def test_boris_bent_backtrack_retraces_forward_steps(pkin_const):
+    line = xt.Line(elements={'e': make_bent_element('boris', 37, pkin_const)})
+    initial = make_bent_particles()
+    particles = initial.copy()
+    line.track(particles)
+    line.track(particles, backtrack=True)
+    assert np.all(particles.state == 1)
+    for name in (*COORDS, 's'):
+        xo.assert_allclose(getattr(particles, name), getattr(initial, name),
+                           rtol=0, atol=1e-15)
+
+
+@pytest.mark.parametrize('pkin_const', [False, True])
+def test_boris_bent_thick_slices_match_parent(pkin_const):
+    parent = make_bent_element('boris', 40, pkin_const)
+    reference = track(parent.copy(), make_bent_particles())
+    line = xt.Line(elements={'e': parent})
+    line.slice_thick_elements([xt.Strategy(xt.Uniform(4, mode='thick'))])
+    particles = make_bent_particles()
+    line.track(particles, _force_no_end_turn_actions=True)
+    for name in (*COORDS, 's', 'ax', 'ay'):
+        xo.assert_allclose(getattr(particles, name), getattr(reference, name),
+                           rtol=0, atol=1e-15)
+
+
+@pytest.mark.parametrize('nstep', [1, 7])
+def test_boris_bent_design_dipole_is_exact(nstep):
+    # In the pure design field the step is the exact sector-bend map: the
+    # reference particle stays on the frame and off-momentum particles (and
+    # other charge-to-mass ratios) follow the exact xt.Bend map, for any
+    # number of steps.
+    h = 0.4
+    element = xt.BFieldExpansion(length=1.0, h=h, k0=h, integrator='boris',
+                                 num_integration_steps=nstep)
+    reference = xt.Particles(p0c=2e9, x=0., px=0., y=0., py=0.)
+    element.track(reference)
+    for name in ('x', 'px', 'y', 'py'):
+        xo.assert_allclose(getattr(reference, name), 0., rtol=0, atol=1e-17)
+    xo.assert_allclose(reference.zeta, 0., rtol=0, atol=1e-16)
+
+    bend = xt.Bend(length=1.0, angle=h, k0=h, model='bend-kick-bend',
+                   edge_entry_active=False, edge_exit_active=False)
+    particles = track(element, make_bent_particles())
+    expected = track(bend, make_bent_particles())
+    for name in (*COORDS, 's'):
+        xo.assert_allclose(getattr(particles, name), getattr(expected, name),
+                           rtol=0, atol=2e-15)
+
+
+def test_boris_bent_spin_matches_bend():
+    # Uniform dipole with a quadrupole: the spin turns by ~1e-2 relative to the
+    # frame. magnet_spin gets the frame rotation h*ds per step; without it the
+    # spin would be off by ~h*length = 4e-2.
+    p0c, length, h, k1 = 45.6e9, 2.0, 0.02, 0.05
+
+    def spin_particles():
+        return xt.Particles(
+            p0c=p0c, mass0=xt.ELECTRON_MASS_EV,
+            anomalous_magnetic_moment=0.00115965218128,
+            x=[0., 1e-3, -2e-3], px=[0., 1e-4, -2e-4], y=[0., 5e-4, 1e-3],
+            py=[0., -1e-4, 2e-4], delta=[0., 1e-3, -2e-3],
+            spin_x=0.1, spin_y=np.sqrt(1 - 0.05), spin_z=0.2)
+
+    out = []
+    for element in (
+            xt.BFieldExpansion(length=length, h=h, k0=h, k1=k1,
+                               integrator='boris', num_integration_steps=1000),
+            xt.Bend(length=length, angle=h * length, k0=h, k1=k1,
+                    model='bend-kick-bend', num_multipole_kicks=10000,
+                    edge_entry_active=False, edge_exit_active=False)):
+        line = xt.Line(elements=[element])
+        line.particle_ref = spin_particles()
+        line.configure_spin(spin_model='auto')
+        particles = spin_particles()
+        line.track(particles)
+        out.append(particles)
+    boris, bend = out
+    for name in ('spin_x', 'spin_y', 'spin_z'):
+        xo.assert_allclose(getattr(boris, name), getattr(bend, name),
+                           rtol=0, atol=2e-7)
+    assert np.all(np.abs(boris.spin_x - 0.1) > 1e-2)
+
+
+def _bent_ring(use_bfe, nstep=50):
+    env = xt.Environment()
+    env.particle_ref = xt.Particles(mass0=xt.ELECTRON_MASS_EV, q0=1, p0c=3e9)
+    ncells, length = 16, 2.0
+    angle = np.pi / ncells
+    if use_bfe:
+        env.elements['mb'] = xt.BFieldExpansion(
+            length=length, h=angle / length, k0=angle / length, k1=0.01,
+            integrator='boris', num_integration_steps=nstep)
+    else:
+        env.new('mb', xt.Bend, length=length, angle=angle, k0_from_h=True,
+                k1=0.01, model='bend-kick-bend', num_multipole_kicks=nstep,
+                edge_entry_active=False, edge_exit_active=False)
+    env.new('qf', xt.Quadrupole, length=0.4, k1=0.6)
+    env.new('qd', xt.Quadrupole, length=0.4, k1=-0.6)
+    cell = env.new_line(components=[
+        env.place('qf', at=0.2), env.place('mb', at=2.4), env.place('qd', at=4.6),
+        env.place('mb', at=6.8), env.new('cell_end', xt.Marker, at=9.2)])
+    ring = env.new_line(components=[cell] * ncells)
+    ring.insert([env.new('cav', xt.Cavity, voltage=3e6, frequency=500e6,
+                         phase=np.pi, at=0.9)])
+    return ring
+
+
+def test_boris_bent_ring_matches_bend_ring():
+    # A ring whose bends are all curved Boris BFieldExpansions has the optics
+    # and radiation properties of the same ring with exact xt.Bend elements,
+    # and the damping partition numbers add up to 4 (Robinson's theorem).
+    results = []
+    for use_bfe in (True, False):
+        ring = _bent_ring(use_bfe)
+        tw4d = ring.twiss4d()
+        ring.configure_radiation(model='mean')
+        results.append((tw4d, ring.twiss(radiation_analysis=True)))
+    (tw4d, tw), (tw4d_bend, tw_bend) = results
+    xo.assert_allclose(tw4d.qx, tw4d_bend.qx, rtol=0, atol=1e-5)
+    xo.assert_allclose(tw4d.qy, tw4d_bend.qy, rtol=0, atol=1e-5)
+    xo.assert_allclose(tw4d.dqx, tw4d_bend.dqx, rtol=0, atol=1e-4)
+    xo.assert_allclose(tw.energy_loss, tw_bend.energy_loss, rtol=1e-6, atol=0)
+    xo.assert_allclose(tw.partition_numbers, tw_bend.partition_numbers,
+                       rtol=0, atol=1e-3)
+    xo.assert_allclose(tw.partition_numbers.sum(), 4., rtol=0, atol=2e-4)

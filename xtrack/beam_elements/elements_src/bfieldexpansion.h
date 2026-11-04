@@ -101,16 +101,8 @@ void BFieldExpansion_track_interval(BFieldExpansionData el,
                                     SynchrotronRadiationRecordData radiation_record) {
     /* Radiation and spin are only implemented in the Boris integrator. */
     if (BFieldExpansionData_get_integrator(el) == BFIELDEXPANSION_INTEGRATOR_BORIS) {
-        /* Python allows Boris only for straight elements. */
-        if (BFieldExpansionData_get_straight(el)) {
-            BFieldExpansion_track_boris_straight(el, part0, length, s_start, nstep,
-                                                 radiation_flag, radiation_record);
-        }
-        else {
-            START_PER_PARTICLE_BLOCK(part0, part);
-                LocalParticle_set_state(part, XT_INVALID_BFIELD_EXPANSION);
-            END_PER_PARTICLE_BLOCK
-        }
+        BFieldExpansion_track_boris(el, part0, length, s_start, nstep,
+                                    radiation_flag, radiation_record);
     }
     else if (BFieldExpansionData_get_straight(el)) {
         BFieldExpansion_track_straight(el, part0, length, s_start, nstep);
