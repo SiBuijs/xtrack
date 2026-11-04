@@ -49,7 +49,7 @@ def test_bfieldexpansion_readonly_metadata_and_integrator():
     element.knc[:] = 0.
     assert element.order == 5
     assert element.integrator == 'rk4'
-    assert element.get_available_integrators() == ['rk4']
+    assert element.get_available_integrators() == ['rk4', 'boris']
     element.integrator = 'rk4'
     assert not hasattr(element, 'nstep')
     assert element.num_integration_steps == 12
