@@ -206,3 +206,40 @@ reference-orbit error comes from splitting the frame turn (in D) and the
 dipole bending (in K) into separate O(φ) substeps that cancel only to O(φ³).
 The sector-bend drift follows the design curve exactly instead, so nothing is
 undone and redone. Implementation plan: `paper/TODO.md`, side-topic section.
+
+## Step 5 — Python prototype in BFieldExpansion units, polar and sector-bend variants (2026-11-04)
+
+Target changed (user, 2026-11-04): the curved Boris goes into
+**BFieldExpansion**, not SplineBoris. BFE already has a curvilinear field
+expansion and returns B_x, B_y, B_s in curved-frame components, so the
+field-input question of the TODO is settled. Prototype:
+`examples/bfieldexpansion/curved_boris_prototype.py` (branch
+`bfe_radiation_spin`). Units as in the straight C Boris: kinetic momenta
+π = p − χA in units of P₀, field b = B/(Bρ)₀, so q → χ in the formulas above.
+
+**Sector-bend variant.** Split the kick K = K₀ + (K − K₀), with K₀ the kick of
+the uniform design field b₀ = h (B₀ = hP₀/q). D + K₀ is motion in a uniform
+vertical field: a circle in the lab, exactly solvable in the curved frame.
+This is the exact sector-bend map, ported from Xsuite's
+`track_curved_exact_bend_single_particle` (`track_magnet_drift.h`):
+π_x⁺ = π_x cos φ + C sin φ with C = p_s − χ(1 + hx), which vanishes on the
+design orbit. The step is bend(Δs/2) · K(B_y − h, B_x) · R · K · bend(Δs/2).
+B₀ is fixed by P₀, so off-momentum particles (and χ ≠ 1) are exact too:
+their circle has radius ρ(1 + δ)/χ, and C ≈ δ gives the exact
+dispersion orbit. Spin and radiation use the full field.
+
+| check | polar drift | sector bend |
+|---|---|---|
+| substep vs direct ODE integration | 2e-16 | 9e-16 |
+| non-uniform field (h = 0.4), n = 10 → 320, vs BFE bent RK4 | 2.3e-4 → 2.3e-7, order 2 | 1.7e-5 → 1.7e-8, order 2 |
+| reference particle, pure dipole, 10 × 0.1 m | x = −5.3e-5 m (∝ h³) | 0 |
+| off-momentum particles, pure dipole, vs `xt.Bend` `bend-kick-bend` | 1.3e-4 | 2e-16 |
+| symplecticity defect, n = 20 | 1.8e-4 | 1.8e-4 |
+
+h → 0 (polar variant) equals the C straight Boris to 2e-16. The symplecticity
+defect is O(Δs²) and identical for the straight Boris: it comes from the
+s-dependent solenoid (Boris on kinetic momenta is not symplectic there);
+with constant fields both variants are symplectic to finite-difference
+noise. Plot:
+`~/cernbox/Pictures/FCC_Solenoid_Studies/BFE_CurvedBoris_2026-11-04/curved_boris_variants.png`.
+Decision: the C implementation uses the sector-bend variant for h ≠ 0.

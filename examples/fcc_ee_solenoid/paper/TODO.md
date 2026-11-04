@@ -243,7 +243,8 @@ Derive the spatial Boris (drift–kick–rotation) splitting on a frame with con
 - [x] `DERIVE` Step 2: re-parametrize with s as the independent variable (x′, y′, t′, P′ with the 1 + hx factor) → `claude_notes/13_boris_curved_frame.md`
 - [x] `DERIVE` Step 3: phase-space vector field on (x, y, P_x, P_y); identify the drift, kick and rotation operators and the new curvature terms → `claude_notes/13_boris_curved_frame.md`
 - [x] `DERIVE` Step 4: exponentiate the pieces and write the Strang splitting; state the local error order → `claude_notes/13_boris_curved_frame.md`
-- [ ] `DERIVE` Optional: move the design dipole into the drift (exact sector bend) so the reference orbit is preserved exactly; compare with the polar-drift version
+- [ ] `DERIVE` Optional: move the design dipole into the drift (exact sector bend) so the reference orbit is preserved exactly; compare with the polar-drift version (done numerically in the prototype, see below and note 13 step 5; the derivation is still open)
+- [ ] `READ` Look up the details of the exact (sector) bend map: how it is derived (motion on a circle in a uniform field, written in the curved frame), the stable rewrite in Xsuite's `track_curved_exact_bend_single_particle` (`track_magnet_drift.h`), and the sector-bend integrators in Forest's book / PTC
 - [ ] `CHECK` Compare with the curved-frame integrator in Schüren's thesis (project file) and with Xsuite's bend/SplineBoris implementation
 
 ### Implementation (for Claude Code)
@@ -254,16 +255,16 @@ Method (formulas in `claude_notes/13_boris_curved_frame.md`, step 4): Strang spl
 - R: rotation of (P_x, P_y) by ω = q(1 + hx)B_s Δs/P_s.
 - The factor 1 + hx in K and R is the metric (lab path per unit s), not a frame effect.
 
-Tasks:
-- [ ] `SIM` Python prototype of the polar-drift version (new script in `examples/splineboris/`, standalone). Tests:
-    - [ ] D alone vs direct integration of the D vector field (expect ~1e-15)
-    - [ ] Full step vs a tight-tolerance RK integration of the curved equations in a non-uniform field: second order (error ×4 per halving)
-    - [ ] h → 0 reproduces the straight SplineBoris step to machine precision
-    - [ ] Symplecticity of one step: ‖MᵀJM − J‖ from a finite-difference Jacobian, in canonical variables (state which ones)
-    - [ ] Report the reference-orbit drift in a pure design dipole (qB_y = hP; the scratch check gave x = −5e-5 m after 10 × 0.1 m at h = 0.4)
-- [ ] `SIM` Sector-bend variant: replace D by the exact sector-bend map with the design field B₀ = hP₀/q, and kick with B_y − B₀ only. Handle P ≠ P₀ (δ ≠ 0), where the bend map no longer follows the reference circle. Tests: the reference orbit is preserved to machine precision; uniform B_y agrees with `xt.Bend` using an exact model; second order in a non-uniform field
-- [ ] `CHECK` Decide the field input: curved-frame field components need a curvilinear expansion (Schüren's thesis, project file). The current SplineBoris/bpmeth fit is Cartesian. Scope this before the C work
-- [ ] `SIM` C implementation: an `h` parameter (default 0) in `xtrack/beam_elements/elements_src/track_splineboris.h` / `splineboris.py`. This is library code: separate, focused commits (CLAUDE.md), with unit tests from the prototype checks
+Tasks (target changed 2026-11-04: implement in **BFieldExpansion**, not SplineBoris, which is being deprecated):
+- [x] `SIM` Python prototype of the polar-drift version → `examples/bfieldexpansion/curved_boris_prototype.py` (branch `bfe_radiation_spin`), uses BFE's curved field; note 13 step 5. Tests:
+    - [x] D alone vs direct integration of the D vector field: 2e-16
+    - [x] Full step vs BFE's curved RK4 (canonical, independent) in a non-uniform field: second order, ratio 4.00 per halving
+    - [x] h → 0 reproduces the C straight BFE Boris step: 2e-16
+    - [x] Symplecticity in canonical (x, px, y, py) at fixed δ: defect O(Δs²), 1.8e-4 at n = 20; identical for the straight Boris, caused by the s-dependent solenoid; constant fields symplectic to finite-difference noise
+    - [x] Reference-orbit drift in a pure design dipole: x = −5.3e-5 m (h = 0.4, 10 × 0.1 m), scales as h³
+- [x] `SIM` Sector-bend variant: replace D by the exact sector-bend map with the design field B₀ = hP₀/q, and kick with B_y − B₀ only. Handle P ≠ P₀ (δ ≠ 0), where the bend map no longer follows the reference circle. Tests: the reference orbit is preserved to machine precision; uniform B_y agrees with `xt.Bend` using an exact model; second order in a non-uniform field → reference orbit exactly 0; off-momentum particles = `xt.Bend` (`bend-kick-bend`) to 2e-16; second order and 14× more accurate than the polar drift at equal steps. Plot: `FCC_Solenoid_Studies/BFE_CurvedBoris_2026-11-04/curved_boris_variants.png`
+- [x] `CHECK` Decide the field input: curved-frame field components need a curvilinear expansion (Schüren's thesis, project file). The current SplineBoris/bpmeth fit is Cartesian. Scope this before the C work → resolved by moving to BFE: it already has a curvilinear expansion and returns curved-frame components (used by its bent RK4)
+- [ ] `SIM` C implementation of the sector-bend variant for h ≠ 0 in `xtrack/beam_elements/elements_src/track_bfieldexpansion_boris.h` (lift the straight-only restriction in `bfield_expansion.py`; pass h to `magnet_spin`). This is library code: separate, focused commits (CLAUDE.md), with unit tests from the prototype checks
 
 ## 8. Housekeeping
 
