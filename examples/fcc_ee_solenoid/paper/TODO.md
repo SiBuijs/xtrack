@@ -235,6 +235,16 @@ Run each item for: solenoids off · 2 T · 3 T without mid-bend quads (to show t
 - [ ] `FIG` Table 2: figures of merit for every configuration (off / 2 T / 3 T before / 3 T after / 2 T map)
 - [ ] `FIG` Clean the plot titles of internal labels ("ipa:", commit hashes, "frac_lost"); use consistent styles and units, and colour-blind-safe palettes
 
+## Side topic: Boris integrator in a curved frame (not on the paper's critical path)
+
+Derive the spatial Boris (drift–kick–rotation) splitting on a frame with constant curvature h, following the straight-frame derivation step by step. Notes: `claude_notes/13_boris_curved_frame.md`
+
+- [x] `DERIVE` Step 1: Lorentz force in the curved frame (local components, fictitious terms from the rotating basis, checks) → `claude_notes/13_boris_curved_frame.md` (numerical check against Cartesian tracking: 1e-13)
+- [ ] `DERIVE` Step 2: re-parametrize with s as the independent variable (x′, y′, t′, P′ with the 1 + hx factor)
+- [ ] `DERIVE` Step 3: phase-space vector field on (x, y, P_x, P_y); identify the drift, kick and rotation operators and the new curvature terms
+- [ ] `DERIVE` Step 4: exponentiate the pieces and write the Strang splitting; state the local error order
+- [ ] `CHECK` Compare with the curved-frame integrator in Schüren's thesis (project file) and with Xsuite's bend/SplineBoris implementation
+
 ## 8. Housekeeping
 
 - [ ] `CHECK` Replace "two orders of magnitude" with the exact factor (7.88×10⁻⁴ → 4.36×10⁻², ≈ ×55)

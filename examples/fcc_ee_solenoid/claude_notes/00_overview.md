@@ -359,6 +359,13 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   the same QD0→sdy1 phase mechanism (calibration agrees to 0.3% / 3%). The
   trims are needed at both fields. `004c --no-midbend-trims` reproduces it.
 
+- `13_boris_curved_frame.md` — (2026-11-04, side topic, not on the paper's
+  critical path) step-by-step derivation of the spatial Boris
+  drift–kick–rotation splitting in a curved frame with constant curvature h.
+  Step 1 done: the Lorentz force in the curved frame, checked numerically;
+  curvature acts as an extra state-dependent vertical field
+  −h P_s / (q (1 + hx)), i.e. a rotation in the P_x–P_s plane.
+
 ## Scripts without a dedicated note (summarised 2026-10-14 from docstrings)
 
 - `000c_field_map_y_s_plane.py` — figure: main-solenoid (By, Bz) field
