@@ -241,8 +241,9 @@ Derive the spatial Boris (drift–kick–rotation) splitting on a frame with con
 
 - [x] `DERIVE` Step 1: Lorentz force in the curved frame (local components, fictitious terms from the rotating basis, checks) → `claude_notes/13_boris_curved_frame.md` (numerical check against Cartesian tracking: 1e-13)
 - [x] `DERIVE` Step 2: re-parametrize with s as the independent variable (x′, y′, t′, P′ with the 1 + hx factor) → `claude_notes/13_boris_curved_frame.md`
-- [ ] `DERIVE` Step 3: phase-space vector field on (x, y, P_x, P_y); identify the drift, kick and rotation operators and the new curvature terms
-- [ ] `DERIVE` Step 4: exponentiate the pieces and write the Strang splitting; state the local error order
+- [x] `DERIVE` Step 3: phase-space vector field on (x, y, P_x, P_y); identify the drift, kick and rotation operators and the new curvature terms → `claude_notes/13_boris_curved_frame.md`
+- [x] `DERIVE` Step 4: exponentiate the pieces and write the Strang splitting; state the local error order → `claude_notes/13_boris_curved_frame.md`
+- [ ] `DERIVE` Optional: move the design dipole into the drift (exact sector bend) so the reference orbit is preserved exactly; compare with the polar-drift version
 - [ ] `CHECK` Compare with the curved-frame integrator in Schüren's thesis (project file) and with Xsuite's bend/SplineBoris implementation
 
 ## 8. Housekeeping

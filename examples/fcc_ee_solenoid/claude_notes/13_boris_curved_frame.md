@@ -133,5 +133,65 @@ r is the particle position, not "the basis vectors", and depends on t;
 "momenta" → velocities; lab XZ-plane; state the sign convention of h; one
 sentence on where the h terms come from; list s′, t′, E′.
 
-Next (step 3): the vector field on (x, y, P_x, P_y) with P_s eliminated;
-identify D, K, R and the curvature terms.
+## Step 3 — vector field and the D, K, R operators (2026-11-04)
+
+With P_s = sqrt(P² − P_x² − P_y²) eliminated (its s-equation, −h P_x included,
+follows from P_x′ and P_y′):
+
+$$
+F = (1 + hx)\left(\frac{P_x}{P_s}\partial_x + \frac{P_y}{P_s}\partial_y\right) + \partial_s
++ \left[q(1 + hx)\left(\frac{P_y}{P_s}B_s - B_y\right) + hP_s\right]\partial_{P_x}
++ q(1 + hx)\left(B_x - \frac{P_x}{P_s}B_s\right)\partial_{P_y}
+$$
+
+(The user's first draft had a spurious +hP_x in the ∂_{P_y} term and no ∂_s.)
+Split F = D + K + R with the curvature term in the drift:
+
+$$
+\begin{aligned}
+D &= (1 + hx)\left(\frac{P_x}{P_s}\partial_x + \frac{P_y}{P_s}\partial_y\right) + \partial_s + hP_s\partial_{P_x} \cr
+K &= q(1 + hx)\left(B_x\partial_{P_y} - B_y\partial_{P_x}\right) \cr
+R &= \frac{q(1 + hx)B_s}{P_s}\left(P_y\partial_{P_x} - P_x\partial_{P_y}\right)
+\end{aligned}
+$$
+
+D is the exact field-free motion in the curved frame (a straight lab line;
+Forest's "polar drift"). K and R leave x frozen, so 1 + hx only rescales them
+and they stay exactly solvable. Putting hP_s into K instead would make K
+momentum-dependent and lose its exact solution.
+
+## Step 4 — the curved Boris step (2026-11-04)
+
+Strang splitting as in the straight frame:
+exp(Δs/2 D) exp(Δs/2 K) exp(Δs R) exp(Δs/2 K) exp(Δs/2 D).
+
+**Drift (changed).** P_x is no longer constant: (P_x, P_s) rotate by the frame
+angle φ = h ℓ over a drift of length ℓ, P_y is constant. With ρ = 1/h,
+intersecting the straight lab line with the rotated plane gives
+
+$$
+\begin{aligned}
+P_x^{+} &= P_x\cos\varphi + P_s\sin\varphi , \qquad P_s^{+} = P_s\cos\varphi - P_x\sin\varphi , \qquad P_y^{+} = P_y \cr
+x^{+} &= (\rho + x)\frac{P_s}{P_s^{+}} - \rho , \qquad
+y^{+} = y + (\rho + x)\frac{\sin\varphi}{P_s^{+}}P_y , \qquad
+t^{+} = t + (\rho + x)\frac{\sin\varphi}{P_s^{+}}\gamma m
+\end{aligned}
+$$
+
+valid while P_s⁺ > 0; h → 0 gives the straight drift.
+
+**Kick:** P_x −= q(1 + hx)B_y Δs/2, P_y += q(1 + hx)B_x Δs/2 (fields at the
+half-drifted position), then recompute P_s.
+**Rotation:** angle ω = q(1 + hx)B_s Δs/P_s,
+P_x ← P_x cos ω + P_y sin ω, P_y ← −P_x sin ω + P_y cos ω.
+
+**Checks (scratch script, not committed).** The drift map agrees with direct
+integration of D to 3e-15. The full step in a non-uniform field (h = 0.4) is
+second order: the error drops ×4 per halving of Δs (2.1e-3 → 8.2e-6 for
+n = 10 → 160).
+
+**Caveat: the reference orbit is not exact.** In a pure design dipole
+(qB_y = hP), the D and K substeps don't cancel exactly: x = −5e-5 after 10
+steps of 0.1 m at h = 0.4 (O(φ³) per step). Fix if needed: put the design
+dipole into the drift (the exact sector-bend map, a circle in a uniform field,
+which Xsuite already uses for bends) and kick only with B_y − hP/q.
