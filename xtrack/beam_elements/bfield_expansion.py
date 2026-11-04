@@ -177,6 +177,20 @@ class _BFieldExpansionArray(np.lib.mixins.NDArrayOperatorsMixin):
         self[...] = value
 
 
+_INTEGRATOR_CODES = {'rk4': 0, 'boris': 1}
+_INTEGRATOR_NAMES = {code: name for name, code in _INTEGRATOR_CODES.items()}
+
+
+def _integrator_code(name, straight):
+    if name not in _INTEGRATOR_CODES:
+        raise ValueError("BFieldExpansion only supports integrator in "
+                         f"{tuple(_INTEGRATOR_CODES)}, got {name!r}")
+    if name == 'boris' and not straight:
+        raise ValueError("integrator='boris' is only available for straight "
+                         "BFieldExpansion elements (h=0)")
+    return _INTEGRATOR_CODES[name]
+
+
 class _BFieldExpansionGeometry:
     _geometry_rename = {
         'length': '_length',
@@ -534,17 +548,15 @@ class _BFieldExpansionGeometry:
 
     @property
     def integrator(self):
-        return 'rk4'
+        return _INTEGRATOR_NAMES[self._integrator]
 
     @integrator.setter
     def integrator(self, value):
-        if value != 'rk4':
-            raise ValueError("BFieldExpansion only supports integrator='rk4'")
-        self._integrator = 0
+        self._integrator = _integrator_code(value, self.straight)
 
     @staticmethod
     def get_available_integrators():
-        return ['rk4']
+        return list(_INTEGRATOR_CODES)
 
     @property
     def h(self):
@@ -646,7 +658,11 @@ class BFieldExpansion(_BFieldExpansionGeometry, BeamElement):
         Polynomial coordinate at the element entrance, in metres. Tracking
         evaluates the profiles from s_start to s_start + length. Default is 0.
     integrator : str, optional
-        Integration scheme. Currently only 'rk4' is supported (the default).
+        Integration scheme: 'rk4' (default), classical fourth-order
+        Runge-Kutta on the canonical Hamiltonian flow, or 'boris', a
+        second-order, time-reversible spatial Boris scheme on the kinetic
+        momenta that uses only the magnetic field at each step midpoint.
+        'boris' is only available for straight elements (h=0).
     num_integration_steps : int, optional
         Positive number of integration steps, default 10.
     pkin_const : bool, optional
@@ -825,8 +841,7 @@ class BFieldExpansion(_BFieldExpansionGeometry, BeamElement):
             raise TypeError('BFieldExpansion requires length')
         if 'order' in kwargs:
             raise ValueError('order is read-only and determined by knc/ksc shapes')
-        if integrator != 'rk4':
-            raise ValueError("BFieldExpansion only supports integrator='rk4'")
+        integrator_code = _integrator_code(integrator, straight=(h == 0))
         ksc, knc, ksolc, knl, ksl = self._coefficient_arrays(ksc, knc, ksolc, knl, ksl)
         if length == 0 and (np.any(knl) or np.any(ksl)):
             raise ValueError('Nonzero knl/ksl require a nonzero length')
@@ -839,7 +854,7 @@ class BFieldExpansion(_BFieldExpansionGeometry, BeamElement):
         kwargs['angle'] = length * h
         kwargs['straight'] = straight
         kwargs['num_integration_steps'] = int(num_integration_steps)
-        kwargs['integrator'] = 0
+        kwargs['integrator'] = integrator_code
         kwargs.update(k0=k0, k1=k1, k2=k2, k3=k3,
                       k0s=k0s, k1s=k1s, k2s=k2s, k3s=k3s)
         kwargs['s_start'] = s_start

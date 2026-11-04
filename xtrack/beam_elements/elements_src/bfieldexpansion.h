@@ -88,11 +88,27 @@ void BFieldExpansion_get_field(
 #undef HAMILTONIAN_FLOW
 #undef EVALUATE_EXPANSION
 
+#include "track_bfieldexpansion_boris.h"
+
+#define BFIELDEXPANSION_INTEGRATOR_RK4 0
+#define BFIELDEXPANSION_INTEGRATOR_BORIS 1
+
 GPUFUN
 void BFieldExpansion_track_interval(BFieldExpansionData el,
                                     LocalParticle* part0,
                                     double length, double s_start, int64_t nstep) {
-    if (BFieldExpansionData_get_straight(el)) {
+    if (BFieldExpansionData_get_integrator(el) == BFIELDEXPANSION_INTEGRATOR_BORIS) {
+        /* Python allows Boris only for straight elements. */
+        if (BFieldExpansionData_get_straight(el)) {
+            BFieldExpansion_track_boris_straight(el, part0, length, s_start, nstep);
+        }
+        else {
+            START_PER_PARTICLE_BLOCK(part0, part);
+                LocalParticle_set_state(part, XT_INVALID_BFIELD_EXPANSION);
+            END_PER_PARTICLE_BLOCK
+        }
+    }
+    else if (BFieldExpansionData_get_straight(el)) {
         BFieldExpansion_track_straight(el, part0, length, s_start, nstep);
     }
     else {
