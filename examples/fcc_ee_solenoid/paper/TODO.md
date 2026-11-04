@@ -246,6 +246,25 @@ Derive the spatial Boris (drift–kick–rotation) splitting on a frame with con
 - [ ] `DERIVE` Optional: move the design dipole into the drift (exact sector bend) so the reference orbit is preserved exactly; compare with the polar-drift version
 - [ ] `CHECK` Compare with the curved-frame integrator in Schüren's thesis (project file) and with Xsuite's bend/SplineBoris implementation
 
+### Implementation (for Claude Code)
+
+Method (formulas in `claude_notes/13_boris_curved_frame.md`, step 4): Strang splitting exp(Δs/2 D) exp(Δs/2 K) exp(Δs R) exp(Δs/2 K) exp(Δs/2 D) on (x, y, P_x, P_y), P_s = sqrt(P² − P_x² − P_y²), constant h, fields B_x, B_y, B_s in curved-frame components.
+- D: exact polar drift. It straightens the frame, drifts on a straight lab line to the plane at s + ℓ, and re-expresses position and momentum there: (P_x, P_s) rotate by φ = hℓ, P_y is constant, and x, y, t come from the closed-form map in the note. Requires P_s⁺ > 0.
+- K: P_x −= q(1 + hx)B_y Δs/2, P_y += q(1 + hx)B_x Δs/2 at the half-drifted position, then recompute P_s.
+- R: rotation of (P_x, P_y) by ω = q(1 + hx)B_s Δs/P_s.
+- The factor 1 + hx in K and R is the metric (lab path per unit s), not a frame effect.
+
+Tasks:
+- [ ] `SIM` Python prototype of the polar-drift version (new script in `examples/splineboris/`, standalone). Tests:
+    - [ ] D alone vs direct integration of the D vector field (expect ~1e-15)
+    - [ ] Full step vs a tight-tolerance RK integration of the curved equations in a non-uniform field: second order (error ×4 per halving)
+    - [ ] h → 0 reproduces the straight SplineBoris step to machine precision
+    - [ ] Symplecticity of one step: ‖MᵀJM − J‖ from a finite-difference Jacobian, in canonical variables (state which ones)
+    - [ ] Report the reference-orbit drift in a pure design dipole (qB_y = hP; the scratch check gave x = −5e-5 m after 10 × 0.1 m at h = 0.4)
+- [ ] `SIM` Sector-bend variant: replace D by the exact sector-bend map with the design field B₀ = hP₀/q, and kick with B_y − B₀ only. Handle P ≠ P₀ (δ ≠ 0), where the bend map no longer follows the reference circle. Tests: the reference orbit is preserved to machine precision; uniform B_y agrees with `xt.Bend` using an exact model; second order in a non-uniform field
+- [ ] `CHECK` Decide the field input: curved-frame field components need a curvilinear expansion (Schüren's thesis, project file). The current SplineBoris/bpmeth fit is Cartesian. Scope this before the C work
+- [ ] `SIM` C implementation: an `h` parameter (default 0) in `xtrack/beam_elements/elements_src/track_splineboris.h` / `splineboris.py`. This is library code: separate, focused commits (CLAUDE.md), with unit tests from the prototype checks
+
 ## 8. Housekeeping
 
 - [ ] `CHECK` Replace "two orders of magnitude" with the exact factor (7.88×10⁻⁴ → 4.36×10⁻², ≈ ×55)

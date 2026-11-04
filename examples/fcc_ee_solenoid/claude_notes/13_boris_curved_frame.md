@@ -195,3 +195,14 @@ n = 10 → 160).
 steps of 0.1 m at h = 0.4 (O(φ³) per step). Fix if needed: put the design
 dipole into the drift (the exact sector-bend map, a circle in a uniform field,
 which Xsuite already uses for bends) and kick only with B_y − hP/q.
+
+**Interpretation (2026-11-04).** The curvature enters in two different ways.
+In D it is a pure change of coordinates: the free particle moves in a straight
+lab line, so D straightens the frame, drifts, and re-expresses the result in
+the rotated frame (the (P_x, P_s) rotation is only the basis turning).
+In K and R it is the metric 1 + hx, which is physical: the particle travels a
+longer lab path per unit s at x > 0 and sees the field for longer. The
+reference-orbit error comes from splitting the frame turn (in D) and the
+dipole bending (in K) into separate O(φ) substeps that cancel only to O(φ³).
+The sector-bend drift follows the design curve exactly instead, so nothing is
+undone and redone. Implementation plan: `paper/TODO.md`, side-topic section.
