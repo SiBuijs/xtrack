@@ -3,6 +3,10 @@
 
 #include "track_bfieldexpansion_helpers.h"
 #include "track_bfieldexpansion_straight.h"
+#if !defined(XTRACK_MULTIPOLE_NO_SYNRAD) && !defined(XTRACK_TPSA_TRACK)
+    #define BFIELDEXPANSION_BORIS_WITH_SYNRAD_AND_SPIN
+    #include "xtrack/beam_elements/elements_src/track_magnet_radiation.h"
+#endif
 
 /* Spatial Boris integrator for straight BFieldExpansion elements.
  *
@@ -22,6 +26,14 @@
  * with the field evaluated once at the step midpoint. The scheme is second
  * order, time-reversible (backtracking with -ds retraces the forward step)
  * and keeps kx^2 + ky^2 unchanged in the rotation.
+ *
+ * Spin and synchrotron radiation (unless compiled out) are applied after each
+ * step, as in Magnet: the shared helpers magnet_spin and magnet_radiation get
+ * the midpoint field in tesla and the path length of the step, and act on the
+ * particle's kinetic momenta. The integrator state is written to the particle
+ * before and read back after them, so that the radiation kick on px, py and
+ * the energy loss both reach the next step. Like Magnet, neither is applied
+ * when backtracking.
  */
 
 /* Returns 0 on success, -1 if the longitudinal momentum vanishes. */
@@ -87,7 +99,9 @@ void BFieldExpansion_track_boris_straight(
     LocalParticle* part0,
     const double length,
     double s_start,
-    const int64_t nstep)
+    const int64_t nstep,
+    const int64_t radiation_flag,
+    SynchrotronRadiationRecordData radiation_record)
 {
     double ds = length / nstep;
 
@@ -103,8 +117,8 @@ void BFieldExpansion_track_boris_straight(
         FieldValue v;
         int valid = 1;
         const double chi    = LocalParticle_get_chi(part);
-        const double delta1 = 1.0 + LocalParticle_get_delta(part);
-        const double rvv    = LocalParticle_get_rvv(part);
+        double delta1 = 1.0 + LocalParticle_get_delta(part);
+        double rvv    = LocalParticle_get_rvv(part);
 
         double x    = LocalParticle_get_x(part);
         double y    = LocalParticle_get_y(part);
@@ -125,15 +139,65 @@ void BFieldExpansion_track_boris_straight(
             ky = LocalParticle_get_py(part) - chi * v.Ay;
         }
 
+        #ifdef BFIELDEXPANSION_BORIS_WITH_SYNRAD_AND_SPIN
+        /* Normalized field -> tesla; spin needs the field even without radiation. */
+        const double brho0 = LocalParticle_get_p0c(part) / C_LIGHT
+                             / LocalParticle_get_q0(part);
+        const int with_spin = (LocalParticle_get_spin_x(part) != 0.
+                               || LocalParticle_get_spin_y(part) != 0.
+                               || LocalParticle_get_spin_z(part) != 0.);
+        const int apply_hook = (radiation_flag || with_spin) && ds > 0;
+        /* Only used for the average radiation model's "same as first" mode. */
+        double dp_record_exit = 0., dpx_record_exit = 0., dpy_record_exit = 0.;
+        #endif
+
         double s = s_start;
         for (int64_t step = 0; valid && step < nstep; ++step) {
             FieldValue v_mid;
+            #ifdef BFIELDEXPANSION_BORIS_WITH_SYNRAD_AND_SPIN
+            const double kx_old = kx, ky_old = ky, zeta_old = zeta;
+            #endif
             if (bfieldexpansion_boris_step(&f, chi, delta1, rvv, s, ds,
                     &x, &kx, &y, &ky, &zeta, &v_mid) != 0) {
                 valid = 0;
                 break;
             }
             s += ds;
+
+            #ifdef BFIELDEXPANSION_BORIS_WITH_SYNRAD_AND_SPIN
+            if (apply_hook) {
+                const double Bx_T = v_mid.Bx * brho0;
+                const double By_T = v_mid.By * brho0;
+                const double Bs_T = v_mid.Bs * brho0;
+                const double l_path = rvv * (ds - (zeta - zeta_old));
+
+                /* Hand the state over with kinetic momenta (ax = ay = 0);
+                 * the exit convention is applied after the loop. */
+                LocalParticle_set_x(part, x);
+                LocalParticle_set_y(part, y);
+                LocalParticle_set_zeta(part, zeta);
+                LocalParticle_set_px(part, kx);
+                LocalParticle_set_py(part, ky);
+                LocalParticle_set_ax(part, 0.);
+                LocalParticle_set_ay(part, 0.);
+
+                if (with_spin) {
+                    magnet_spin(part, Bx_T, By_T, Bs_T, 0., ds, l_path);
+                }
+                if (radiation_flag) {
+                    const double B_perp_T = compute_b_perp_mod(
+                        0.5 * (kx_old + kx), 0.5 * (ky_old + ky),
+                        delta1 - 1.0, Bx_T, By_T, Bs_T);
+                    magnet_radiation(part, B_perp_T, ds, l_path,
+                        radiation_flag, radiation_record,
+                        &dp_record_exit, &dpx_record_exit, &dpy_record_exit);
+                    kx = LocalParticle_get_px(part);
+                    ky = LocalParticle_get_py(part);
+                    delta1 = 1.0 + LocalParticle_get_delta(part);
+                    rvv = LocalParticle_get_rvv(part);
+                }
+            }
+            #endif
         }
 
         if (valid) valid = evaluate_expansion_straight(&f, x, y, s, &v) == 0;

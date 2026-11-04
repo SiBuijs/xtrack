@@ -7,7 +7,8 @@ import numpy as np
 import xobjects as xo
 
 from ..base_element import BeamElement
-from ._common import _for_docstring_alignment
+from ..random import RandomUniformAccurate, RandomExponential
+from ._common import _for_docstring_alignment, SynchrotronRadiationRecord
 
 
 _FIELD_VALUE_NAMES = (
@@ -332,13 +333,16 @@ class _BFieldExpansionGeometry:
             raise ValueError('num_phi is fixed at construction; create a new '
                              'BFieldExpansion to change the expansion order')
 
-    @staticmethod
-    def _check_spin_tracking(particles):
+    def _check_spin_tracking(self, particles):
+        if self.integrator != 'rk4':
+            return
         if particles is not None and hasattr(particles, 'spin_x'):
             for name in ('spin_x', 'spin_y', 'spin_z'):
                 spin = particles._context.nparray_from_context_array(getattr(particles, name))
                 if np.any(spin != 0):
-                    raise NotImplementedError('BFieldExpansion does not support spin tracking.')
+                    raise NotImplementedError(
+                        "BFieldExpansion supports spin tracking only with "
+                        "integrator='boris'.")
 
     def track(self, particles=None, increment_at_element=False):
         self._check_spin_tracking(particles)
@@ -686,9 +690,14 @@ class BFieldExpansion(_BFieldExpansionGeometry, BeamElement):
     if its coefficients will be set later. Scalar strengths k0 through k3
     and their skew counterparts remain writable even when initially omitted.
     Updates rebuild the cached field expansion. NumPy
-    conversions return detached copies. This element does not radiate yet,
-    even when radiation is enabled for the line. Spin tracking is not
-    supported and raises NotImplementedError.
+    conversions return detached copies.
+
+    Synchrotron radiation (``radiation_flag``, set by
+    ``Line.configure_radiation``) and spin tracking are implemented for
+    ``integrator='boris'`` only: they are applied after each integration step
+    from the midpoint field, as in Magnet, and not when backtracking. With
+    ``integrator='rk4'`` the element does not radiate, even when radiation is
+    enabled for the line, and spin tracking raises NotImplementedError.
 
     ``Environment.new`` and ``Environment.set`` accept coefficient matrices
     containing numbers or deferred expressions, without special handling.
@@ -779,7 +788,11 @@ class BFieldExpansion(_BFieldExpansionGeometry, BeamElement):
 
         "pkin_const": xo.Int64,
         "s_start": xo.Float64,
+        "radiation_flag": xo.Int64,
     }
+
+    _depends_on = [RandomUniformAccurate, RandomExponential]
+    _internal_record_class = SynchrotronRadiationRecord
 
     _rename = _BFieldExpansionGeometry._geometry_rename
 

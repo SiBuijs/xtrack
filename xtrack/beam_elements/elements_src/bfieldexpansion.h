@@ -96,11 +96,15 @@ void BFieldExpansion_get_field(
 GPUFUN
 void BFieldExpansion_track_interval(BFieldExpansionData el,
                                     LocalParticle* part0,
-                                    double length, double s_start, int64_t nstep) {
+                                    double length, double s_start, int64_t nstep,
+                                    int64_t radiation_flag,
+                                    SynchrotronRadiationRecordData radiation_record) {
+    /* Radiation and spin are only implemented in the Boris integrator. */
     if (BFieldExpansionData_get_integrator(el) == BFIELDEXPANSION_INTEGRATOR_BORIS) {
         /* Python allows Boris only for straight elements. */
         if (BFieldExpansionData_get_straight(el)) {
-            BFieldExpansion_track_boris_straight(el, part0, length, s_start, nstep);
+            BFieldExpansion_track_boris_straight(el, part0, length, s_start, nstep,
+                                                 radiation_flag, radiation_record);
         }
         else {
             START_PER_PARTICLE_BLOCK(part0, part);
@@ -122,7 +126,10 @@ void BFieldExpansion_track_local_particle(BFieldExpansionData el,
     BFieldExpansion_track_interval(el, part0,
         BFieldExpansionData_get_length(el),
         BFieldExpansionData_get_s_start(el),
-        BFieldExpansionData_get_num_integration_steps(el));
+        BFieldExpansionData_get_num_integration_steps(el),
+        BFieldExpansionData_get_radiation_flag(el),
+        (SynchrotronRadiationRecordData)
+            BFieldExpansionData_getp_internal_record(el, part0));
 }
 
 #endif

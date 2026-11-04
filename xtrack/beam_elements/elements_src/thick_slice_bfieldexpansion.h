@@ -24,7 +24,13 @@ void ThickSliceBFieldExpansion_track_local_particle(
     int64_t nstep = (int64_t)ceil(BFieldExpansionData_get_num_integration_steps(parent) * weight);
     if (nstep < 1) nstep = 1;
 
-    BFieldExpansion_track_interval(parent, part0, parent_length * weight, s_start, nstep);
+    int64_t radiation_flag = ThickSliceBFieldExpansionData_get_radiation_flag(el);
+    if (radiation_flag == 10) {  // from parent
+        radiation_flag = BFieldExpansionData_get_radiation_flag(parent);
+    }
+
+    BFieldExpansion_track_interval(parent, part0, parent_length * weight, s_start, nstep,
+                                   radiation_flag, NULL);
 }
 
 #endif
