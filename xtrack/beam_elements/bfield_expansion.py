@@ -182,13 +182,10 @@ _INTEGRATOR_CODES = {'rk4': 0, 'boris': 1}
 _INTEGRATOR_NAMES = {code: name for name, code in _INTEGRATOR_CODES.items()}
 
 
-def _integrator_code(name, straight):
+def _integrator_code(name):
     if name not in _INTEGRATOR_CODES:
         raise ValueError("BFieldExpansion only supports integrator in "
                          f"{tuple(_INTEGRATOR_CODES)}, got {name!r}")
-    if name == 'boris' and not straight:
-        raise ValueError("integrator='boris' is only available for straight "
-                         "BFieldExpansion elements (h=0)")
     return _INTEGRATOR_CODES[name]
 
 
@@ -556,7 +553,7 @@ class _BFieldExpansionGeometry:
 
     @integrator.setter
     def integrator(self, value):
-        self._integrator = _integrator_code(value, self.straight)
+        self._integrator = _integrator_code(value)
 
     @staticmethod
     def get_available_integrators():
@@ -666,7 +663,9 @@ class BFieldExpansion(_BFieldExpansionGeometry, BeamElement):
         Runge-Kutta on the canonical Hamiltonian flow, or 'boris', a
         second-order, time-reversible spatial Boris scheme on the kinetic
         momenta that uses only the magnetic field at each step midpoint.
-        'boris' is only available for straight elements (h=0).
+        In curved elements its half drifts are exact sector bends in the
+        design field h*P0/q, so the reference orbit is kept exactly and
+        only the field that differs from the design dipole is split off.
     num_integration_steps : int, optional
         Positive number of integration steps, default 10.
     pkin_const : bool, optional
@@ -854,7 +853,7 @@ class BFieldExpansion(_BFieldExpansionGeometry, BeamElement):
             raise TypeError('BFieldExpansion requires length')
         if 'order' in kwargs:
             raise ValueError('order is read-only and determined by knc/ksc shapes')
-        integrator_code = _integrator_code(integrator, straight=(h == 0))
+        integrator_code = _integrator_code(integrator)
         ksc, knc, ksolc, knl, ksl = self._coefficient_arrays(ksc, knc, ksolc, knl, ksl)
         if length == 0 and (np.any(knl) or np.any(ksl)):
             raise ValueError('Nonzero knl/ksl require a nonzero length')
