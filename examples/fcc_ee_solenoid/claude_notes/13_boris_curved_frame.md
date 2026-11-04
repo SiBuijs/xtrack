@@ -34,9 +34,16 @@ and B = B_x e_x + B_y e_y + B_s e_s (local components).
 
 ### Kinematics
 
+R and e_x depend on t only through s, so by the chain rule
+
 $$
-\dot{\mathbf{r}} = (1 + hx) \dot{s} \hat{\mathbf{e}}_s + \dot{x} \hat{\mathbf{e}}_x + \dot{y} \hat{\mathbf{e}}_y
+\dot{\mathbf{r}} = \frac{d\mathbf{R}}{ds}\dot{s} + \dot{x} \hat{\mathbf{e}}_x + x \frac{d\hat{\mathbf{e}}_x}{ds}\dot{s} + \dot{y} \hat{\mathbf{e}}_y
+= (1 + hx) \dot{s} \hat{\mathbf{e}}_s + \dot{x} \hat{\mathbf{e}}_x + \dot{y} \hat{\mathbf{e}}_y
 $$
+
+The first term (Ṙ = ṡ e_s) is the motion of the reference point. The h x ṡ e_s
+term is the rotation of e_x: at fixed x > 0 the particle sits on a circle of
+radius 1/h + x, so it moves faster than its reference point.
 
 so with P = γm ṙ:
 
