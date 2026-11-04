@@ -112,6 +112,26 @@ but in the P_x–P_s plane instead of P_x–P_y, and its rate depends on the sta
 (P_s and x), not only on the field. The fictitious terms are exactly those
 needed to keep this rotation norm-preserving.
 
-Next (step 2): re-parametrize with s as the independent variable,
-d/dt = ṡ d/ds, and see how the metric factor 1 + hx enters x′, y′, t′ and the
-momentum equations.
+## Step 2 — s as the independent variable (2026-11-04, written by the user, checked)
+
+d/dt = ṡ d/ds with ṡ = P_s / (γm (1 + hx)). Primes are d/ds:
+
+$$
+\begin{aligned}
+x' &= (1 + hx) \frac{P_x}{P_s} , \qquad y' = (1 + hx) \frac{P_y}{P_s} , \qquad s' = 1 \cr
+t' &= (1 + hx) \frac{\gamma m}{P_s} , \qquad E' = 0 \cr
+P_x' &= (1 + hx) \frac{q}{P_s} \left(P_y B_s - P_s B_y\right) + h P_s \cr
+P_y' &= (1 + hx) \frac{q}{P_s} \left(P_s B_x - P_x B_s\right) \cr
+P_s' &= (1 + hx) \frac{q}{P_s} \left(P_x B_y - P_y B_x\right) - h P_x
+\end{aligned}
+$$
+
+Rearranged, P_x' = (1 + hx)(q/P_s) P_y B_s − (1 + hx) q B_y + h P_s: on the
+reference orbit the last two terms cancel for h = q B_y / P. Review points on
+the user's LaTeX draft (2026-11-04): the vector form must use e_y (not e_x);
+r is the particle position, not "the basis vectors", and depends on t;
+"momenta" → velocities; lab XZ-plane; state the sign convention of h; one
+sentence on where the h terms come from; list s′, t′, E′.
+
+Next (step 3): the vector field on (x, y, P_x, P_y) with P_s eliminated;
+identify D, K, R and the curvature terms.
