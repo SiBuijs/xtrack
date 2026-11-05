@@ -302,7 +302,7 @@ Tasks (target changed 2026-11-04: implement in **BFieldExpansion**, not SplineBo
     - Long-term: eigen-emittance per mode and 4D volume vs turn, compared with the |λ|^{2N} prediction; explain why the Boris curves flatten towards 10⁵ turns
     - Physics checks: spin vs `xt.Bend`, U0 and damping partition sum in a bend ring
     - Conclusion for the paper: which integrator and step count the FCC solenoid runs should use, and why
-    - Commit `long_term_boris_vs_rk4.py` (uncommitted on `bfe_radiation_spin`) so the figures are reproducible
+    - `long_term_boris_vs_rk4.py` committed on `bfe_radiation_spin` (c5b72c119, separate commit, so it can be left out of an upstream PR)
     - `curved_boris_plot.py` (makes `curved_boris_variants.png`) lives in `FCC_Solenoid_Studies/BFE_CurvedBoris_2026-11-04/`; it needs the prototype from 86cfaeb80 next to it
     - Conclusion so far (note 13 step 6): RK4 for production, Boris only as a cross-check. List the few cases where Boris could win: coarse-step stability, non-smooth fields, constant fields
 - [ ] `SIM` Does Boris win in a non-smooth field? Work-precision of Boris vs RK4 with the BNL map through BFE: does RK4 keep its order 4, or drop towards order 2?
