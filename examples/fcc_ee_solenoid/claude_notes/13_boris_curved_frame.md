@@ -290,3 +290,21 @@ volume-preserving, second-order reference and for its exact design-orbit
 handling, not for long-term emittance tracking.
 Plot: `~/cernbox/Pictures/FCC_Solenoid_Studies/BFE_CurvedBoris_2026-11-04/long_term.png`,
 log `long_term.log` in the same folder.
+
+**Conclusion (user, 2026-11-05): RK4 is the production integrator.** There are
+few realistic cases where Boris beats it:
+1. Very coarse steps: the Boris rotation is stable at any step size, while RK4
+   becomes unstable for rotation angles ω Δs ≳ 2 (rough passes only, not
+   physics results).
+2. Fields that are not smooth (noisy map, splines with discontinuous higher
+   derivatives): RK4 drops towards order 2, and the 3.5× cheaper Boris step
+   could win. **Untested**; the realistic test is the BNL map through BFE.
+3. Constant fields: Boris is symplectic there, but exact maps (`xt.Bend`,
+   `xt.Solenoid`) already exist.
+4. Temporary: only the BFE Boris tracker has radiation and spin today. Once
+   RK4 has them, the long-term result favours RK4.
+
+Boris's exact volume conservation is misleading here: it hides a transfer of
+emittance between the modes, which looks like physical coupling. RK4's error
+is a small damping that falls off as n⁻⁴ and is checked by refining the steps.
+Role of Boris from here on: an independent second-order cross-check.
