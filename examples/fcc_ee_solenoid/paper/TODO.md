@@ -115,7 +115,7 @@ Background: the all-orders $A_m(S)$ in the Overleaf text, and the strict $O(\the
 - [ ] `SIM` Along the main solenoid, uncorrected and corrected, 2 T and 3 T: $x_{co}$, $y_{co}$, $D_x$, $D_y$, $\beta_{x,y}$, and the Montague $W_{x,y}$ (from Twiss, `004dd` as template)
 
 **Step 3: expectations, per mechanism (before running the comparison)**
-- [ ] `DERIVE` Q′ from the solenoid focusing (radial part of $A_2$ with $b_S$): $\Delta Q'_{x,y} \propto \int\beta\,(b_s/2B\rho)^2 dS$. Present in VarSol and SB alike, so it should cancel in the comparison
+- [ ] `DERIVE` Q′ from the solenoid focusing (radial part of $A_2$ with $b_S$): $\Delta Q'_{x,y} \propto \int\beta (b_s/2B\rho)^2 dS$. Present in VarSol and SB alike, so it should cancel in the comparison
 - [ ] `DERIVE` Chromatic coupling from $g_s$ (skew part of $A_2$, $\propto\theta_b^2$): two routes, (a) the δ-dependence of the strength, (b) the δ-dependence of β and phase at the source, $\partial_\delta\sqrt{\beta_x\beta_y}$, which is large at the IR because $W$ is large there. Estimate $dC^-/d\delta$ from both
 - [ ] `DERIVE` $A_3$ (skew, $O(\theta_b)$ pseudo part, true skew sextupole only at $\theta_b^3$): with $D_x$ → chromatic coupling; with $D_y$ or $y_{co}$ → normal gradient → Q′. Show whether the pseudo part's contribution vanishes after integration by parts, as for the linear case, and size both with the Step 2 numbers
 - [ ] `DERIVE` Which of these can reach Q″ (second order in δ), for comparison with the QD0→sdy1 phase mechanism of note 08
