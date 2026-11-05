@@ -365,6 +365,15 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   Step 1 done: the Lorentz force in the curved frame, checked numerically;
   curvature acts as an extra state-dependent vertical field
   −h P_s / (q (1 + hx)), i.e. a rotation in the P_x–P_s plane.
+- `14_bfieldexpansion_refactor.md` — (2026-11-03, branch
+  `bfieldexpansion_refactor`, exploratory) SplineBoris → BFieldExpansion,
+  phase 1 (linear optics): `--model bfe / partialmap_bfe` through 004b/004c/004n
+  via `bfe_setup.py`. Same lattice: BFE = converged SB (3T Q″y 4668.447 vs
+  4668.448; SB at 10 steps 4668.487). Corrected rings differ by Q″y −6.0 at 3T
+  because 004c lands on a different near-null-space solution (note 10), not
+  because of the element. BFE valid at nominal field only (kscale scales the
+  corrector knl). Radiation and spin were added later (2026-11-05, ported from
+  `bfe_radiation_spin`), for both `integrator='rk4'` and `'boris'`.
 
 ## Scripts without a dedicated note (summarised 2026-10-14 from docstrings)
 
