@@ -99,6 +99,34 @@ Canonical copy: `examples/fcc_ee_solenoid/paper/TODO.md` on branch `fcc_nonlocal
     - Repo: `004e_sextupole_window_study.py` (zeroing one order in a window) is a template for this
 - [ ] `CHECK` Compare the derived estimate with the tracking result (aim for one figure that shows both)
 
+### Beam-frame coefficients $A_m$: from the field to Q′, Q″ and chromatic coupling (added 2026-11-05)
+
+Background: the all-orders $A_m(S)$ in the Overleaf text, and the strict $O(\theta_b^2)$ forms of $A_0$–$A_2$ (claude.ai chat of 2–3 Nov). `bx[k]` in SplineBoris/BFieldExpansion is $\partial_x^k B_x$ on the beam axis, i.e. $A_{k+1}$ (see `004aa`). Chromatic coupling = the δ-dependence of the coupling, $C^-(\delta)$ or $dC^-/d\delta$.
+
+**Step 1: field content (do first, everything else builds on it)**
+- [ ] `SIM` $A_0$–$A_4$ from the analytic on-axis $b(s)$, 2 T and 3 T main solenoid ($B_0$, $L$, $a$ from `solenoid_params.py`):
+    - sympy derivatives of $b(s)$ inserted into the all-orders $A_m$ formula, truncated in $k$ until converged;
+    - the leading-order $\theta_b$ forms on the same plot;
+    - overlay the stored `bx[k]` from `004aa` (mind `scale_b`). Expect agreement to the fit accuracy; a mismatch of order $10^{-4}$ or a factor points to a convention error
+- [ ] `CHECK` What VarSol contains in $A_m$ terms: is its per-slice dipole kick $\theta_b b_s$ or $\theta_b(b_s + \frac{S}{2}b_s')$; does its linear `ks_profile` give the radial $-\frac12 b_s'$; is the projection $s = cS$ included?
+- [ ] `DERIVE` The $b_s$/$b_s'$-only truncation of the beam-frame field: which terms of $A_0$–$A_2$ survive (from the strict forms: $a_0 - \theta_b^2(\frac{S}{2}b_s + \frac{S^2}{4}b_s')$ (all of $A_0$ to this order); $\theta_b(b_s + \frac{S}{2}b_s')$; $-\frac12 b_s' + \frac32\theta_b^2 b_s'$), and whether that matches VarSol. List what it drops: the $b_s''$, $b_s'''$ parts of $A_2$ (part of $g_s$) and all of $A_{m\geq3}$
+
+**Step 2: orbit and dispersion at the solenoid (inputs for the feed-down estimates)**
+- [ ] `SIM` Along the main solenoid, uncorrected and corrected, 2 T and 3 T: $x_{co}$, $y_{co}$, $D_x$, $D_y$, $\beta_{x,y}$, and the Montague $W_{x,y}$ (from Twiss, `004dd` as template)
+
+**Step 3: expectations, per mechanism (before running the comparison)**
+- [ ] `DERIVE` Q′ from the solenoid focusing (radial part of $A_2$ with $b_S$): $\Delta Q'_{x,y} \propto \int\beta (b_s/2B\rho)^2 dS$. Present in VarSol and SB alike, so it should cancel in the comparison
+- [ ] `DERIVE` Chromatic coupling from $g_s$ (skew part of $A_2$, $\propto\theta_b^2$): two routes, (a) the δ-dependence of the strength, (b) the δ-dependence of β and phase at the source, $\partial_\delta\sqrt{\beta_x\beta_y}$, which is large at the IR because $W$ is large there. Estimate $dC^-/d\delta$ from both
+- [ ] `DERIVE` $A_3$ (skew, $O(\theta_b)$ pseudo part, true skew sextupole only at $\theta_b^3$): with $D_x$ → chromatic coupling; with $D_y$ or $y_{co}$ → normal gradient → Q′. Show whether the pseudo part's contribution vanishes after integration by parts, as for the linear case, and size both with the Step 2 numbers
+- [ ] `DERIVE` Which of these can reach Q″ (second order in δ), for comparison with the QD0→sdy1 phase mechanism of note 08
+
+**Step 4: isolate the contributions in tracking/Twiss**
+- [ ] `SIM` Compare, uncorrected and corrected, 2 T and 3 T: VarSol vs SB/BFieldExpansion order 1 (isolates $g_s$ and the $b_s''$, $b_s'''$ terms of $A_0$–$A_2$) vs order 2 (adds $A_3$) vs order 4
+    - Observables: $Q'_{x,y}$, true $Q''_{x,y}$ (`004n`), $|C^-|$ at δ = 0 and $C^-(\delta)$ for δ in [−0.01, 0.01] (off-momentum Twiss), $dC^-/d\delta$
+    - Reuses the order-scan lattices of the `--max-transverse-order` item above; needs o1 built for 2 T and 3 T
+- [ ] `CHECK` Compare Step 3 estimates with Step 4 results, one figure per observable; log in `RESULTS.md`
+- [ ] `WRITE` Paper paragraph: which beam-frame coefficient drives which effect, and why the linearized model is (or is not) sufficient
+
 ### Field representation
 
 - [ ] `DERIVE` Write out the relation between bpmeth's $a_m$, $b_m$, $b_z$ and the scalar-potential expansion; state the truncation order and the resulting order of the Maxwell residual
