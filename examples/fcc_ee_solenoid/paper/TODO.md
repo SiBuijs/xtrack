@@ -109,7 +109,7 @@ Background: the all-orders $A_m(S)$ in the Overleaf text, and the strict $O(\the
     - the leading-order $\theta_b$ forms on the same plot;
     - overlay the stored `bx[k]` from `004aa` (mind `scale_b`). Expect agreement to the fit accuracy; a mismatch of order $10^{-4}$ or a factor points to a convention error
 - [ ] `CHECK` What VarSol contains in $A_m$ terms: is its per-slice dipole kick $\theta_b b_s$ or $\theta_b(b_s + \frac{S}{2}b_s')$; does its linear `ks_profile` give the radial $-\frac12 b_s'$; is the projection $s = cS$ included?
-- [ ] `DERIVE` The $b_s$/$b_s'$-only truncation of the beam-frame field: which terms of $A_0$–$A_2$ survive (from the strict forms: $a_0 - \theta_b^2\frac{S}{2}b_s$; $\theta_b(b_s + \frac{S}{2}b_s')$; $-\frac12 b_s' + \frac32\theta_b^2 b_s'$), and whether that matches VarSol. List what it drops: the $b_s''$, $b_s'''$ parts of $A_2$ (part of $g_s$) and all of $A_{m\geq3}$
+- [ ] `DERIVE` The $b_s$/$b_s'$-only truncation of the beam-frame field: which terms of $A_0$–$A_2$ survive (from the strict forms: $a_0 - \theta_b^2(\frac{S}{2}b_s + \frac{S^2}{4}b_s')$ (all of $A_0$ to this order); $\theta_b(b_s + \frac{S}{2}b_s')$; $-\frac12 b_s' + \frac32\theta_b^2 b_s'$), and whether that matches VarSol. List what it drops: the $b_s''$, $b_s'''$ parts of $A_2$ (part of $g_s$) and all of $A_{m\geq3}$
 
 **Step 2: orbit and dispersion at the solenoid (inputs for the feed-down estimates)**
 - [ ] `SIM` Along the main solenoid, uncorrected and corrected, 2 T and 3 T: $x_{co}$, $y_{co}$, $D_x$, $D_y$, $\beta_{x,y}$, and the Montague $W_{x,y}$ (from Twiss, `004dd` as template)
