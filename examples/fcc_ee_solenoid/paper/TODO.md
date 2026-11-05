@@ -264,7 +264,16 @@ Tasks (target changed 2026-11-04: implement in **BFieldExpansion**, not SplineBo
     - [x] Reference-orbit drift in a pure design dipole: x = −5.3e-5 m (h = 0.4, 10 × 0.1 m), scales as h³
 - [x] `SIM` Sector-bend variant: replace D by the exact sector-bend map with the design field B₀ = hP₀/q, and kick with B_y − B₀ only. Handle P ≠ P₀ (δ ≠ 0), where the bend map no longer follows the reference circle. Tests: the reference orbit is preserved to machine precision; uniform B_y agrees with `xt.Bend` using an exact model; second order in a non-uniform field → reference orbit exactly 0; off-momentum particles = `xt.Bend` (`bend-kick-bend`) to 2e-16; second order and 14× more accurate than the polar drift at equal steps. Plot: `FCC_Solenoid_Studies/BFE_CurvedBoris_2026-11-04/curved_boris_variants.png`
 - [x] `CHECK` Decide the field input: curved-frame field components need a curvilinear expansion (Schüren's thesis, project file). The current SplineBoris/bpmeth fit is Cartesian. Scope this before the C work → resolved by moving to BFE: it already has a curvilinear expansion and returns curved-frame components (used by its bent RK4)
-- [ ] `SIM` C implementation of the sector-bend variant for h ≠ 0 in `xtrack/beam_elements/elements_src/track_bfieldexpansion_boris.h` (lift the straight-only restriction in `bfield_expansion.py`; pass h to `magnet_spin`). This is library code: separate, focused commits (CLAUDE.md), with unit tests from the prototype checks
+- [x] `SIM` C implementation of the sector-bend variant for h ≠ 0 in `xtrack/beam_elements/elements_src/track_bfieldexpansion_boris.h` (lift the straight-only restriction in `bfield_expansion.py`; pass h to `magnet_spin`). This is library code: separate, focused commits (CLAUDE.md), with unit tests from the prototype checks → f1020b410 on `bfe_radiation_spin` (pushed); C = prototype to 2e-16, tests in `tests/test_bfieldexpansion_boris.py`; note 13 step 6
+- [x] `SIM` Cost vs accuracy and long-term behaviour, Boris vs RK4 → note 13 step 6. Boris step 3.5× cheaper, but RK4 is 5–50× faster at equal error. Over 10⁵ turns Boris (20 steps) moves emittance between the modes (+40 % / −29 %, volume conserved); RK4 (5 steps) damps artificially (volume −3.7 %); RK4 (20 steps) is clean (~1e-5). Plots: `BFE_CurvedBoris_2026-11-04/{work_precision_boris_vs_rk4,long_term}.png`
+- [ ] `WRITE` Write up the Boris vs RK4 comparison properly (note or appendix section) with figures of merit:
+    - Accuracy: local and global error order (convergence plot), error at fixed step count, design-orbit preservation (polar vs sector bend)
+    - Cost: µs per step and work-precision (time at equal error)
+    - Structure: one-turn det − 1, symplecticity defect |MᵀJM − J|, eigenvalue modulus |λ| − 1, each vs number of steps (expect n⁻² for Boris, n⁻⁴ for RK4)
+    - Long-term: eigen-emittance per mode and 4D volume vs turn, compared with the |λ|^{2N} prediction; explain why the Boris curves flatten towards 10⁵ turns
+    - Physics checks: spin vs `xt.Bend`, U0 and damping partition sum in a bend ring
+    - Conclusion for the paper: which integrator and step count the FCC solenoid runs should use, and why
+    - Commit `long_term_boris_vs_rk4.py` and `curved_boris_plot.py` (uncommitted on `bfe_radiation_spin`) so the figures are reproducible
 
 ## 8. Housekeeping
 

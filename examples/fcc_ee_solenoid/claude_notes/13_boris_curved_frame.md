@@ -243,3 +243,50 @@ with constant fields both variants are symplectic to finite-difference
 noise. Plot:
 `~/cernbox/Pictures/FCC_Solenoid_Studies/BFE_CurvedBoris_2026-11-04/curved_boris_variants.png`.
 Decision: the C implementation uses the sector-bend variant for h ≠ 0.
+
+## Step 6 — C implementation, cost vs accuracy, long-term tracking (2026-11-04/05)
+
+**C implementation** (branch `bfe_radiation_spin`, f1020b410, pushed). The
+sector-bend variant is in `track_bfieldexpansion_boris.h`
+(`bfieldexpansion_sector_bend`, `_polar_drift`, `_boris_step_bent`; tracker
+renamed `BFieldExpansion_track_boris` with geometry dispatch; `magnet_spin`
+gets hx = h). The straight-only restriction in `bfield_expansion.py`
+`_integrator_code` is lifted. C = Python prototype to 2e-16, backtracking
+3e-16. New tests in `tests/test_bfieldexpansion_boris.py`: order 2 vs bent RK4,
+backtrack, slicing, design dipole exact vs `xt.Bend`, spin vs `xt.Bend` 2e-7,
+ring of BFE bends vs ring of `xt.Bend`: same U0, sum of damping partition
+numbers 4.00007. Full BFE suite: 250 passed, 4 skipped.
+
+**Cost vs accuracy.** A Boris step is 3.5× cheaper than an RK4 step (curved:
+0.83 vs 2.93 µs/step), but RK4 is order 4 vs order 2, so at equal error RK4 is
+5–50× faster. Plot: `BFE_CurvedBoris_2026-11-04/work_precision_boris_vs_rk4.png`.
+One-pass Jacobian: Boris has det = 1 exactly but is not symplectic (defect
+O(Δs²), from the s-dependent solenoid); RK4 has det − 1 ∝ n⁻⁴.
+
+**Long-term tracking** (`examples/bfieldexpansion/long_term_boris_vs_rk4.py`,
+uncommitted on `bfe_radiation_spin`). Curved BFE closed into a ring by an
+`xt.LineSegmentMap`, no radiation; 100 particles in a small 4D cloud, 10⁵ turns.
+Eigen-emittances (4×4) per mode and their product (4D volume), relative to turn 0:
+
+| integrator | time | one-turn \|MᵀJM − J\| | \|λ\| − 1 | ε mode 1 | ε mode 2 | 4D volume |
+|---|---|---|---|---|---|---|
+| Boris, 20 steps | 109 s | 1.8e-4 | ±2.2e-6 (reciprocal pair) | +40 % | −29 % | +3e-5 |
+| RK4, 5 steps | 89 s | 3.6e-7 | −2.0e-7, +1.2e-8 | +0.15 % | −3.9 % | −3.7 % |
+| RK4, 20 steps | 346 s | 3.5e-10 | −1.9e-10, +8.5e-12 | +4e-5 | −3e-5 | +1e-6 |
+
+Interpretation. The two integrators fail in different ways:
+- Boris preserves phase-space volume (det = 1), but its one-turn eigenvalues
+  leave the unit circle as a reciprocal pair λ, 1/λ. One mode grows and the
+  other shrinks: an artificial **exchange of emittance between the modes**,
+  which looks like physical coupling. The size matches the prediction
+  |λ|^{2N} − 1 = +55 % / −36 %; the observed growth flattens towards 10⁵ turns
+  (not yet understood).
+- RK4 has both |λ| ≤ 1: a net **artificial damping** (volume −3.7 % at 5 steps),
+  concentrated in one mode. It falls off as n⁻⁴ and is negligible at 20 steps.
+
+For coupled-solenoid studies RK4 at 5 steps is both faster and about 10× more
+accurate in emittance than Boris at 20 steps. Boris stays useful as a cheap,
+volume-preserving, second-order reference and for its exact design-orbit
+handling, not for long-term emittance tracking.
+Plot: `~/cernbox/Pictures/FCC_Solenoid_Studies/BFE_CurvedBoris_2026-11-04/long_term.png`,
+log `long_term.log` in the same folder.
