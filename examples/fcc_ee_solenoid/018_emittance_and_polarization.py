@@ -49,6 +49,7 @@ from aperture_study_io import (
     variant_suffix,
 )
 from lattice_knobs import robust_twiss, set_lattice_knobs
+from bfe_setup import bfe_lattice_path, prepare_case_line
 from study_plots import (
     fit_linear_depolarization,
     p_eq_from_tau_depol,
@@ -139,6 +140,24 @@ def _build_cases(tag, order_tag_str="", output_tag_str=""):
             with_solenoids=False,
             with_correctors=False,
             title=f"SplineBoris ({sb_tag}): solenoids unpowered",
+        ),
+        # BFieldExpansion slices on the 004c --model bfe lattice, tracked with
+        # RK4 (the lattice's own setting) or Boris; see bfe_setup.BFE_CASE_INTEGRATORS.
+        dict(
+            name="bfe_on",
+            model="BFE",
+            lattice_json=bfe_lattice_path(HERE, tag, order_tag_str, output_tag_str),
+            with_solenoids=True,
+            with_correctors=True,
+            title=f"BFieldExpansion RK4 ({sb_tag}): solenoids powered + correction scheme",
+        ),
+        dict(
+            name="bfeboris_on",
+            model="BFEBoris",
+            lattice_json=bfe_lattice_path(HERE, tag, order_tag_str, output_tag_str),
+            with_solenoids=True,
+            with_correctors=True,
+            title=f"BFieldExpansion Boris ({sb_tag}): solenoids powered + correction scheme",
         ),
     ]
 
@@ -381,6 +400,7 @@ def _run_emittance_and_polarization(
         with_correctors=case["with_correctors"],
         sext_amp=sexamp,
     )
+    prepare_case_line(line, case["model"])
 
     line.discard_tracker()
     line.build_tracker()

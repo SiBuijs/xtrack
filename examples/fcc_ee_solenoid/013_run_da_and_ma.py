@@ -61,7 +61,7 @@ def main():
         metavar="CASE",
         help=(
             "DA cases for 010 (default: sb_on, varsol_on -- sb_off skipped by "
-            "default). Available: sb_on, varsol_on, sb_off, partialmap_on (2T only)"
+            "default). Available: sb_on, varsol_on, sb_off, partialmap_on (2T only), bfe_on, bfeboris_on"
         ),
     )
     parser.add_argument(
@@ -70,7 +70,7 @@ def main():
         metavar="CASE",
         help=(
             "MA cases for 009 (default: sb_on, varsol_on -- sb_off skipped by "
-            "default). Available: sb_on, varsol_on, sb_off, partialmap_on (2T only)"
+            "default). Available: sb_on, varsol_on, sb_off, partialmap_on (2T only), bfe_on, bfeboris_on"
         ),
     )
     parser.add_argument(
@@ -91,7 +91,7 @@ def main():
         help=(
             "Emittance + polarization cases for 018 (default: sb_on, "
             "varsol_on -- sb_off skipped by default). Available: sb_on, "
-            "varsol_on, sb_off"
+            "varsol_on, sb_off, bfe_on, bfeboris_on"
         ),
     )
     parser.add_argument(

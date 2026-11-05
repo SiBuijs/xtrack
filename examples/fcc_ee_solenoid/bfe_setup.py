@@ -196,3 +196,55 @@ def check_bfe_nominal_field(line, *, tol=1e-12):
             'knl/ksl with kscale, SplineBoris does not. --model bfe is only '
             'valid with on_sol = main_b_scale = 1.')
     return True
+
+
+# Boris steps per slice for the integrator='boris' cases (bfeboris_on in
+# 009/010/018): the same step count as SplineBoris' production setting, so
+# BFE-Boris is the same algorithm at the same resolution as SB. Boris is
+# second order; RK4 at DEFAULT_BFE_STEPS is the more accurate (and, per
+# unit accuracy, cheaper) choice, see claude_notes/13 step 6.
+BORIS_STEPS = 10
+
+# Integrator and steps per slice of the 009/010/018 BFE cases. The two cases
+# share the RK4-corrected BFE lattice, so they differ only in the integrator.
+BFE_CASE_INTEGRATORS = {
+    "BFE": ("rk4", DEFAULT_BFE_STEPS),
+    "BFEBoris": ("boris", BORIS_STEPS),
+}
+
+
+def bfe_lattice_path(here, tag, order_tag_str="", output_tag_str=""):
+    """The 004c --model bfe lattice (same name pattern as SplineBoris')."""
+    return here / (f"fccee_z_lcc_bfe_solenoids_coupling_corrected_"
+                   f"{tag}{order_tag_str}{output_tag_str}.json")
+
+
+def set_bfe_integrator(line, integrator, num_steps):
+    """Set the integrator and steps per slice of every BFieldExpansion slice.
+
+    Call before build_tracker. Returns the number of slices changed.
+    """
+    n = 0
+    for name in line.element_names:
+        element = line[name]
+        if isinstance(element, xt.BFieldExpansion):
+            element.integrator = integrator
+            element.num_integration_steps = num_steps
+            n += 1
+    if n == 0:
+        raise ValueError("set_bfe_integrator: no BFieldExpansion slices in the line")
+    return n
+
+
+def prepare_case_line(line, model):
+    """Apply a 009/010/018 case's BFE integrator and check the nominal field.
+
+    No-op for the non-BFE models.
+    """
+    if model not in BFE_CASE_INTEGRATORS:
+        return
+    integrator, num_steps = BFE_CASE_INTEGRATORS[model]
+    n = set_bfe_integrator(line, integrator, num_steps)
+    check_bfe_nominal_field(line)
+    print(f"  BFieldExpansion: {n} slices, integrator={integrator!r}, "
+          f"{num_steps} steps per slice")

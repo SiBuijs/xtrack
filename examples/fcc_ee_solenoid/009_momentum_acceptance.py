@@ -8,6 +8,7 @@ import xtrack as xt
 
 from aperture_grid import initial_conditions_grid
 from aperture_study_io import save_ma_study, variant_suffix
+from bfe_setup import bfe_lattice_path, prepare_case_line
 from lattice_knobs import (
     install_extra_sextupole,
     robust_twiss,
@@ -101,6 +102,24 @@ def _build_ma_cases(tag, order_tag_str="", output_tag_str=""):
             with_solenoids=True,
             with_correctors=True,
             title=f"BNL field map ({varsol_tag}): solenoids powered + correction scheme",
+        ),
+        # BFieldExpansion slices on the 004c --model bfe lattice, tracked with
+        # RK4 (the lattice's own setting) or Boris; see bfe_setup.BFE_CASE_INTEGRATORS.
+        dict(
+            name="bfe_on",
+            model="BFE",
+            lattice_json=bfe_lattice_path(HERE, tag, order_tag_str, output_tag_str),
+            with_solenoids=True,
+            with_correctors=True,
+            title=f"BFieldExpansion RK4 ({sb_tag}): solenoids powered + correction scheme",
+        ),
+        dict(
+            name="bfeboris_on",
+            model="BFEBoris",
+            lattice_json=bfe_lattice_path(HERE, tag, order_tag_str, output_tag_str),
+            with_solenoids=True,
+            with_correctors=True,
+            title=f"BFieldExpansion Boris ({sb_tag}): solenoids powered + correction scheme",
         ),
     ]
 
@@ -212,6 +231,7 @@ def _run_momentum_acceptance(
         with_correctors=case["with_correctors"],
         sext_amp=sexamp,
     )
+    prepare_case_line(line, case["model"])
     set_solenoid_offset(line, x_offset=x_offset, y_offset=y_offset)
     install_extra_sextupole(line, k2l=extra_sext_strength)
     if sext_window_s_min is not None:
