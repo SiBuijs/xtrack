@@ -214,8 +214,8 @@ Target changed (user, 2026-11-04): the curved Boris goes into
 expansion and returns B_x, B_y, B_s in curved-frame components, so the
 field-input question of the TODO is settled. Prototype:
 `examples/bfieldexpansion/curved_boris_prototype.py` (branch
-`bfe_radiation_spin`; removed in 1fe6afc9b now that the C version exists,
-recover with `git show f4fda5a7d:examples/bfieldexpansion/curved_boris_prototype.py`). Units as in the straight C Boris: kinetic momenta
+`bfe_radiation_spin`; removed in 981be7a1d now that the C version exists,
+recover with `git show 86cfaeb80:examples/bfieldexpansion/curved_boris_prototype.py`). Units as in the straight C Boris: kinetic momenta
 π = p − χA in units of P₀, field b = B/(Bρ)₀, so q → χ in the formulas above.
 
 **Sector-bend variant.** Split the kick K = K₀ + (K − K₀), with K₀ the kick of
@@ -247,7 +247,7 @@ Decision: the C implementation uses the sector-bend variant for h ≠ 0.
 
 ## Step 6 — C implementation, cost vs accuracy, long-term tracking (2026-11-04/05)
 
-**C implementation** (branch `bfe_radiation_spin`, f1020b410, pushed). The
+**C implementation** (branch `bfe_radiation_spin`, 139c368ef, pushed). The
 sector-bend variant is in `track_bfieldexpansion_boris.h`
 (`bfieldexpansion_sector_bend`, `_polar_drift`, `_boris_step_bent`; tracker
 renamed `BFieldExpansion_track_boris` with geometry dispatch; `magnet_spin`
