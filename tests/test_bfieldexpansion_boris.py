@@ -8,6 +8,8 @@ from xobjects.test_helpers import fix_random_seed
 import xtrack as xt
 
 COORDS = ('x', 'px', 'y', 'py', 'zeta', 'delta')
+# Radiation and spin are implemented for both integrators.
+INTEGRATORS = ['boris', 'rk4']
 
 
 def make_element(integrator='boris', num_integration_steps=40, pkin_const=False):
@@ -156,14 +158,15 @@ def test_boris_uniform_field_matches_exact_helix():
 # Synchrotron radiation
 # ---------------------------------------------------------------------------
 
-def _straight_dipole_bfe(k0, length, nstep, radiation_flag=0):
-    return xt.BFieldExpansion(length=length, k0=k0, integrator='boris',
+def _straight_dipole_bfe(k0, length, nstep, radiation_flag=0, integrator='boris'):
+    return xt.BFieldExpansion(length=length, k0=k0, integrator=integrator,
                               num_integration_steps=nstep, pkin_const=True,
                               radiation_flag=radiation_flag)
 
 
+@pytest.mark.parametrize('integrator', INTEGRATORS)
 @fix_random_seed(2389457)
-def test_boris_dipole_radiation():
+def test_dipole_radiation(integrator):
     # Uniform 2 T dipole field in a straight frame, 5 GeV electrons
     # (as test_splineboris_bend_radiation).
     length, b_tesla, p0c = 1.0, 2.0, 5e9
@@ -176,7 +179,8 @@ def test_boris_dipole_radiation():
     tracked = {}
     for flag in (0, 1, 2, 3):
         particles = particles0.copy()
-        _straight_dipole_bfe(k0, length, 100, radiation_flag=flag).track(particles)
+        _straight_dipole_bfe(k0, length, 100, radiation_flag=flag,
+                             integrator=integrator).track(particles)
         tracked[flag] = particles
 
     # Average and stochastic models give the same mean energy loss
@@ -212,26 +216,28 @@ def test_boris_dipole_radiation():
         return {name: getattr(with_rad, name) - getattr(without_rad, name)
                 for name in ('ptau', 'px', 'py')}
 
-    boris = radiation_effect(_straight_dipole_bfe(k0, length, 1000))
+    bfe = radiation_effect(_straight_dipole_bfe(k0, length, 1000,
+                                               integrator=integrator))
     bend = radiation_effect(xt.Bend(length=length, angle=0, k0=k0,
                                     num_multipole_kicks=1000,
                                     edge_entry_active=False,
                                     edge_exit_active=False))
-    xo.assert_allclose(boris['ptau'], bend['ptau'], atol=0, rtol=1e-6)
-    xo.assert_allclose(boris['py'], bend['py'], atol=0, rtol=1e-5)
+    xo.assert_allclose(bfe['ptau'], bend['ptau'], atol=0, rtol=1e-6)
+    xo.assert_allclose(bfe['py'], bend['py'], atol=0, rtol=1e-5)
     # The transverse radiation kick must be there (it is lost if the
     # integrator does not hand its momenta to the radiation routine).
-    assert np.all(np.abs(boris['px']) > 1e-6)
-    xo.assert_allclose(boris['px'], bend['px'], atol=0, rtol=1e-2)
+    assert np.all(np.abs(bfe['px']) > 1e-6)
+    xo.assert_allclose(bfe['px'], bend['px'], atol=0, rtol=1e-2)
 
 
+@pytest.mark.parametrize('integrator', INTEGRATORS)
 @fix_random_seed(9834751)
-def test_boris_dipole_photon_record():
+def test_dipole_photon_record(integrator):
     length, b_tesla, p0c = 1.0, 2.0, 5e9
     k0 = b_tesla / (p0c / clight)
     line = xt.Line(elements=[
-        xt.Drift(length=1.0), _straight_dipole_bfe(k0, length, 100),
-        xt.Drift(length=1.0), _straight_dipole_bfe(k0, length, 100)])
+        xt.Drift(length=1.0), _straight_dipole_bfe(k0, length, 100, integrator=integrator),
+        xt.Drift(length=1.0), _straight_dipole_bfe(k0, length, 100, integrator=integrator)])
     line.build_tracker()
     line.configure_radiation(model='quantum')
 
@@ -272,9 +278,10 @@ def test_boris_dipole_photon_record():
     assert record._index.num_recorded == 0
 
 
+@pytest.mark.parametrize('integrator', INTEGRATORS)
 @pytest.mark.parametrize('pkin_const', [False, True])
-def test_boris_radiation_slices_match_parent(pkin_const):
-    parent = make_element('boris', 40, pkin_const)
+def test_radiation_slices_match_parent(integrator, pkin_const):
+    parent = make_element(integrator, 40, pkin_const)
     reference_line = xt.Line(elements={'e': parent.copy()})
     line = xt.Line(elements={'e': parent})
     line.slice_thick_elements([xt.Strategy(xt.Uniform(4, mode='thick'))])
@@ -291,8 +298,9 @@ def test_boris_radiation_slices_match_parent(pkin_const):
                            rtol=0, atol=1e-16)
 
 
-def test_boris_radiation_and_spin_skipped_when_backtracking():
-    element = make_element('boris', 20)
+@pytest.mark.parametrize('integrator', INTEGRATORS)
+def test_radiation_and_spin_skipped_when_backtracking(integrator):
+    element = make_element(integrator, 20)
     line = xt.Line(elements={'e': element})
     line.build_tracker()
     line.configure_radiation(model='mean')
@@ -328,7 +336,8 @@ def _robinson_ring(insertion):
     return ring
 
 
-def test_boris_robinson_theorem():
+@pytest.mark.parametrize('integrator', INTEGRATORS)
+def test_robinson_theorem(integrator):
     # Robinson's theorem: for any static magnetic lattice the damping
     # partition numbers add up to Jx + Jy + Jz = 4. The BFE insertion has a
     # 3 T wiggler-like By profile (zero integral and first moment, so the
@@ -342,7 +351,7 @@ def test_boris_robinson_theorem():
     insertion = xt.BFieldExpansion(
         length=length, knc=[0.3 * np.array([1., -6 / length, 6 / length**2])],
         ksolc=ksolc, ksc=[[0.], -0.5 * dks], k1s=0.02,
-        integrator='boris', num_integration_steps=200)
+        integrator=integrator, num_integration_steps=200)
     ring = _robinson_ring(insertion)
     ring.configure_radiation(model='mean')
     tw = ring.twiss(radiation_analysis=True)
@@ -398,8 +407,9 @@ def _compare_spin(reference_elements, element, case, atol,
     assert np.abs(particles.spin_x[0] - 0.1) > 100 * atol
 
 
+@pytest.mark.parametrize('integrator', INTEGRATORS)
 @pytest.mark.parametrize('name', list(SPIN_CASES))
-def test_boris_spin_uniform_solenoid(name):
+def test_spin_uniform_solenoid(integrator, name):
     # 2 T over 1 m: the spin turns by ~1e-3 rad at 700 GeV. Off axis the
     # transverse kinetic momentum matters (a*gamma ~ 1600 amplifies its
     # tilt with respect to Bs), so both elements must start with the same
@@ -415,35 +425,29 @@ def test_boris_spin_uniform_solenoid(name):
     atol = 2e-7 if 'px=-0.03' in name or 'px=0.015' in name else 1e-9
     _compare_spin([xt.UniformSolenoid(length=length / npieces, ks=ks)
                    for _ in range(npieces)],
-                  xt.BFieldExpansion(length=length, ksolc=[ks], integrator='boris',
+                  xt.BFieldExpansion(length=length, ksolc=[ks], integrator=integrator,
                                      pkin_const=True, num_integration_steps=200),
                   case, atol, reference_case=reference_case, check_orbit=True)
 
 
+@pytest.mark.parametrize('integrator', INTEGRATORS)
 @pytest.mark.parametrize('name', list(SPIN_CASES))
-def test_boris_spin_quadrupole(name):
+def test_spin_quadrupole(integrator, name):
     k1, length = 0.01, 0.02
     atol = 1e-7 if 'px=-0.03' in name or 'px=0.015' in name else 1e-9
     _compare_spin([xt.Quadrupole(k1=k1, length=length)],
-                  xt.BFieldExpansion(length=length, k1=k1, integrator='boris',
+                  xt.BFieldExpansion(length=length, k1=k1, integrator=integrator,
                                      num_integration_steps=100),
                   SPIN_CASES[name], atol)
 
 
-def test_boris_spin_dipole():
+@pytest.mark.parametrize('integrator', INTEGRATORS)
+def test_spin_dipole(integrator):
     k0, length = 0.01, 0.02
     _compare_spin([xt.Bend(length=length, angle=0., k0=k0)],
-                  xt.BFieldExpansion(length=length, k0=k0, integrator='boris',
+                  xt.BFieldExpansion(length=length, k0=k0, integrator=integrator,
                                      num_integration_steps=100),
                   SPIN_CASES['base'], 1e-9)
-
-
-def test_spin_requires_boris():
-    particles = _spin_particles(SPIN_CASES['base'])
-    with pytest.raises(NotImplementedError, match="integrator='boris'"):
-        make_element('rk4', 10).track(particles)
-    make_element('boris', 10).track(particles)
-    assert np.all(particles.state == 1)
 
 
 # ---------------------------------------------------------------------------
@@ -541,7 +545,8 @@ def test_boris_bent_design_dipole_is_exact(nstep):
                            rtol=0, atol=2e-15)
 
 
-def test_boris_bent_spin_matches_bend():
+@pytest.mark.parametrize('integrator', INTEGRATORS)
+def test_bent_spin_matches_bend(integrator):
     # Uniform dipole with a quadrupole: the spin turns by ~1e-2 relative to the
     # frame. magnet_spin gets the frame rotation h*ds per step; without it the
     # spin would be off by ~h*length = 4e-2.
@@ -558,7 +563,7 @@ def test_boris_bent_spin_matches_bend():
     out = []
     for element in (
             xt.BFieldExpansion(length=length, h=h, k0=h, k1=k1,
-                               integrator='boris', num_integration_steps=1000),
+                               integrator=integrator, num_integration_steps=1000),
             xt.Bend(length=length, angle=h * length, k0=h, k1=k1,
                     model='bend-kick-bend', num_multipole_kicks=10000,
                     edge_entry_active=False, edge_exit_active=False)):
@@ -568,14 +573,14 @@ def test_boris_bent_spin_matches_bend():
         particles = spin_particles()
         line.track(particles)
         out.append(particles)
-    boris, bend = out
+    bfe, bend = out
     for name in ('spin_x', 'spin_y', 'spin_z'):
-        xo.assert_allclose(getattr(boris, name), getattr(bend, name),
+        xo.assert_allclose(getattr(bfe, name), getattr(bend, name),
                            rtol=0, atol=2e-7)
-    assert np.all(np.abs(boris.spin_x - 0.1) > 1e-2)
+    assert np.all(np.abs(bfe.spin_x - 0.1) > 1e-2)
 
 
-def _bent_ring(use_bfe, nstep=50):
+def _bent_ring(use_bfe, nstep=50, integrator='boris'):
     env = xt.Environment()
     env.particle_ref = xt.Particles(mass0=xt.ELECTRON_MASS_EV, q0=1, p0c=3e9)
     ncells, length = 16, 2.0
@@ -583,7 +588,7 @@ def _bent_ring(use_bfe, nstep=50):
     if use_bfe:
         env.elements['mb'] = xt.BFieldExpansion(
             length=length, h=angle / length, k0=angle / length, k1=0.01,
-            integrator='boris', num_integration_steps=nstep)
+            integrator=integrator, num_integration_steps=nstep)
     else:
         env.new('mb', xt.Bend, length=length, angle=angle, k0_from_h=True,
                 k1=0.01, model='bend-kick-bend', num_multipole_kicks=nstep,
@@ -599,13 +604,14 @@ def _bent_ring(use_bfe, nstep=50):
     return ring
 
 
-def test_boris_bent_ring_matches_bend_ring():
+@pytest.mark.parametrize('integrator', INTEGRATORS)
+def test_bent_ring_matches_bend_ring(integrator):
     # A ring whose bends are all curved Boris BFieldExpansions has the optics
     # and radiation properties of the same ring with exact xt.Bend elements,
     # and the damping partition numbers add up to 4 (Robinson's theorem).
     results = []
     for use_bfe in (True, False):
-        ring = _bent_ring(use_bfe)
+        ring = _bent_ring(use_bfe, integrator=integrator)
         tw4d = ring.twiss4d()
         ring.configure_radiation(model='mean')
         results.append((tw4d, ring.twiss(radiation_analysis=True)))

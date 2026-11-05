@@ -4,6 +4,10 @@
 #include "xtrack/headers/particle_states.h"
 #include "track_bfieldexpansion_straight.h"
 #include "track_bfieldexpansion_bent.h"
+#if !defined(XTRACK_MULTIPOLE_NO_SYNRAD) && !defined(XTRACK_TPSA_TRACK)
+    #define BFIELDEXPANSION_RK4_WITH_SYNRAD_AND_SPIN
+    #include "xtrack/beam_elements/elements_src/track_magnet_radiation.h"
+#endif
 
 #define BFIELDEXPANSION_FIELD_VALUE_SIZE 13
 
@@ -99,16 +103,17 @@ void BFieldExpansion_track_interval(BFieldExpansionData el,
                                     double length, double s_start, int64_t nstep,
                                     int64_t radiation_flag,
                                     SynchrotronRadiationRecordData radiation_record) {
-    /* Radiation and spin are only implemented in the Boris integrator. */
     if (BFieldExpansionData_get_integrator(el) == BFIELDEXPANSION_INTEGRATOR_BORIS) {
         BFieldExpansion_track_boris(el, part0, length, s_start, nstep,
                                     radiation_flag, radiation_record);
     }
     else if (BFieldExpansionData_get_straight(el)) {
-        BFieldExpansion_track_straight(el, part0, length, s_start, nstep);
+        BFieldExpansion_track_straight(el, part0, length, s_start, nstep,
+                                       radiation_flag, radiation_record);
     }
     else {
-        BFieldExpansion_track_bent(el, part0, length, s_start, nstep);
+        BFieldExpansion_track_bent(el, part0, length, s_start, nstep,
+                                   radiation_flag, radiation_record);
     }
 }
 
