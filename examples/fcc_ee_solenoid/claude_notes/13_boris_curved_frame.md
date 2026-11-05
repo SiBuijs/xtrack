@@ -214,7 +214,8 @@ Target changed (user, 2026-11-04): the curved Boris goes into
 expansion and returns B_x, B_y, B_s in curved-frame components, so the
 field-input question of the TODO is settled. Prototype:
 `examples/bfieldexpansion/curved_boris_prototype.py` (branch
-`bfe_radiation_spin`). Units as in the straight C Boris: kinetic momenta
+`bfe_radiation_spin`; removed in 1fe6afc9b now that the C version exists,
+recover with `git show f4fda5a7d:examples/bfieldexpansion/curved_boris_prototype.py`). Units as in the straight C Boris: kinetic momenta
 π = p − χA in units of P₀, field b = B/(Bρ)₀, so q → χ in the formulas above.
 
 **Sector-bend variant.** Split the kick K = K₀ + (K − K₀), with K₀ the kick of

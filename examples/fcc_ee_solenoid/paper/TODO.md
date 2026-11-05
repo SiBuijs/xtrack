@@ -256,7 +256,7 @@ Method (formulas in `claude_notes/13_boris_curved_frame.md`, step 4): Strang spl
 - The factor 1 + hx in K and R is the metric (lab path per unit s), not a frame effect.
 
 Tasks (target changed 2026-11-04: implement in **BFieldExpansion**, not SplineBoris, which is being deprecated):
-- [x] `SIM` Python prototype of the polar-drift version → `examples/bfieldexpansion/curved_boris_prototype.py` (branch `bfe_radiation_spin`), uses BFE's curved field; note 13 step 5. Tests:
+- [x] `SIM` Python prototype of the polar-drift version → `examples/bfieldexpansion/curved_boris_prototype.py` (branch `bfe_radiation_spin`; removed in 1fe6afc9b, recover from f4fda5a7d), uses BFE's curved field; note 13 step 5. Tests:
     - [x] D alone vs direct integration of the D vector field: 2e-16
     - [x] Full step vs BFE's curved RK4 (canonical, independent) in a non-uniform field: second order, ratio 4.00 per halving
     - [x] h → 0 reproduces the C straight BFE Boris step: 2e-16
@@ -273,7 +273,8 @@ Tasks (target changed 2026-11-04: implement in **BFieldExpansion**, not SplineBo
     - Long-term: eigen-emittance per mode and 4D volume vs turn, compared with the |λ|^{2N} prediction; explain why the Boris curves flatten towards 10⁵ turns
     - Physics checks: spin vs `xt.Bend`, U0 and damping partition sum in a bend ring
     - Conclusion for the paper: which integrator and step count the FCC solenoid runs should use, and why
-    - Commit `long_term_boris_vs_rk4.py` and `curved_boris_plot.py` (uncommitted on `bfe_radiation_spin`) so the figures are reproducible
+    - Commit `long_term_boris_vs_rk4.py` (uncommitted on `bfe_radiation_spin`) so the figures are reproducible
+    - `curved_boris_plot.py` (makes `curved_boris_variants.png`) lives in `FCC_Solenoid_Studies/BFE_CurvedBoris_2026-11-04/`; it needs the prototype from f4fda5a7d next to it
     - Conclusion so far (note 13 step 6): RK4 for production, Boris only as a cross-check. List the few cases where Boris could win: coarse-step stability, non-smooth fields, constant fields
 - [ ] `SIM` Does Boris win in a non-smooth field? Work-precision of Boris vs RK4 with the BNL map through BFE: does RK4 keep its order 4, or drop towards order 2?
 
