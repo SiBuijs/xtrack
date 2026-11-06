@@ -124,6 +124,7 @@ Background: the all-orders $A_m(S)$ in the Overleaf text, and the strict $O(\the
 - [ ] `SIM` Compare, uncorrected and corrected, 2 T and 3 T: VarSol vs SB/BFieldExpansion order 1 (isolates $g_s$ and the $b_s''$, $b_s'''$ terms of $A_0$–$A_2$) vs order 2 (adds $A_3$) vs order 4
     - Observables: $Q'_{x,y}$, true $Q''_{x,y}$ (`004n`), $|C^-|$ at δ = 0 and $C^-(\delta)$ for δ in [−0.01, 0.01] (off-momentum Twiss), $dC^-/d\delta$
     - Reuses the order-scan lattices of the `--max-transverse-order` item above; needs o1 built for 2 T and 3 T
+    - The $f_{1001}(\delta)$, $f_{1010}(\delta)$ scan in §4 ("Chromatic coupling", `004p`) covers the coupling observables; run it on these lattices
 - [ ] `CHECK` Compare Step 3 estimates with Step 4 results, one figure per observable; log in `RESULTS.md`
 - [ ] `WRITE` Paper paragraph: which beam-frame coefficient drives which effect, and why the linearized model is (or is not) sufficient
 
@@ -223,6 +224,17 @@ Run each item for: solenoids off · 2 T · 3 T without mid-bend quads (to show t
 - [ ] `DERIVE` Skew-sextupole hypothesis: re-derive the RDT ∝ $\int \beta_y^{3/2} \partial_x^2 B_x ds$, document the cancellation, and keep it as a short "ruled out" paragraph
     - Repo: 004a's β-weighted d²Bx/dx² diagnostic and `004e_sextupole_window_study.py`
 - [ ] `SIM` SR from the fringe fields: first reproduce Boscolo's 2 T power, then compute 3 T (power and critical energy)
+- [ ] `SIM` **Chromatic coupling** (added 2026-11-06): $|f_{1001}|$ and $|f_{1010}|$ as functions of δ, from off-momentum periodic 4D Twiss. Cheap: no tracking, minutes per lattice. This is the observable side of §3 Step 4 ($C^-(\delta)$, $dC^-/d\delta$); the mechanism derivations stay in §3 Step 3
+    - New script `004p_chromatic_coupling.py` (004o is taken). Reuse 004k's `delta0` loop (NaN on `ClosedOrbitSearchError`, report and skip; `--replot` from saved data) and 004d's `_rdt_ring_average`, including its NaN handling inside the solenoid bodies (kinetic-momentum W, see the 004d comment above `RDT_CASES`)
+    - Per δ: `line.twiss4d(delta0=δ, coupling_edw_teng=True)`. Store qx, qy, `c_minus` and the complex $f_{1001}(s)$, $f_{1010}(s)$, so the phase is kept
+    - Grid: δ ∈ [−0.01, +0.01], 21 points. Check this against the MA (δ ≈ ±0.0095–0.0104, RESULTS L34). The 3 T no-trims ring may fail to converge at the edges (Qy span 1.21 over ±0.015, 004k)
+    - Cases: `sb_off` (should give ≈ 0, which shows the noise floor), SB 2T/3T with trims (headline), SB 2T/3T without trims, VarSol 2T/3T with trims. VarSol has no $g_s$ and no $A_{m\geq3}$, so VarSol vs SB isolates the field-content contribution (§3 Step 3). Optional: BFE o1/o2/o4 once the order-scan lattices exist
+    - Summary numbers per δ: the length-weighted ring average of $|f|$ (004d's definition), its maximum outside the solenoid bodies, and the value at each IP marker and at one fixed arc point. Fit $d|f|/d\delta$ and $d^2|f|/d\delta^2$ at δ = 0
+    - Separate the driving term from the tune proximity: $f_{1001} \propto 1/(1 - e^{2\pi i(Q_x - Q_y)})$, so $|f_{1001}|$ also changes with δ when $Q_x - Q_y$ moves (Q′, Q″), not only when the sources do. Plot $|f_{1001}|\cdot|1 - e^{2\pi i(Q_x-Q_y)}|$ next to $|f_{1001}|$, and the same with $Q_x + Q_y$ for $f_{1010}$. Cross-check that this product scales like `c_minus`(δ)
+    - Sanity at δ = 0: the ring average reproduces 004d (3 T: $\langle|f_{1001}|\rangle$ = 0.0072) and `c_minus` reproduces 004n
+    - Figures (`FCC_Solenoid_Studies/Chromatic_Coupling_<date>/`): (1) ring-averaged $|f_{1001}|$ and $|f_{1010}|$ vs δ for all cases; (2) $|f_{1001}(s)|$ around the ring and over the IR at δ = −0.01, 0, +0.01; (3) the driving-term vs tune-proximity split. Move (1) to the paper dir if the paper uses it
+    - Interpretation: compare the growth of $|f_{1001}|$ over the equilibrium σδ (Twiss, with and without beamstrahlung) with its growth over the MA range. That decides whether this becomes a §4 result (εy) or a §6 remark (off-momentum particles only)
+    - Log: RESULTS row (script, args, commit, `data/CHROMCOUP_*.npz`), then tick here
 
 ## 5. Results: 2 T field map (→ §5)
 
@@ -250,6 +262,7 @@ Run each item for: solenoids off · 2 T · 3 T without mid-bend quads (to show t
 - [ ] `FIG` IR layout schematic: both beams, detector/compensation/screening solenoids, FF quads, mid-bend quads, sdm1r.0
 - [ ] `FIG` Field comparison (linearized / analytic / map) along the beam trajectory
 - [ ] `FIG` $|C^-|$ vs expansion order with the analytic estimate overlaid
+- [ ] `FIG` Candidate: ring-averaged $|f_{1001}|$ and $|f_{1010}|$ vs δ (chromatic coupling, §4 item, `004p`)
 - [ ] `FIG` IR optics, corrected vs uncorrected (2 T, 3 T, map)
 - [ ] `FIG` Coupled β ratios along the straight
 - [ ] `FIG` εy evolution, tracking vs Twiss (compact, one panel per configuration or overlaid)
