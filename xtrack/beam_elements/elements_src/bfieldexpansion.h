@@ -4,10 +4,7 @@
 #include "xtrack/headers/particle_states.h"
 #include "track_bfieldexpansion_straight.h"
 #include "track_bfieldexpansion_bent.h"
-#if !defined(XTRACK_MULTIPOLE_NO_SYNRAD) && !defined(XTRACK_TPSA_TRACK)
-    #define BFIELDEXPANSION_RK4_WITH_SYNRAD_AND_SPIN
-    #include "xtrack/beam_elements/elements_src/track_magnet_radiation.h"
-#endif
+#include "track_bfieldexpansion_radiation.h"
 
 #define BFIELDEXPANSION_FIELD_VALUE_SIZE 13
 
