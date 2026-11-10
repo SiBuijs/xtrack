@@ -374,6 +374,14 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   because of the element. BFE valid at nominal field only (kscale scales the
   corrector knl). Radiation and spin were added later (2026-11-05, ported from
   `bfe_radiation_spin`), for both `integrator='rk4'` and `'boris'`.
+- `15_pseudo_multipoles_and_rdts.md` — (2026-11-10, collects the claude.ai
+  discussions of 2–3 and 5 Nov) beam-frame expansion in true coefficients
+  T_q and pseudo-multipoles (fixed by S-derivatives of T_q, integrate to
+  zero), the normalisation B rho k_{q-1}s = 2 q! T_q for RDT codes, which A_m
+  drives which RDT (all skew, so no first-order detuning or Q′; normal terms
+  only via vertical feed-down y0, Dy), and why pseudo terms still enter the
+  RDTs near the IP (alpha/beta, 1/beta weights after integration by parts,
+  of order one). Literature list and open items.
 
 ## Scripts without a dedicated note (summarised 2026-10-14 from docstrings)
 
