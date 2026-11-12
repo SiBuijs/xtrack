@@ -100,10 +100,6 @@ class ThickSliceBFieldExpansion(_ThickSliceElementBase, BeamElement):
         """Evaluate the field at distances s_local from this slice's entrance."""
         return self._parent.get_field(x, y, np.asarray(s_local) + self.slice_offset)
 
-    def track(self, particles=None, increment_at_element=False):
-        self._parent._check_spin_tracking(particles)
-        return super().track(particles, increment_at_element=increment_at_element)
-
 
 class ThickSliceBend(_ThickSliceElementBase, BeamElement):
 

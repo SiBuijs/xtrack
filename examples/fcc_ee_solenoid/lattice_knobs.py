@@ -6,6 +6,8 @@ import numpy as np
 import xtrack as xt
 from xtrack.twiss import ClosedOrbitSearchError
 
+from bfe_setup import coefficient_attrs
+
 IP_NAMES = ["ipa", "ipd", "ipg", "ipj"]
 
 # Local-s grid (distance from the IP; matches MAIN_SOLENOID_S_AXIS in
@@ -70,6 +72,10 @@ def set_solenoid_offset(
     ip_names: list[str] = IP_NAMES,
 ) -> None:
     """Rigidly displace each IP's main detector solenoid by (x_offset, y_offset).
+
+    SplineBoris: shift_x/shift_y offset the field evaluation. BFieldExpansion:
+    the standard xtrack frame shift. For a pure translation the two agree
+    (checked 2026-11-03 on single slices: SB - BFE ~1e-14, shift effect 1e-8).
 
     Only the main solenoid slices (element names `sol_slice_{ip}_*`) are
     shifted; the compensation solenoids (ring hardware, not part of the
@@ -200,9 +206,13 @@ def zero_sextupole_window(
                     "zero_sextupole_window's s_axis in lattice_knobs.py."
                 )
             ref = line.element_refs[element_name]
-            for k in range(5):
-                ref.bx[order, k] = 0.0
-                ref.by[order, k] = 0.0
+            # bx/by (SplineBoris Hermite data) or ksc/knc (BFieldExpansion
+            # polynomial coefficients): zeroing a whole row is the same.
+            for attr in coefficient_attrs(line[element_name]):
+                ref_attr = getattr(ref, attr)
+                width = np.asarray(getattr(line[element_name], attr)).shape[1]
+                for k in range(width):
+                    ref_attr[order, k] = 0.0
             n_zeroed += 1
 
     return n_zeroed, covered_s_start, covered_s_end

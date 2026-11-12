@@ -4,6 +4,10 @@
 #include "xtrack/headers/particle_states.h"
 #include "track_bfieldexpansion_straight.h"
 #include "track_bfieldexpansion_bent.h"
+#if !defined(XTRACK_MULTIPOLE_NO_SYNRAD) && !defined(XTRACK_TPSA_TRACK)
+    #define BFIELDEXPANSION_RK4_WITH_SYNRAD_AND_SPIN
+    #include "xtrack/beam_elements/elements_src/track_magnet_radiation.h"
+#endif
 
 #define BFIELDEXPANSION_FIELD_VALUE_SIZE 13
 
@@ -88,15 +92,28 @@ void BFieldExpansion_get_field(
 #undef HAMILTONIAN_FLOW
 #undef EVALUATE_EXPANSION
 
+#include "track_bfieldexpansion_boris.h"
+
+#define BFIELDEXPANSION_INTEGRATOR_RK4 0
+#define BFIELDEXPANSION_INTEGRATOR_BORIS 1
+
 GPUFUN
 void BFieldExpansion_track_interval(BFieldExpansionData el,
                                     LocalParticle* part0,
-                                    double length, double s_start, int64_t nstep) {
-    if (BFieldExpansionData_get_straight(el)) {
-        BFieldExpansion_track_straight(el, part0, length, s_start, nstep);
+                                    double length, double s_start, int64_t nstep,
+                                    int64_t radiation_flag,
+                                    SynchrotronRadiationRecordData radiation_record) {
+    if (BFieldExpansionData_get_integrator(el) == BFIELDEXPANSION_INTEGRATOR_BORIS) {
+        BFieldExpansion_track_boris(el, part0, length, s_start, nstep,
+                                    radiation_flag, radiation_record);
+    }
+    else if (BFieldExpansionData_get_straight(el)) {
+        BFieldExpansion_track_straight(el, part0, length, s_start, nstep,
+                                       radiation_flag, radiation_record);
     }
     else {
-        BFieldExpansion_track_bent(el, part0, length, s_start, nstep);
+        BFieldExpansion_track_bent(el, part0, length, s_start, nstep,
+                                   radiation_flag, radiation_record);
     }
 }
 
@@ -106,7 +123,10 @@ void BFieldExpansion_track_local_particle(BFieldExpansionData el,
     BFieldExpansion_track_interval(el, part0,
         BFieldExpansionData_get_length(el),
         BFieldExpansionData_get_s_start(el),
-        BFieldExpansionData_get_num_integration_steps(el));
+        BFieldExpansionData_get_num_integration_steps(el),
+        BFieldExpansionData_get_radiation_flag(el),
+        (SynchrotronRadiationRecordData)
+            BFieldExpansionData_getp_internal_record(el, part0));
 }
 
 #endif

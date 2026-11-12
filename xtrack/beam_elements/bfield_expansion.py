@@ -7,7 +7,8 @@ import numpy as np
 import xobjects as xo
 
 from ..base_element import BeamElement
-from ._common import _for_docstring_alignment
+from ..random import RandomUniformAccurate, RandomExponential
+from ._common import _for_docstring_alignment, SynchrotronRadiationRecord
 
 
 _FIELD_VALUE_NAMES = (
@@ -177,6 +178,17 @@ class _BFieldExpansionArray(np.lib.mixins.NDArrayOperatorsMixin):
         self[...] = value
 
 
+_INTEGRATOR_CODES = {'rk4': 0, 'boris': 1}
+_INTEGRATOR_NAMES = {code: name for name, code in _INTEGRATOR_CODES.items()}
+
+
+def _integrator_code(name):
+    if name not in _INTEGRATOR_CODES:
+        raise ValueError("BFieldExpansion only supports integrator in "
+                         f"{tuple(_INTEGRATOR_CODES)}, got {name!r}")
+    return _INTEGRATOR_CODES[name]
+
+
 class _BFieldExpansionGeometry:
     _geometry_rename = {
         'length': '_length',
@@ -317,18 +329,6 @@ class _BFieldExpansionGeometry:
         if value != self._num_phi:
             raise ValueError('num_phi is fixed at construction; create a new '
                              'BFieldExpansion to change the expansion order')
-
-    @staticmethod
-    def _check_spin_tracking(particles):
-        if particles is not None and hasattr(particles, 'spin_x'):
-            for name in ('spin_x', 'spin_y', 'spin_z'):
-                spin = particles._context.nparray_from_context_array(getattr(particles, name))
-                if np.any(spin != 0):
-                    raise NotImplementedError('BFieldExpansion does not support spin tracking.')
-
-    def track(self, particles=None, increment_at_element=False):
-        self._check_spin_tracking(particles)
-        return super().track(particles, increment_at_element=increment_at_element)
 
     @property
     def knc(self):
@@ -534,17 +534,15 @@ class _BFieldExpansionGeometry:
 
     @property
     def integrator(self):
-        return 'rk4'
+        return _INTEGRATOR_NAMES[self._integrator]
 
     @integrator.setter
     def integrator(self, value):
-        if value != 'rk4':
-            raise ValueError("BFieldExpansion only supports integrator='rk4'")
-        self._integrator = 0
+        self._integrator = _integrator_code(value)
 
     @staticmethod
     def get_available_integrators():
-        return ['rk4']
+        return list(_INTEGRATOR_CODES)
 
     @property
     def h(self):
@@ -646,7 +644,13 @@ class BFieldExpansion(_BFieldExpansionGeometry, BeamElement):
         Polynomial coordinate at the element entrance, in metres. Tracking
         evaluates the profiles from s_start to s_start + length. Default is 0.
     integrator : str, optional
-        Integration scheme. Currently only 'rk4' is supported (the default).
+        Integration scheme: 'rk4' (default), classical fourth-order
+        Runge-Kutta on the canonical Hamiltonian flow, or 'boris', a
+        second-order, time-reversible spatial Boris scheme on the kinetic
+        momenta that uses only the magnetic field at each step midpoint.
+        In curved elements its half drifts are exact sector bends in the
+        design field h*P0/q, so the reference orbit is kept exactly and
+        only the field that differs from the design dipole is split off.
     num_integration_steps : int, optional
         Positive number of integration steps, default 10.
     pkin_const : bool, optional
@@ -670,9 +674,12 @@ class BFieldExpansion(_BFieldExpansionGeometry, BeamElement):
     if its coefficients will be set later. Scalar strengths k0 through k3
     and their skew counterparts remain writable even when initially omitted.
     Updates rebuild the cached field expansion. NumPy
-    conversions return detached copies. This element does not radiate yet,
-    even when radiation is enabled for the line. Spin tracking is not
-    supported and raises NotImplementedError.
+    conversions return detached copies.
+
+    Synchrotron radiation (``radiation_flag``, set by
+    ``Line.configure_radiation``) and spin tracking are available with both
+    integrators: they are applied after each integration step from the field
+    at the step midpoint, as in Magnet, and not when backtracking.
 
     ``Environment.new`` and ``Environment.set`` accept coefficient matrices
     containing numbers or deferred expressions, without special handling.
@@ -763,7 +770,11 @@ class BFieldExpansion(_BFieldExpansionGeometry, BeamElement):
 
         "pkin_const": xo.Int64,
         "s_start": xo.Float64,
+        "radiation_flag": xo.Int64,
     }
+
+    _depends_on = [RandomUniformAccurate, RandomExponential]
+    _internal_record_class = SynchrotronRadiationRecord
 
     _rename = _BFieldExpansionGeometry._geometry_rename
 
@@ -825,8 +836,7 @@ class BFieldExpansion(_BFieldExpansionGeometry, BeamElement):
             raise TypeError('BFieldExpansion requires length')
         if 'order' in kwargs:
             raise ValueError('order is read-only and determined by knc/ksc shapes')
-        if integrator != 'rk4':
-            raise ValueError("BFieldExpansion only supports integrator='rk4'")
+        integrator_code = _integrator_code(integrator)
         ksc, knc, ksolc, knl, ksl = self._coefficient_arrays(ksc, knc, ksolc, knl, ksl)
         if length == 0 and (np.any(knl) or np.any(ksl)):
             raise ValueError('Nonzero knl/ksl require a nonzero length')
@@ -839,7 +849,7 @@ class BFieldExpansion(_BFieldExpansionGeometry, BeamElement):
         kwargs['angle'] = length * h
         kwargs['straight'] = straight
         kwargs['num_integration_steps'] = int(num_integration_steps)
-        kwargs['integrator'] = 0
+        kwargs['integrator'] = integrator_code
         kwargs.update(k0=k0, k1=k1, k2=k2, k3=k3,
                       k0s=k0s, k1s=k1s, k2s=k2s, k3s=k3s)
         kwargs['s_start'] = s_start

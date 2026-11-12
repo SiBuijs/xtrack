@@ -363,6 +363,38 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   the same QD0→sdy1 phase mechanism (calibration agrees to 0.3% / 3%). The
   trims are needed at both fields. `004c --no-midbend-trims` reproduces it.
 
+- `13_boris_curved_frame.md` — (2026-11-04, side topic, not on the paper's
+  critical path) step-by-step derivation of the spatial Boris
+  drift–kick–rotation splitting in a curved frame with constant curvature h.
+  Step 1 done: the Lorentz force in the curved frame, checked numerically;
+  curvature acts as an extra state-dependent vertical field
+  −h P_s / (q (1 + hx)), i.e. a rotation in the P_x–P_s plane.
+- `14_bfieldexpansion_refactor.md` — (2026-11-03, branch
+  `bfieldexpansion_refactor`, exploratory) SplineBoris → BFieldExpansion,
+  phase 1 (linear optics): `--model bfe / partialmap_bfe` through 004b/004c/004n
+  via `bfe_setup.py`. Same lattice: BFE = converged SB (3T Q″y 4668.447 vs
+  4668.448; SB at 10 steps 4668.487). Corrected rings differ by Q″y −6.0 at 3T
+  because 004c lands on a different near-null-space solution (note 10), not
+  because of the element. BFE valid at nominal field only (kscale scales the
+  corrector knl). Radiation and spin were added later (2026-11-05, ported from
+  `bfe_radiation_spin`), for both `integrator='rk4'` and `'boris'`.
+- `15_pseudo_multipoles_and_rdts.md` — (2026-11-10, collects the claude.ai
+  discussions of 2–3 and 5 Nov) beam-frame expansion in true coefficients
+  T_q and pseudo-multipoles (fixed by S-derivatives of T_q, integrate to
+  zero), the normalisation B rho k_{q-1}s = 2 q! T_q for RDT codes, which A_m
+  drives which RDT (all skew, so no first-order detuning or Q′; normal terms
+  only via vertical feed-down y0, Dy), and why pseudo terms still enter the
+  RDTs near the IP (alpha/beta, 1/beta weights after integration by parts,
+  of order one). Literature list and open items.
+- `16_untilted_compensation_residual_multipoles.md` — (2026-11-12) what the
+  beam-aligned (untilted) compensation solenoids leave of the tilted detector's
+  A_m once ∫B_S = 0: the compensation strength is θ-independent (Ampère); the
+  compensators only cancel T_0 and its pseudo terms, so all true T_q (q ≥ 1)
+  survive; integrated, the only leftover is a uniform skew dipole
+  Φ tan(θ/2) (≈0.24 mrad vertical kick at 2 T), every ∫(A_m − a_m), m ≥ 2, is
+  exactly 0. Local residuals to O(θ⁴), per-side integrals, and the A_4 relation
+  in terms of T_q (closes note 15's p = 4 item).
+
 ## Scripts without a dedicated note (summarised 2026-10-14 from docstrings)
 
 - `000c_field_map_y_s_plane.py` — figure: main-solenoid (By, Bz) field

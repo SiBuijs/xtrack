@@ -160,6 +160,47 @@ def order_tag(
     return f"_o{max_order}"
 
 
+# Solenoid models selectable with --model. Each name is also the token used in
+# the lattice filenames (fccee_z_lcc_{model}_solenoids_..., temp_fcc_ee_lcc_
+# {model}_solenoids_...). The *bfe models are the SplineBoris cases with every
+# slice converted to xt.BFieldExpansion (bfe_setup.py); they share the field,
+# templates and knobs of their SplineBoris counterpart.
+SOLENOID_MODELS = ("splineboris", "bfe", "varsol", "partialmap", "partialmap_bfe")
+# Models built from the analytic 004a templates at a --max-transverse-order
+# cap: only these carry order_tag() in their filenames. VarSol is linear-only
+# and the field map's order is fixed by the 004b fit.
+ORDER_TAGGED_MODELS = ("splineboris", "bfe")
+# The 2 T BNL field map (004b_install_partial_2T_map_in_fcc_ring.py).
+FIELD_MAP_MODELS = ("partialmap", "partialmap_bfe")
+
+
+def is_bfe_model(model: str) -> bool:
+    """True for the models whose solenoids are xt.BFieldExpansion slices."""
+    return model in ("bfe", "partialmap_bfe")
+
+
+def model_order_tag(
+        model: str,
+        max_order: int = MAX_TRANSVERSE_DERIVATIVE_ORDER_FOR_SPLINE) -> str:
+    """order_tag() for the models that carry it, '' for the others."""
+    return order_tag(max_order) if model in ORDER_TAGGED_MODELS else ""
+
+
+def add_model_argument(parser, *, default: str = "splineboris",
+                       choices=SOLENOID_MODELS) -> None:
+    """Add the ``--model`` CLI flag shared by the 004 pipeline scripts."""
+    parser.add_argument(
+        "--model",
+        choices=list(choices),
+        default=default,
+        help=(
+            f"Solenoid model (default: {default}). bfe = the SplineBoris "
+            "solenoids converted to BFieldExpansion; partialmap[_bfe] = the "
+            "2 T BNL field map up to 2.4 m from each IP, needs --b0 2.0."
+        ),
+    )
+
+
 def add_max_order_argument(
         parser, *,
         default: int = MAX_TRANSVERSE_DERIVATIVE_ORDER_FOR_SPLINE) -> None:

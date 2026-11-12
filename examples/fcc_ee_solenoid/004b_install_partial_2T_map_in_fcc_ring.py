@@ -49,13 +49,30 @@ from solenoid_params import (
     MAIN_SOLENOID_CORRECTOR_DS_END,
     corrector_ds_start_for_b0,
     field_tag,
+    is_bfe_model,
 )
 from spline_boris_setup import smooth_edge_taper, symplectic_error
+from bfe_setup import (
+    DEFAULT_BFE_STEPS,
+    FIELD_ELEMENT_TYPE_NAMES,
+    coefficient_attrs,
+    get_scale,
+    is_field_element,
+    ksol_integral,
+    sb_line_to_bfe_line,
+    scale_attr,
+    transverse_order,
+)
 
 
 _parser = argparse.ArgumentParser(
     description='Install the 2 T BNL field map (first 2.4 m from each IP) '
                 'in the FCC ring.')
+_parser.add_argument(
+    '--model', choices=['partialmap', 'partialmap_bfe'], default='partialmap',
+    help='partialmap (default): SplineBoris slices; partialmap_bfe: the same '
+         'fitted map and compensation solenoids converted to BFieldExpansion '
+         '(bfe_setup.py).')
 _parser.add_argument(
     '--output-tag', default='',
     help='Optional extra suffix appended to the output lattice filename. '
@@ -74,7 +91,8 @@ HERE = Path(__file__).parent
 INPUT_LATTICE_JSON = HERE / 'fccee_z_lcc.json'
 INPUT_SOLENOID_LINES_JSON = HERE / f'004_solenoid_lines_{FIELD_TAG}.json'
 OUTPUT_LATTICE_JSON = (
-    HERE / f'temp_fcc_ee_lcc_partialmap_solenoids_{FIELD_TAG}{OUT_TAG}.json')
+    HERE / f'temp_fcc_ee_lcc_{_args.model}_solenoids_{FIELD_TAG}{OUT_TAG}.json')
+BFE = is_bfe_model(_args.model)
 
 # The BNL map is third-party data and must not be committed (CLAUDE.md).
 FIELD_MAP_ENV_VAR = 'FCC_SOLENOID_FIELD_MAP'
@@ -301,9 +319,21 @@ p0 = xt.Particles(mass0=p0.mass0, q0=p0.q0, energy0=p0.energy0[0],
                   delta=delta)
 p_boris = p0.copy()
 boris.track(p_boris)
+
+checked_lines = [('SB map line', line_map), ('fine steps', line_map_fine)]
+if BFE:
+    # BFE converted from the SB map line: the default step count and 4x it,
+    # to show the RK4 step error is far below the fit error.
+    line_map_bfe = sb_line_to_bfe_line(
+        line_map, rigidity0=PARTICLE_REF.rigidity0[0])
+    line_map_bfe_fine = sb_line_to_bfe_line(
+        line_map, rigidity0=PARTICLE_REF.rigidity0[0],
+        num_integration_steps=4 * DEFAULT_BFE_STEPS)
+    checked_lines += [(f'BFE {DEFAULT_BFE_STEPS} st', line_map_bfe),
+                      (f'BFE {4 * DEFAULT_BFE_STEPS} st', line_map_bfe_fine)]
 print(f'Tracking check, {len(delta)} particles (delta = {delta}), '
       f'from s = -{MAP_HALF_LENGTH} m:')
-for label, line in (('SB map line', line_map), ('fine steps', line_map_fine)):
+for label, line in checked_lines:
     line.build_tracker()
     p_sb = p0.copy()
     line.track(p_sb)
@@ -313,6 +343,9 @@ for label, line in (('SB map line', line_map), ('fine steps', line_map_fine)):
 
 print(f'Symplecticity error (|R^T S R - S|_2): '
       f'{symplectic_error(line=line_map, particle_ref=PARTICLE_REF):.3e}')
+if BFE:
+    print(f'Symplecticity error, BFE map line: '
+          f'{symplectic_error(line=line_map_bfe, particle_ref=PARTICLE_REF):.3e}')
 
 
 #####################################################
@@ -335,6 +368,13 @@ print(f'Compensation solenoids: int Bs per solenoid {comp_bs_integral:.6f} '
       f'{map_bs_integral + 2 * comp_bs_integral * comp_rescale:.3e} T m')
 
 main_solenoid_template = line_map
+if BFE:
+    # Same field, every slice converted (comp_rescale already applied to
+    # scale_b, which becomes kscale).
+    main_solenoid_template = line_map_bfe
+    comp_solenoid_template = sb_line_to_bfe_line(
+        comp_solenoid_template, rigidity0=PARTICLE_REF.rigidity0[0])
+    print('Converted the map and compensation solenoids to BFieldExpansion')
 
 
 #########################################################
@@ -388,22 +428,24 @@ for ip_name in IP_NAMES:
             element_name = f'{element_prefix}_{ii:0{name_width}d}'
             cloned_element = template_element.copy()
 
-            saved_scale_b = getattr(cloned_element, 'scale_b', 1.0)
-            if saved_scale_b is None:
-                saved_scale_b = 1.0
-
             env.elements[element_name] = cloned_element
-            env.ref[element_name].scale_b = float(saved_scale_b) * knob_ref
+            if not is_field_element(cloned_element):
+                element_names.append(element_name)
+                continue
 
-            if (
-                isinstance(cloned_element, xt.SplineBoris)
-                and cloned_element.multipole_order >= 3
-            ):
+            # scale_b (SplineBoris) or kscale (BFieldExpansion), as in 004b.
+            saved_scale = get_scale(cloned_element)
+            setattr(env.ref[element_name], scale_attr(cloned_element),
+                    saved_scale * knob_ref)
+
+            if transverse_order(cloned_element) >= 2:
                 sext_ref = env.ref['sext_amp']
                 ref = env.ref[element_name]
-                for k in range(5):
-                    ref.bx[2, k] = float(cloned_element.bx[2, k]) * sext_ref
-                    ref.by[2, k] = float(cloned_element.by[2, k]) * sext_ref
+                for attr in coefficient_attrs(cloned_element):
+                    values = np.asarray(getattr(cloned_element, attr))
+                    ref_attr = getattr(ref, attr)
+                    for k in range(values.shape[1]):
+                        ref_attr[2, k] = float(values[2, k]) * sext_ref
 
             element_names.append(element_name)
 
@@ -436,7 +478,8 @@ for ip_name in IP_NAMES:
             ('left', s_ip - MAIN_SOLENOID_CORRECTOR_DS_END,
              s_ip - MAIN_SOLENOID_CORRECTOR_DS_START)):
         table_corrector = table_region.rows[s_lo:s_hi:'s']
-        assert np.all(table_corrector.element_type == 'SplineBoris')
+        assert np.all(np.isin(table_corrector.element_type,
+                              FIELD_ELEMENT_TYPE_NAMES))
         assert all(
             env_name.startswith(f'sol_slice_{ip_name}_')
             for env_name in table_corrector.env_name)
@@ -500,7 +543,8 @@ bs_main = bs_comp = 0.0
 for name in line.element_names:
     if name.startswith(('sol_slice_', 'comp_sol_slice_')):
         el = env.get(name)
-        integral = el.bs[4] * el.length * el.scale_b
+        integral = ksol_integral(
+            el, rigidity0=PARTICLE_REF.rigidity0[0]) * PARTICLE_REF.rigidity0[0]
         if name.startswith('sol_slice_'):
             bs_main += integral
         else:

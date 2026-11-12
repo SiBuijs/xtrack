@@ -32,7 +32,7 @@ For `on`, against `off` (corrected - bare, closed ring):
   between the two edges, normalised with the bare W matrices.
 
 Usage: python 004n_figures_of_merit.py --b0 3.0 [--max-transverse-order N]
-       [--output-tag TAG] [--model {splineboris,varsol}]
+       [--output-tag TAG] [--model {splineboris,bfe,varsol,partialmap,partialmap_bfe}]
 """
 import argparse
 import json
@@ -49,8 +49,10 @@ from solenoid_params import (
     add_b0_argument,
     add_max_order_argument,
     field_tag,
-    order_tag,
+    is_bfe_model,
+    model_order_tag,
 )
+from bfe_setup import check_bfe_nominal_field
 
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE.parent / 'nonlinear_tunes'))
@@ -62,18 +64,19 @@ add_max_order_argument(parser)
 parser.add_argument('--output-tag', default='',
                     help='Same as 004c --output-tag: selects the lattice.')
 parser.add_argument('--model', default='splineboris',
-                    choices=['splineboris', 'varsol'],
+                    choices=['splineboris', 'bfe', 'varsol',
+                             'partialmap', 'partialmap_bfe'],
                     help='Same as 004c --model (default: splineboris).')
 args = parser.parse_args()
 
 OUTPUT_TAG = f'_{args.output_tag}' if args.output_tag else ''
-if args.model == 'splineboris':
-    TAG = f'{field_tag(args.b0)}{order_tag(args.max_transverse_order)}{OUTPUT_TAG}'
-    OUT_STEM = f'figures_of_merit_{TAG}'
-else:
-    # VarSol is linear-only: no transverse-order tag (as 004c).
-    TAG = f'{field_tag(args.b0)}{OUTPUT_TAG}'
-    OUT_STEM = f'figures_of_merit_varsol_{TAG}'
+# Only splineboris/bfe carry the transverse-order tag (as 004c).
+TAG = (f'{field_tag(args.b0)}'
+       f'{model_order_tag(args.model, args.max_transverse_order)}{OUTPUT_TAG}')
+# splineboris keeps its historical untagged stem.
+OUT_STEM = (f'figures_of_merit_{TAG}' if args.model == 'splineboris'
+            else f'figures_of_merit_{args.model}_{TAG}')
+BFE = is_bfe_model(args.model)
 LATTICE_JSON = (
     HERE / f'fccee_z_lcc_{args.model}_solenoids_coupling_corrected_{TAG}.json')
 OUT_DIR = HERE / 'data' / 'figures_of_merit'
@@ -155,11 +158,20 @@ def state_figures(line, with_chromaticity):
     return out, tw
 
 
-results = {'lattice': LATTICE_JSON.name}
+results = {'lattice': LATTICE_JSON.name, 'model': args.model}
+if BFE:
+    # BFieldExpansion does not radiate yet: the Chao emittances, energy loss
+    # and damping lack the solenoids' own radiation and are not comparable
+    # with the SplineBoris ones (linear-optics figures are).
+    results['emittance_note'] = (
+        'BFE solenoids do not radiate: eq_gemitt_*, energy_loss and damping '
+        'exclude the solenoid radiation; not comparable with SplineBoris.')
 twiss = {}
 for state, (with_solenoids, with_correctors) in STATES.items():
     set_lattice_knobs(line, with_solenoids=with_solenoids,
                       with_correctors=with_correctors)
+    if BFE:
+        check_bfe_nominal_field(line)
     results[state], twiss[state] = state_figures(
         line, with_chromaticity=(state != 'nocorr'))
 

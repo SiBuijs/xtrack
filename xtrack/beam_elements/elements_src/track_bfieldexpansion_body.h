@@ -1,5 +1,14 @@
 /* Intentionally included twice: specialize the integration loop for each
- * geometry, with no geometry dispatch inside the Runge-Kutta stages. */
+ * geometry, with no geometry dispatch inside the Runge-Kutta stages.
+ *
+ * Spin and synchrotron radiation (unless compiled out) are applied after each
+ * RK4 step, as in the Boris integrator and in Magnet: magnet_spin and
+ * magnet_radiation get the field at the step midpoint (stage 2, at s + ds/2)
+ * in tesla and the path length of the step. The particle is handed the
+ * canonical momenta with ax, ay = chi*A at the end of the step, so the
+ * helpers act on the kinetic momenta, and px, py, ptau are read back so the
+ * radiation kick and energy loss reach the next step. Not applied when
+ * backtracking. */
 
 GPUFUN
 int HAMILTONIAN_FLOW(Expansion *f, const double beta0, const double chi,
@@ -50,7 +59,9 @@ void TRACK_EXPANSION(
     LocalParticle* part0,
     const double length,
     double s_start,
-    const int64_t nstep)
+    const int64_t nstep,
+    const int64_t radiation_flag,
+    SynchrotronRadiationRecordData radiation_record)
 {
     double ds = length / nstep;
 
@@ -89,10 +100,29 @@ void TRACK_EXPANSION(
             }
         }
 
+        #ifdef BFIELDEXPANSION_RK4_WITH_SYNRAD_AND_SPIN
+        /* Normalized field -> tesla; spin needs the field even without radiation. */
+        const double brho0 = LocalParticle_get_p0c(part) / C_LIGHT
+                             / LocalParticle_get_q0(part);
+        const int with_spin = (LocalParticle_get_spin_x(part) != 0.
+                               || LocalParticle_get_spin_y(part) != 0.
+                               || LocalParticle_get_spin_z(part) != 0.);
+        const int apply_hook = (radiation_flag || with_spin) && ds > 0;
+        /* Frame rotation per step, for the spin components (as in Magnet). */
+        const double hx_frame = f.straight ? 0. : f.h;
+        /* Only used for the average radiation model's "same as first" mode. */
+        double dp_record_exit = 0., dpx_record_exit = 0., dpy_record_exit = 0.;
+        #endif
+
         double s = s_start;
         double ztmp[6];
         for (int step = 0; valid && step < nstep; ++step) {
             double k1[6], k2[6], k3[6], k4[6];
+            #ifdef BFIELDEXPANSION_RK4_WITH_SYNRAD_AND_SPIN
+            const double tau_old = z[4];
+            FieldValue pot_mid;
+            double kx_mid = 0., ky_mid = 0., delta_mid = 0.;
+            #endif
 
             if (HAMILTONIAN_FLOW(&f, beta0, chi, s, z, &flow) != 0) {
                 valid = 0;
@@ -106,6 +136,12 @@ void TRACK_EXPANSION(
                 break;
             }
             for (int i = 0; i < 6; ++i) k2[i] = flow.rhs[i];
+            #ifdef BFIELDEXPANSION_RK4_WITH_SYNRAD_AND_SPIN
+            pot_mid = flow.pot;
+            kx_mid = ztmp[1] - chi * flow.pot.Ax;
+            ky_mid = ztmp[3] - chi * flow.pot.Ay;
+            delta_mid = flow.delta;
+            #endif
             for (int i = 0; i < 6; ++i) ztmp[i] = z[i] + 0.5 * ds * k2[i];
 
             if (HAMILTONIAN_FLOW(&f, beta0, chi, s + 0.5 * ds, ztmp, &flow) != 0) {
@@ -123,6 +159,45 @@ void TRACK_EXPANSION(
             for (int i = 0; i < 6; ++i) z[i] += ds * (k1[i] + 2.0*k2[i] + 2.0*k3[i] + k4[i]) / 6.0;
 
             s += ds;
+
+            #ifdef BFIELDEXPANSION_RK4_WITH_SYNRAD_AND_SPIN
+            if (apply_hook) {
+                FieldValue v_end;
+                if (EVALUATE_EXPANSION(&f, z[0], z[2], s, &v_end) != 0) {
+                    valid = 0;
+                    break;
+                }
+                const double Bx_T = pot_mid.Bx * brho0;
+                const double By_T = pot_mid.By * brho0;
+                const double Bs_T = pot_mid.Bs * brho0;
+                /* ptau is constant within the step, so the particle's rvv
+                 * (updated by the previous radiation kick) is still valid. */
+                const double rvv = LocalParticle_get_rvv(part);
+                const double l_path = rvv * (ds - beta0 * (z[4] - tau_old));
+
+                LocalParticle_set_x(part, z[0]);
+                LocalParticle_set_y(part, z[2]);
+                LocalParticle_set_zeta(part, z[4] * beta0);
+                LocalParticle_set_px(part, z[1]);
+                LocalParticle_set_py(part, z[3]);
+                LocalParticle_set_ax(part, chi * v_end.Ax);
+                LocalParticle_set_ay(part, chi * v_end.Ay);
+
+                if (with_spin) {
+                    magnet_spin(part, Bx_T, By_T, Bs_T, hx_frame, ds, l_path);
+                }
+                if (radiation_flag) {
+                    const double B_perp_T = compute_b_perp_mod(
+                        kx_mid, ky_mid, delta_mid, Bx_T, By_T, Bs_T);
+                    magnet_radiation(part, B_perp_T, ds, l_path,
+                        radiation_flag, radiation_record,
+                        &dp_record_exit, &dpx_record_exit, &dpy_record_exit);
+                    z[1] = LocalParticle_get_px(part);
+                    z[3] = LocalParticle_get_py(part);
+                    z[5] = LocalParticle_get_ptau(part);
+                }
+            }
+            #endif
         }
 
         // Back to zero vector potential for next element
@@ -149,7 +224,9 @@ void TRACK_EXPANSION(
             LocalParticle_set_y(part, z[2]);
             LocalParticle_set_py(part, z[3]);
             LocalParticle_set_zeta(part, z[4]*beta0);
-            LocalParticle_update_ptau(part, z[5]);
+            /* ptau is constant in the flow (rhs[5] = 0) and the radiation
+             * hook updates the particle's energy variables itself, so z[5]
+             * is already on the particle: no ptau -> delta round trip. */
             LocalParticle_add_to_s(part, ds*nstep);
         }
     END_PER_PARTICLE_BLOCK

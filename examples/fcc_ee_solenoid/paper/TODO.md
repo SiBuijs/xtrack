@@ -99,6 +99,35 @@ Canonical copy: `examples/fcc_ee_solenoid/paper/TODO.md` on branch `fcc_nonlocal
     - Repo: `004e_sextupole_window_study.py` (zeroing one order in a window) is a template for this
 - [ ] `CHECK` Compare the derived estimate with the tracking result (aim for one figure that shows both)
 
+### Beam-frame coefficients $A_m$: from the field to Q′, Q″ and chromatic coupling (added 2026-11-05)
+
+Background: the all-orders $A_m(S)$ in the Overleaf text, and the strict $O(\theta_b^2)$ forms of $A_0$–$A_2$ (claude.ai chat of 2–3 Nov). `bx[k]` in SplineBoris/BFieldExpansion is $\partial_x^k B_x$ on the beam axis, i.e. $A_{k+1}$ (see `004aa`). Chromatic coupling = the δ-dependence of the coupling, $C^-(\delta)$ or $dC^-/d\delta$.
+
+**Step 1: field content (do first, everything else builds on it)**
+- [ ] `SIM` $A_0$–$A_4$ from the analytic on-axis $b(s)$, 2 T and 3 T main solenoid ($B_0$, $L$, $a$ from `solenoid_params.py`):
+    - sympy derivatives of $b(s)$ inserted into the all-orders $A_m$ formula, truncated in $k$ until converged;
+    - the leading-order $\theta_b$ forms on the same plot;
+    - overlay the stored `bx[k]` from `004aa` (mind `scale_b`). Expect agreement to the fit accuracy; a mismatch of order $10^{-4}$ or a factor points to a convention error
+- [ ] `CHECK` What VarSol contains in $A_m$ terms: is its per-slice dipole kick $\theta_b b_s$ or $\theta_b(b_s + \frac{S}{2}b_s')$; does its linear `ks_profile` give the radial $-\frac12 b_s'$; is the projection $s = cS$ included?
+- [ ] `DERIVE` The $b_s$/$b_s'$-only truncation of the beam-frame field: which terms of $A_0$–$A_2$ survive (from the strict forms: $a_0 - \theta_b^2(\frac{S}{2}b_s + \frac{S^2}{4}b_s')$ (all of $A_0$ to this order); $\theta_b(b_s + \frac{S}{2}b_s')$; $-\frac12 b_s' + \frac32\theta_b^2 b_s'$), and whether that matches VarSol. List what it drops: the $b_s''$, $b_s'''$ parts of $A_2$ (part of $g_s$) and all of $A_{m\geq3}$
+
+**Step 2: orbit and dispersion at the solenoid (inputs for the feed-down estimates)**
+- [ ] `SIM` Along the main solenoid, uncorrected and corrected, 2 T and 3 T: $x_{co}$, $y_{co}$, $D_x$, $D_y$, $\beta_{x,y}$, and the Montague $W_{x,y}$ (from Twiss, `004dd` as template)
+
+**Step 3: expectations, per mechanism (before running the comparison)**
+- [ ] `DERIVE` Q′ from the solenoid focusing (radial part of $A_2$ with $b_S$): $\Delta Q'_{x,y} \propto \int\beta (b_s/2B\rho)^2 dS$. Present in VarSol and SB alike, so it should cancel in the comparison
+- [ ] `DERIVE` Chromatic coupling from $g_s$ (skew part of $A_2$, $\propto\theta_b^2$): two routes, (a) the δ-dependence of the strength, (b) the δ-dependence of β and phase at the source, $\partial_\delta\sqrt{\beta_x\beta_y}$, which is large at the IR because $W$ is large there. Estimate $dC^-/d\delta$ from both
+- [ ] `DERIVE` $A_3$ (skew, $O(\theta_b)$ pseudo part, true skew sextupole only at $\theta_b^3$): with $D_x$ → chromatic coupling; with $D_y$ or $y_{co}$ → normal gradient → Q′. Show whether the pseudo part's contribution vanishes after integration by parts, as for the linear case, and size both with the Step 2 numbers
+- [ ] `DERIVE` Which of these can reach Q″ (second order in δ), for comparison with the QD0→sdy1 phase mechanism of note 08
+
+**Step 4: isolate the contributions in tracking/Twiss**
+- [ ] `SIM` Compare, uncorrected and corrected, 2 T and 3 T: VarSol vs SB/BFieldExpansion order 1 (isolates $g_s$ and the $b_s''$, $b_s'''$ terms of $A_0$–$A_2$) vs order 2 (adds $A_3$) vs order 4
+    - Observables: $Q'_{x,y}$, true $Q''_{x,y}$ (`004n`), $|C^-|$ at δ = 0 and $C^-(\delta)$ for δ in [−0.01, 0.01] (off-momentum Twiss), $dC^-/d\delta$
+    - Reuses the order-scan lattices of the `--max-transverse-order` item above; needs o1 built for 2 T and 3 T
+    - The $f_{1001}(\delta)$, $f_{1010}(\delta)$ scan in §4 ("Chromatic coupling", `004p`) covers the coupling observables; run it on these lattices
+- [ ] `CHECK` Compare Step 3 estimates with Step 4 results, one figure per observable; log in `RESULTS.md`
+- [ ] `WRITE` Paper paragraph: which beam-frame coefficient drives which effect, and why the linearized model is (or is not) sufficient
+
 ### Field representation
 
 - [ ] `DERIVE` Write out the relation between bpmeth's $a_m$, $b_m$, $b_z$ and the scalar-potential expansion; state the truncation order and the resulting order of the Maxwell residual
@@ -190,6 +219,7 @@ Run each item for: solenoids off · 2 T · 3 T without mid-bend quads (to show t
     - [x] Here, night 2: DA/MA quantum, VarSol 2T/3T with and without trims (`da_ma_varsol`, ~6.5 h; VarSol DA grid reduced to 750 points like SB, 2026-10-16) → done 2026-10-21 (L33, L34) → `data/{DA,MA_X}_Sol_On_VarSol_*_radquantum_*.npz`
     - Emittance + spin without trims dropped (decision 2026-10-16): the trims were introduced to restore the MA, and everything after that uses the trimmed lattice. `emitt N_PART all` still runs them if needed
     - Repo: `013_run_da_and_ma.py --b0 … [--max-transverse-order …]` runs DA + MA + emittance + polarization in one go (via 018). Pass `--seed` for reproducibility
+    - [ ] Remote, **running since 2026-11-05 evening** (~11 days; `run_scripts/remote_bfe_campaign.sh` → `run_paper_campaign.sh bfe_campaign 5000` at 6f7713115; log `data/run_bfe_campaign.out` on the VM): BFieldExpansion RK4 (`bfe_on`, 2 steps per slice) and Boris (`bfeboris_on`, 10 steps per slice) on the 004c `--model bfe` lattices with trims, 3T and 2T. Order: DA + MA quantum (5000 turns); emittance + spin (5000 particles, 10⁴ turns, seed 1), each followed by the spin-only run from the tracked equilibrium; last, the VarSol spin-only rerun 3T/2T with the spin fix e5f282c35. SB is unaffected by that fix (it never sets a vector potential); VarSol spin was affected, its emittance, DA and MA were not. The old VarSol POL files are kept in `data/pre_spinfix_varsol/` on the VM. When done: rsync back (lines in the script header), log in RESULTS
 - [ ] `SIM` MA vs requirement, for all four configurations
 - [ ] `SIM` $\xi^{(1)}$ and $\xi^{(2)}$ in both planes, **including the baseline values for solenoids off and 2 T**
 - [ ] `SIM` Tune footprint vs δ for all configurations
@@ -199,6 +229,17 @@ Run each item for: solenoids off · 2 T · 3 T without mid-bend quads (to show t
 - [ ] `DERIVE` Skew-sextupole hypothesis: re-derive the RDT ∝ $\int \beta_y^{3/2} \partial_x^2 B_x ds$, document the cancellation, and keep it as a short "ruled out" paragraph
     - Repo: 004a's β-weighted d²Bx/dx² diagnostic and `004e_sextupole_window_study.py`
 - [ ] `SIM` SR from the fringe fields: first reproduce Boscolo's 2 T power, then compute 3 T (power and critical energy)
+- [ ] `SIM` **Chromatic coupling** (added 2026-11-06): $|f_{1001}|$ and $|f_{1010}|$ as functions of δ, from off-momentum periodic 4D Twiss. Cheap: no tracking, minutes per lattice. This is the observable side of §3 Step 4 ($C^-(\delta)$, $dC^-/d\delta$); the mechanism derivations stay in §3 Step 3
+    - New script `004p_chromatic_coupling.py` (004o is taken). Reuse 004k's `delta0` loop (NaN on `ClosedOrbitSearchError`, report and skip; `--replot` from saved data) and 004d's `_rdt_ring_average`, including its NaN handling inside the solenoid bodies (kinetic-momentum W, see the 004d comment above `RDT_CASES`)
+    - Per δ: `line.twiss4d(delta0=δ, coupling_edw_teng=True)`. Store qx, qy, `c_minus` and the complex $f_{1001}(s)$, $f_{1010}(s)$, so the phase is kept
+    - Grid: δ ∈ [−0.01, +0.01], 21 points. Check this against the MA (δ ≈ ±0.0095–0.0104, RESULTS L34). The 3 T no-trims ring may fail to converge at the edges (Qy span 1.21 over ±0.015, 004k)
+    - Cases: `sb_off` (should give ≈ 0, which shows the noise floor), SB 2T/3T with trims (headline), SB 2T/3T without trims, VarSol 2T/3T with trims. VarSol has no $g_s$ and no $A_{m\geq3}$, so VarSol vs SB isolates the field-content contribution (§3 Step 3). Optional: BFE o1/o2/o4 once the order-scan lattices exist
+    - Summary numbers per δ: the length-weighted ring average of $|f|$ (004d's definition), its maximum outside the solenoid bodies, and the value at each IP marker and at one fixed arc point. Fit $d|f|/d\delta$ and $d^2|f|/d\delta^2$ at δ = 0
+    - Separate the driving term from the tune proximity: $f_{1001} \propto 1/(1 - e^{2\pi i(Q_x - Q_y)})$, so $|f_{1001}|$ also changes with δ when $Q_x - Q_y$ moves (Q′, Q″), not only when the sources do. Plot $|f_{1001}|\cdot|1 - e^{2\pi i(Q_x-Q_y)}|$ next to $|f_{1001}|$, and the same with $Q_x + Q_y$ for $f_{1010}$. Cross-check that this product scales like `c_minus`(δ)
+    - Sanity at δ = 0: the ring average reproduces 004d (3 T: $\langle|f_{1001}|\rangle$ = 0.0072) and `c_minus` reproduces 004n
+    - Figures (`FCC_Solenoid_Studies/Chromatic_Coupling_<date>/`): (1) ring-averaged $|f_{1001}|$ and $|f_{1010}|$ vs δ for all cases; (2) $|f_{1001}(s)|$ around the ring and over the IR at δ = −0.01, 0, +0.01; (3) the driving-term vs tune-proximity split. Move (1) to the paper dir if the paper uses it
+    - Interpretation: compare the growth of $|f_{1001}|$ over the equilibrium σδ (Twiss, with and without beamstrahlung) with its growth over the MA range. That decides whether this becomes a §4 result (εy) or a §6 remark (off-momentum particles only)
+    - Log: RESULTS row (script, args, commit, `data/CHROMCOUP_*.npz`), then tick here
 
 ## 5. Results: 2 T field map (→ §5)
 
@@ -226,6 +267,7 @@ Run each item for: solenoids off · 2 T · 3 T without mid-bend quads (to show t
 - [ ] `FIG` IR layout schematic: both beams, detector/compensation/screening solenoids, FF quads, mid-bend quads, sdm1r.0
 - [ ] `FIG` Field comparison (linearized / analytic / map) along the beam trajectory
 - [ ] `FIG` $|C^-|$ vs expansion order with the analytic estimate overlaid
+- [ ] `FIG` Candidate: ring-averaged $|f_{1001}|$ and $|f_{1010}|$ vs δ (chromatic coupling, §4 item, `004p`)
 - [ ] `FIG` IR optics, corrected vs uncorrected (2 T, 3 T, map)
 - [ ] `FIG` Coupled β ratios along the straight
 - [ ] `FIG` εy evolution, tracking vs Twiss (compact, one panel per configuration or overlaid)
@@ -239,6 +281,49 @@ Run each item for: solenoids off · 2 T · 3 T without mid-bend quads (to show t
 - [ ] `FIG` Table 1: machine and solenoid parameters (E, Bρ, θc, a, L, B0, θ, compensation-solenoid parameters)
 - [ ] `FIG` Table 2: figures of merit for every configuration (off / 2 T / 3 T before / 3 T after / 2 T map)
 - [ ] `FIG` Clean the plot titles of internal labels ("ipa:", commit hashes, "frac_lost"); use consistent styles and units, and colour-blind-safe palettes
+
+## Side topic: Boris integrator in a curved frame (not on the paper's critical path)
+
+Derive the spatial Boris (drift–kick–rotation) splitting on a frame with constant curvature h, following the straight-frame derivation step by step. Notes: `claude_notes/13_boris_curved_frame.md`
+
+- [x] `DERIVE` Step 1: Lorentz force in the curved frame (local components, fictitious terms from the rotating basis, checks) → `claude_notes/13_boris_curved_frame.md` (numerical check against Cartesian tracking: 1e-13)
+- [x] `DERIVE` Step 2: re-parametrize with s as the independent variable (x′, y′, t′, P′ with the 1 + hx factor) → `claude_notes/13_boris_curved_frame.md`
+- [x] `DERIVE` Step 3: phase-space vector field on (x, y, P_x, P_y); identify the drift, kick and rotation operators and the new curvature terms → `claude_notes/13_boris_curved_frame.md`
+- [x] `DERIVE` Step 4: exponentiate the pieces and write the Strang splitting; state the local error order → `claude_notes/13_boris_curved_frame.md`
+- [ ] `DERIVE` Optional: move the design dipole into the drift (exact sector bend) so the reference orbit is preserved exactly; compare with the polar-drift version (done numerically in the prototype, see below and note 13 step 5; the derivation is still open)
+- [ ] `READ` Look up the details of the exact (sector) bend map: how it is derived (motion on a circle in a uniform field, written in the curved frame), the stable rewrite in Xsuite's `track_curved_exact_bend_single_particle` (`track_magnet_drift.h`), and the sector-bend integrators in Forest's book / PTC
+- [ ] `CHECK` Compare with the curved-frame integrator in Schüren's thesis (project file) and with Xsuite's bend/SplineBoris implementation
+
+### Implementation (for Claude Code)
+
+Method (formulas in `claude_notes/13_boris_curved_frame.md`, step 4): Strang splitting exp(Δs/2 D) exp(Δs/2 K) exp(Δs R) exp(Δs/2 K) exp(Δs/2 D) on (x, y, P_x, P_y), P_s = sqrt(P² − P_x² − P_y²), constant h, fields B_x, B_y, B_s in curved-frame components.
+- D: exact polar drift. It straightens the frame, drifts on a straight lab line to the plane at s + ℓ, and re-expresses position and momentum there: (P_x, P_s) rotate by φ = hℓ, P_y is constant, and x, y, t come from the closed-form map in the note. Requires P_s⁺ > 0.
+- K: P_x −= q(1 + hx)B_y Δs/2, P_y += q(1 + hx)B_x Δs/2 at the half-drifted position, then recompute P_s.
+- R: rotation of (P_x, P_y) by ω = q(1 + hx)B_s Δs/P_s.
+- The factor 1 + hx in K and R is the metric (lab path per unit s), not a frame effect.
+
+Tasks (target changed 2026-11-04: implement in **BFieldExpansion**, not SplineBoris, which is being deprecated):
+- [x] `SIM` Python prototype of the polar-drift version → `examples/bfieldexpansion/curved_boris_prototype.py` (branch `bfe_radiation_spin`; removed in 981be7a1d, recover from 86cfaeb80), uses BFE's curved field; note 13 step 5. Tests:
+    - [x] D alone vs direct integration of the D vector field: 2e-16
+    - [x] Full step vs BFE's curved RK4 (canonical, independent) in a non-uniform field: second order, ratio 4.00 per halving
+    - [x] h → 0 reproduces the C straight BFE Boris step: 2e-16
+    - [x] Symplecticity in canonical (x, px, y, py) at fixed δ: defect O(Δs²), 1.8e-4 at n = 20; identical for the straight Boris, caused by the s-dependent solenoid; constant fields symplectic to finite-difference noise
+    - [x] Reference-orbit drift in a pure design dipole: x = −5.3e-5 m (h = 0.4, 10 × 0.1 m), scales as h³
+- [x] `SIM` Sector-bend variant: replace D by the exact sector-bend map with the design field B₀ = hP₀/q, and kick with B_y − B₀ only. Handle P ≠ P₀ (δ ≠ 0), where the bend map no longer follows the reference circle. Tests: the reference orbit is preserved to machine precision; uniform B_y agrees with `xt.Bend` using an exact model; second order in a non-uniform field → reference orbit exactly 0; off-momentum particles = `xt.Bend` (`bend-kick-bend`) to 2e-16; second order and 14× more accurate than the polar drift at equal steps. Plot: `FCC_Solenoid_Studies/BFE_CurvedBoris_2026-11-04/curved_boris_variants.png`
+- [x] `CHECK` Decide the field input: curved-frame field components need a curvilinear expansion (Schüren's thesis, project file). The current SplineBoris/bpmeth fit is Cartesian. Scope this before the C work → resolved by moving to BFE: it already has a curvilinear expansion and returns curved-frame components (used by its bent RK4)
+- [x] `SIM` C implementation of the sector-bend variant for h ≠ 0 in `xtrack/beam_elements/elements_src/track_bfieldexpansion_boris.h` (lift the straight-only restriction in `bfield_expansion.py`; pass h to `magnet_spin`). This is library code: separate, focused commits (CLAUDE.md), with unit tests from the prototype checks → 139c368ef on `bfe_radiation_spin` (pushed); C = prototype to 2e-16, tests in `tests/test_bfieldexpansion_boris.py`; note 13 step 6
+- [x] `SIM` Cost vs accuracy and long-term behaviour, Boris vs RK4 → note 13 step 6. Boris step 3.5× cheaper, but RK4 is 5–50× faster at equal error. Over 10⁵ turns Boris (20 steps) moves emittance between the modes (+40 % / −29 %, volume conserved); RK4 (5 steps) damps artificially (volume −3.7 %); RK4 (20 steps) is clean (~1e-5). Plots: `BFE_CurvedBoris_2026-11-04/{work_precision_boris_vs_rk4,long_term}.png`
+- [ ] `WRITE` Write up the Boris vs RK4 comparison properly (note or appendix section) with figures of merit:
+    - Accuracy: local and global error order (convergence plot), error at fixed step count, design-orbit preservation (polar vs sector bend)
+    - Cost: µs per step and work-precision (time at equal error)
+    - Structure: one-turn det − 1, symplecticity defect |MᵀJM − J|, eigenvalue modulus |λ| − 1, each vs number of steps (expect n⁻² for Boris, n⁻⁴ for RK4)
+    - Long-term: eigen-emittance per mode and 4D volume vs turn, compared with the |λ|^{2N} prediction; explain why the Boris curves flatten towards 10⁵ turns
+    - Physics checks: spin vs `xt.Bend`, U0 and damping partition sum in a bend ring
+    - Conclusion for the paper: which integrator and step count the FCC solenoid runs should use, and why
+    - `long_term_boris_vs_rk4.py` committed on `bfe_radiation_spin` (c5b72c119, separate commit, so it can be left out of an upstream PR)
+    - `curved_boris_plot.py` (makes `curved_boris_variants.png`) lives in `FCC_Solenoid_Studies/BFE_CurvedBoris_2026-11-04/`; it needs the prototype from 86cfaeb80 next to it
+    - Conclusion so far (note 13 step 6): RK4 for production, Boris only as a cross-check. List the few cases where Boris could win: coarse-step stability, non-smooth fields, constant fields
+- [ ] `SIM` Does Boris win in a non-smooth field? Work-precision of Boris vs RK4 with the BNL map through BFE: does RK4 keep its order 4, or drop towards order 2?
 
 ## 8. Housekeeping
 
