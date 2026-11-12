@@ -382,6 +382,14 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   only via vertical feed-down y0, Dy), and why pseudo terms still enter the
   RDTs near the IP (alpha/beta, 1/beta weights after integration by parts,
   of order one). Literature list and open items.
+- `16_untilted_compensation_residual_multipoles.md` — (2026-11-12) what the
+  beam-aligned (untilted) compensation solenoids leave of the tilted detector's
+  A_m once ∫B_S = 0: the compensation strength is θ-independent (Ampère); the
+  compensators only cancel T_0 and its pseudo terms, so all true T_q (q ≥ 1)
+  survive; integrated, the only leftover is a uniform skew dipole
+  Φ tan(θ/2) (≈0.24 mrad vertical kick at 2 T), every ∫(A_m − a_m), m ≥ 2, is
+  exactly 0. Local residuals to O(θ⁴), per-side integrals, and the A_4 relation
+  in terms of T_q (closes note 15's p = 4 item).
 
 ## Scripts without a dedicated note (summarised 2026-10-14 from docstrings)
 
