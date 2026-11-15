@@ -48,6 +48,24 @@ Step 2 -- fit G and S with LongitudinalFitter; total = G_fit - S_fit.
     (One analytic SolenoidField fits G only to +-35 mT: G droops near the IP
     like a large coil but falls off at z ~ 2.5-4 m faster than an air coil
     can -- the Opera model has iron.)
+
+Step 3 -- transverse coefficients in the beam frame.
+    The fitted b_s is taken to be the field on the solenoid axis, and the
+    beam axis is tilted by TILT_ANGLE (theta_b) w.r.t. it, crossing it at
+    the IP (S = 0); main and screening share that axis. With
+    A_m = d^(m-1) B_x / dx^(m-1) at x = y = 0 in the beam frame (A_0 = B_s),
+    to O(theta_b^2), all b_s^(k) evaluated at S:
+        A_0 = b_s - theta^2 (S/2 b_s + S^2/4 b_s')
+        A_1 = theta (b_s + S/2 b_s')
+        A_2 = -b_s'/2 + theta^2 (3/2 b_s' + 5/4 S b_s'' + 3/16 S^2 b_s''')
+        A_3 = -theta (3/2 b_s'' + 3/8 S b_s''')
+        A_4 = 3/8 b_s''' - theta^2 (15/4 b_s''' + 27/16 S b_s'''' + 5/32 S^2 b_s^(5))
+    TILT_ANGLE = 0 gives the solenoid-frame a_m (A_1 = A_3 = 0).
+    The b_s^(5) term is dropped: the quartic spline's b_s^(5) is zero inside
+    each element (b_s'''' is constant per element). Estimated from the jumps
+    of b_s'''' at the nodes it would be up to ~40 T/m^3 for the screening,
+    ~5 % of max |A_4|, i.e. ~0.05 mT at 2 cm from the axis.
+    total = main - screening for every coefficient (linear in b_s).
 """
 
 from pathlib import Path
@@ -69,7 +87,9 @@ BLEND = 0.05               # m, cosine blend raw -> fit, ending at Z_CUT
 
 S_END = 6.0                # m, spline range +-S_END (data end at 5.95 m)
 MAIN_ELEMENT_LENGTH = 0.2  # m, spline element (knot interval) length for G
-SCREENING_ELEMENT_LENGTH = MAIN_ELEMENT_LENGTH  # m, for S (0.1 m resolves its edge)
+SCREENING_ELEMENT_LENGTH = 0.1 #MAIN_ELEMENT_LENGTH  # m, for S (0.1 m resolves its edge)
+
+TILT_ANGLE = 0.015         # rad, theta_b: beam axis w.r.t. solenoid axis (0 -> A_m = a_m)
 
 
 def load_raw_curve(curves, key):
@@ -287,6 +307,67 @@ fig_fit.tight_layout()
 
 out_path = PLOT_DIR / 'IDEA_solenoid_beam_axis_spline_fits.pdf'
 fig_fit.savefig(out_path, bbox_inches='tight', metadata=pdf_metadata())
+print(f'Saved {out_path}')
+
+# ------------------ step 3: transverse coefficients in the beam frame
+def beam_frame_coefficients(fitter, s, theta):
+    """A_m = d^(m-1) B_x / dx^(m-1) at x = y = 0 in the beam frame (A_0 = B_s),
+    to O(theta^2), for a solenoid whose on-axis field is the fitted b_s and
+    whose axis is tilted by theta w.r.t. the beam axis, crossing it at s = 0.
+    The b_s^(5) term of A_4 is dropped (zero inside the quartic elements)."""
+    spline = fitter.splines[('Bs', 0)]
+    b0, b1, b2, b3, b4 = (spline.derivative(k)(s) if k else spline(s)
+                          for k in range(5))
+    th2 = theta ** 2
+    return {
+        'A0': b0 - th2 * (s / 2 * b0 + s ** 2 / 4 * b1),
+        'A1': theta * (b0 + s / 2 * b1),
+        'A2': -0.5 * b1 + th2 * (1.5 * b1 + 1.25 * s * b2 + 3 / 16 * s ** 2 * b3),
+        'A3': -theta * (1.5 * b2 + 0.375 * s * b3),
+        'A4': 0.375 * b3 - th2 * (3.75 * b3 + 27 / 16 * s * b4),
+    }
+
+
+s_coef = np.round(np.arange(-S_END, S_END + 0.5 * DZ, DZ), 9)
+coef_main = beam_frame_coefficients(main_fitter, s_coef, TILT_ANGLE)
+coef_screening = beam_frame_coefficients(screening_fitter, s_coef, TILT_ANGLE)
+coef_total = {key: coef_main[key] - coef_screening[key] for key in coef_main}
+
+coef_labels = {
+    'A0': (r'$A_0 = B_s$', 'T'),
+    'A1': (r'$A_1 = B_x$', 'T'),
+    'A2': (r'$A_2 = \partial_x B_x$', 'T/m'),
+    'A3': (r'$A_3 = \partial_x^2 B_x$', 'T/m$^2$'),
+    'A4': (r'$A_4 = \partial_x^3 B_x$', 'T/m$^3$'),
+}
+
+print(f'\nStep 3: beam-frame coefficients, theta_b = {TILT_ANGLE} rad, max |A_m|:')
+for key, (_, unit) in coef_labels.items():
+    print(f'  {key:4s} main {np.abs(coef_main[key]).max():10.4g}  '
+          f'screening {np.abs(coef_screening[key]).max():10.4g}  '
+          f'total {np.abs(coef_total[key]).max():10.4g}  '
+          f'[{unit.replace("$", "")}]')
+
+fig_coef, axes_coef = plt.subplots(len(coef_labels), 1, figsize=(8, 11),
+                                   sharex=True)
+for ax, (key, (label, unit)) in zip(axes_coef, coef_labels.items()):
+    ax.axhline(0, color='gray', lw=0.8)
+    ax.plot(s_coef, coef_main[key], color='tab:blue', lw=1.2, label='main')
+    ax.plot(s_coef, coef_screening[key], color='darkred', lw=1.2,
+            label='screening (as plotted; its field is $-$this)')
+    ax.plot(s_coef, coef_total[key], color='black', lw=1.2, ls='--',
+            label='total = main $-$ screening')
+    ax.set_ylabel(f'{label} [{unit}]')
+    ax.grid(True, alpha=0.4)
+axes_coef[0].legend(fontsize=8, loc='upper right')
+axes_coef[0].set_title(r'Beam-frame coefficients, $\theta_b$ = '
+                       f'{TILT_ANGLE} rad (step 3)')
+axes_coef[-1].set_xlabel('S [m]')
+axes_coef[-1].set_xlim(-S_END, S_END)
+fig_coef.tight_layout()
+
+out_path = PLOT_DIR / 'IDEA_solenoid_beam_frame_coefficients.pdf'
+fig_coef.savefig(out_path, bbox_inches='tight', metadata=pdf_metadata())
 print(f'Saved {out_path}')
 
 plt.show()
