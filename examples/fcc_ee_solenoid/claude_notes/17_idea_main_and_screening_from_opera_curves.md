@@ -215,10 +215,66 @@ The method is in its docstring. Key points:
     edge.
   - The fit residuals and max |A_m| are printed only.
 
+## 001e: over-screening, as in 010a (2026-11-15)
+
+- **Goal.** Mimic 010a, where the local solenoid (1.3–1.9 m, −0.79 B0) next to
+  the main coil pulls the total down to −0.67 B0. Its negative region is
+  −0.36 m × B0, i.e. −1.07 T·m at 3 T (computed from 010a's analytic fields).
+  Make the IDEA screening stronger so that the total overshoots below zero,
+  while S still matches G before the main solenoid's own edge (G = G(0)/2 at
+  ~2.9 m).
+- **Chosen (user):** scale S by k(z) = 1 + ε·w(z) (`SCREENING_OVERSHOOT` = ε,
+  `TAPER_LENGTH`).
+  - w = 1 for |z| ≤ z_m − `TAPER_LENGTH`, then a septic (C3) smoothstep to 0
+    at z_m.
+  - The taper ends at z_m (user: "should that not depend on z_m and the
+    edge"), so it moves with the edge, and S = G stays pinned from z_m
+    (≤ 2.6 m, before the main's edge).
+  - The edge keeps its measured shape, scaled by 1 + ε. Its half-plateau
+    point (S/G = (1 + ε)/2) stays on the node.
+  - ε = 0 reproduces the earlier 001e coefficients exactly.
+- **Taper ≥ 0.4 m.** The 0.1 m quartic cannot follow a shorter transition:
+  - a 0.3 m taper gives 0.17 T fit error;
+  - a hard switch at z_s leaves 0.8 T, and the integral constraint pushes
+    that error into S(0) (+54 mT).
+- **Alternatives prototyped** (edge 1.40 m, 2.5 T, each lowering ∫B_s,total
+  by 0.90 T·m, i.e. 010a's negative region × B0). Scratch script
+  `overshoot_options.py`, not kept; figure
+  `IDEA_solenoid_screening_overshoot_options_2p5T.pdf`.
+
+  | | strength | z_m | min total | max B_x edge / outer |
+  |---|---|---|---|---|
+  | scale S, taper 1.9→2.4 m (chosen) | ε = 0.52 | 2.4 m | −1.14 T | 0.165 / 0.076 T |
+  | extra anti-solenoid 1.4–2.0 m, measured edges at both ends | ΔB = 1.49 T | 2.6 m | −1.34 T | 0.180 / 0.090 T |
+  | prescribed negative lobe in the total (0.4/0.5 m ramps) | 1.63 T | 2.4 m | −1.62 T | 0.133 / 0.110 T |
+
+  The anti-solenoid's outer fringe needs ~0.6 m to die out, so its z_m moves
+  out by 0.2 m. The lobe's ramp, which cannot be shorter than 0.4 m, moves
+  the total's zero crossing out to 1.53 m.
+- **Results (2.5 T, ε = 0.5, taper 0.5 m):**
+  - Same elements as ε = 0. The total is 0 beyond z_m, and the edge sits on
+    its node to 0.2 mm.
+  - Min total −1.12 T (edge 1.20 m) to −1.05 T (1.60 m), 2 cm into the taper.
+  - ∫B_s total over 0–6 m: 2.06–3.05 T·m, i.e. 0.85–0.88 T·m below ε = 0
+    (2.559 vs 3.412 T·m at 1.40 m).
+  - S(0) ×1.5–1.6 (the inner tail scales too); total(0) 3–8 mT lower.
+  - Fit − target: 34–35 mT max at the edge (scales with 1 + ε), 14–18 mT in
+    the taper.
+  - B_x (A_1): the edge peak grows to 0.14–0.18 T (from 0.08–0.11 T). A
+    second peak of the opposite sign, 0.067–0.075 T, sits 0.23 m before z_m.
+    A_2–A_4 grow ×1.5.
+- Figures carry `_eps0p50` (none for ε = 0):
+  - `IDEA_solenoid_screening_edge_scan_components_2p5T_eps0p50.pdf`;
+  - `..._real_field_2p5T_eps0p50.pdf`.
+
 ## Open items / next steps
 
 - Decide the sign convention of `TILT_ANGLE` (+0.015 in 001d/001e, −0.015
   elsewhere).
 - Turn A_0..A_4 into SplineBoris / BFieldExpansion elements and install them,
   010a-style, with the chosen edge (001e) and a corrector layout to match.
+- Choose ε. 010a's −0.67 B0 would need ε ≈ 0.7–0.8. Optionally set ε from a
+  target ∫B_s instead (the field is linear in ε). Over-screening adds a
+  second B_x peak at the end of the taper, which the corrector layout has to
+  cover.
 - Multi-coil chain, if an analytic 3D field is ever needed.

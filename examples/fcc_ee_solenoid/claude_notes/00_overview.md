@@ -402,7 +402,10 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   `LongitudinalFitter` (0.2 / 0.1 m elements; one analytic solenoid fits main
   only to ±35 mT because of the iron) and computes the beam-frame A_0..A_4 to
   O(θ²). Edges: screening start ±1.40 m, main ±2.89 m (010a's total edge is at
-  1.23 m). Open: sign of `TILT_ANGLE`, building BFE elements.
+  1.23 m). 001e moves the screening edge (1.20–1.60 m in 0.05 m steps, S = G
+  from z_m = edge + 1 m). It can also over-screen by ε (010a-style negative
+  total, C3 taper back to S = G at z_m). Open: sign of `TILT_ANGLE`, choice
+  of ε, building elements.
 
 ## Scripts without a dedicated note (summarised 2026-10-14 from docstrings)
 

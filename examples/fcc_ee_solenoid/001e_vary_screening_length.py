@@ -7,8 +7,10 @@ standalone). Notation as in 001d: G = main solenoid, S = screening *as
 plotted* (positive; its field is -S), total = G - S; on the solenoid axis,
 mirror-symmetric about the IP.
 
-Edge: the point where S/G = 0.5, i.e. where the beam sees half of the main
-field. In the data it is at z_e0 = 1.404 m (half of max S: 1.397 m).
+Edge: where S reaches half of its own plateau, S/G = (1 + eps)/2 with the
+over-screening eps below (0.5 without: the beam sees half of the main
+field). In the data (eps = 0) it is at z_e0 = 1.404 m (half of max S:
+1.397 m).
 
 Field strength: MAIN_FIELD sets the main solenoid, and the screening
 follows it (S = G * fraction). Main, screening and total all scale by
@@ -32,11 +34,12 @@ For each edge z_e in SCREENING_EDGES:
    data for u >= -z_e0. Beyond that (one edge's inner tail seen past the IP)
    it decays exponentially, with an e-folding length fitted
    self-consistently on INNER_TAIL_WINDOW.
-3. Target S_target(z) = G(z) [rho(z - z_e) + rho(-z - z_e)].
+3. Target S_target(z) = G(z) [rho(z - z_e) + rho(-z - z_e)] k(z), with
+   k = 1 + eps w the over-screening factor (below; k = 1 for eps = 0).
    What moves is the screening *fraction*, not S: past its edge S follows
    G, which falls by up to ~1 T/m at 3-4 m, so shifting S itself by 0.2 m
    would leave up to 0.28 T uncancelled. With the fraction, the height of
-   the edge follows the local G and S never exceeds G.
+   the edge follows the local G, and for eps = 0 S never exceeds G.
 4. Match point z_m = z_e + MATCH_DISTANCE, rounded up to a node; it moves
    with the edge. For |z| >= z_m, S = G exactly: the B-spline coefficients
    whose support reaches past z_m are G's. The total is identically zero
@@ -47,6 +50,32 @@ For each edge z_e in SCREENING_EDGES:
    coefficients, so the connection between the moved edge and the match
    point needs no extra conditions.
 6. Beam-frame A_0..A_4 of the total, as 001d step 3 (same TILT_ANGLE).
+
+Over-screening (SCREENING_OVERSHOOT = eps, 2026-11-15), to mimic 010a, whose
+local solenoid next to the main coil pulls the total down to ~-0.67 B0:
+- k(z) = 1 + eps w(z), with w = 1 for |z| <= z_m - TAPER_LENGTH and a
+  septic smoothstep (C3) to 0 at z_m. So S is (1 + eps) x the eps = 0 target
+  from the IP (inner tail included) to the taper, and the total goes to
+  about -eps G there.
+- The taper ends at z_m, so it moves with the edge, and S = G is pinned
+  from the same point as for eps = 0. Here z_m <= 2.6 m, before the main
+  solenoid's own edge (G = G(0)/2 at ~2.9 m), so the screening matches the
+  main field there.
+- The edge keeps its measured shape, scaled by 1 + eps; its half-plateau
+  point stays on the node. eps = 0 reproduces the results below exactly
+  (same coefficients).
+- TAPER_LENGTH >= 0.4 m: the 0.1 m spline cannot follow anything shorter.
+  Prototype at edge 1.40 m: a hard switch at z_m leaves 0.8 T fit error, and
+  the integral constraint pushes it into S(0) (+54 mT); a 0.3 m taper gives
+  0.17 T.
+- Alternatives prototyped (2026-11-15, edge 1.40 m, 2.5 T, all lowering the
+  integral of the total by 0.90 T m):
+  - an extra anti-solenoid section 1.40-2.00 m with the measured edge at
+    both ends (dB = 1.49 T): its outer fringe needs S = G only from 2.6 m,
+    and it gives the largest B_x (0.18 T);
+  - a prescribed negative lobe of the total: its shape is not tied to a
+    coil, and a >= 0.4 m ramp moves the zero crossing out to 1.53 m.
+  The user chose the scaling.
 
 Choices (2026-11-15):
 - The edge always sits on a node. With the edge between two nodes the fit
@@ -65,7 +94,7 @@ Choices (2026-11-15):
   with the edge: 11.5 mT for 1.20 m, 6.8 mT for 1.40 m, 4.2 mT for 1.60 m.
   The inner tail of one edge is extrapolated with e-folding length 42.9 cm.
 
-Results (2026-11-15), 2 T, edges 1.20-1.60 m in 0.05 m steps:
+Results (2026-11-15), 2 T, eps = 0, edges 1.20-1.60 m in 0.05 m steps:
 - S/G = 0.5 lands on the chosen node to 0.2 mm. The total is exactly zero
   beyond z_m, and never negative between the edge and z_m.
 - Fit - target: 5.4-5.7 mT rms (18 max) at the edge, < 1 mT rms elsewhere,
@@ -78,6 +107,21 @@ Results (2026-11-15), 2 T, edges 1.20-1.60 m in 0.05 m steps:
   that move applied to 001d too, they agree to 1.4 mT rms (2.5 max) at the
   edge. Beyond z_m, 001d's total is 1.2 mT rms (6.4 max), because G and S
   are fitted independently there; here it is 0.
+
+Results (2026-11-15), 2.5 T, eps = 0.5, TAPER_LENGTH = 0.5 m:
+- The edge stays on its node to 0.2 mm, and the total is exactly zero
+  beyond z_m. Same number of elements as eps = 0.
+- Minimum total -1.12 T (1.20 m) to -1.05 T (1.60 m), 2 cm past the start
+  of the taper.
+- Integral of the total over 0-6 m: 2.06 (1.20 m) to 3.05 T m (1.60 m),
+  0.85-0.88 T m below eps = 0 (2.559 against 3.412 T m for 1.40 m).
+- S(0) x 1.5-1.6 (22.3 mT at 1.20 m, 8.4 mT at 1.60 m); total(0) 3-8 mT
+  lower.
+- Fit - target: 34-35 mT max at the edge (x 1.5, it scales with the edge
+  height), 14-18 mT max in the taper.
+- max |A_1| (B_x) 0.14-0.18 T, against 0.08-0.11 T for eps = 0: the total's
+  edge is steeper. A second B_x peak, 0.067-0.075 T of the opposite sign,
+  sits 0.23 m before z_m (in the taper). A_2-A_4 grow by x 1.5.
 """
 
 from pathlib import Path
@@ -110,6 +154,11 @@ SCREENING_EDGES = [1.20, 1.25, 1.30, 1.35, 1.40,  # m, S/G = 0.5;
                    1.45, 1.50, 1.55, 1.60]        # multiples of 0.05 m
 MATCH_DISTANCE = 1.0       # m, S = G beyond edge + this (rounded up to a node)
 INNER_TAIL_WINDOW = (0.5, 1.0)  # m, e-folding fit of one edge's inner tail
+
+# Over-screening (as 010a's local solenoid): S x (1 + eps) from the IP to
+# z_m - TAPER_LENGTH, back to x 1 at z_m with a C3 taper. 0 -> no overshoot.
+SCREENING_OVERSHOOT = 0.5  # eps
+TAPER_LENGTH = 0.5         # m, >= 0.4 m (the 0.1 m spline cannot follow less)
 
 TILT_ANGLE = 0.015         # rad, theta_b, as 001d (0 -> A_m = a_m)
 
@@ -247,6 +296,21 @@ def one_edge_fraction(u):
                     beyond_ip)
 
 
+def overshoot_factor(z, z_match):
+    """k(z) = 1 + eps w(z): w = 1 for |z| <= z_m - TAPER_LENGTH, then a
+    septic smoothstep (derivatives 1-3 zero at both ends, so C3) to 0 at
+    |z| = z_m."""
+    t = np.clip((np.abs(z) - (z_match - TAPER_LENGTH)) / TAPER_LENGTH,
+                0.0, 1.0)
+    w = 1.0 - t ** 4 * (35.0 - 84.0 * t + 70.0 * t ** 2 - 20.0 * t ** 3)
+    return 1.0 + SCREENING_OVERSHOOT * w
+
+
+if not 0.4 - 1e-9 <= TAPER_LENGTH <= MATCH_DISTANCE - 0.3 + 1e-9:
+    raise ValueError(f'TAPER_LENGTH {TAPER_LENGTH} m: needs >= 0.4 m (0.1 m '
+                     'elements) and must start past the edge rise '
+                     f'(<= MATCH_DISTANCE - 0.3 = {MATCH_DISTANCE - 0.3:.1f} m)')
+
 print(f'Data edge (S/G = 0.5): {edge_data:.4f} m; S/G at the IP '
       f'{fraction[0] * 1e3:.2f}e-3 = 2 x {half_at_ip * 1e3:.2f}e-3; inner tail '
       f'of one edge decays with e-folding length {decay * 100:.1f} cm '
@@ -264,8 +328,9 @@ def grid_for_edge(edge):
 
 
 def build_screening(edge):
-    """S for an edge at `edge` (S/G = 0.5 there): S = G for |z| >= z_match,
-    least squares to the moved target inside, integral preserved."""
+    """S for an edge at `edge` (S/G = (1 + eps)/2 there): S = G for
+    |z| >= z_match, least squares to the moved (and over-screened) target
+    inside, integral preserved."""
     grid = grid_for_edge(edge)
     knots, nodes = grid['knots'], grid['nodes']
     support_lo, support_hi = grid['support_lo'], grid['support_hi']
@@ -275,8 +340,10 @@ def build_screening(edge):
         raise ValueError(f'match point {z_match} m too far out')
 
     z_half = z[z <= z_match + 1e-9]
-    target_half = main_spline(z_half) * (one_edge_fraction(z_half - edge)
-                                         + one_edge_fraction(-z_half - edge))
+    target_half = (main_spline(z_half)
+                   * (one_edge_fraction(z_half - edge)
+                      + one_edge_fraction(-z_half - edge))
+                   * overshoot_factor(z_half, z_match))
     z_t = np.r_[-z_half[:0:-1], z_half]
     target = np.r_[target_half[:0:-1], target_half]
 
@@ -316,7 +383,8 @@ for case in cases:
     edge, z_match = case['edge'], case['z_match']
     s_fit, t_fit = case['screening'](z_fine), case['total'](z_fine)
     z_near = z_fine[z_fine < 4.0]
-    ratio = case['screening'](z_near) / case['main'](z_near)
+    ratio = (case['screening'](z_near) / case['main'](z_near)
+             / overshoot_factor(z_near, z_match))   # S / (k G), 0.5 at the edge
     i = np.argmax(ratio >= 0.5)
     case['edge_fit'] = np.interp(0.5, ratio[i - 1:i + 1], z_near[i - 1:i + 1])
     lengths = np.diff(case['element_boundaries'])
@@ -333,10 +401,13 @@ for case in cases:
 # ----------------------------------------------------------------- report
 print(f'\nScreening edge scan: {ELEMENT_LENGTH} m elements, S = G beyond '
       f'z_m = edge + {MATCH_DISTANCE} m (rounded up to a node)')
-print('  edge   z_m  node    S/G=0.5 at   S(0)  total(0)    int total'
-      '   total elements       min total  |total| beyond z_m')
+print(f'Over-screening eps = {SCREENING_OVERSHOOT:g}: S x {1 + SCREENING_OVERSHOOT:g}'
+      f' up to z_m - {TAPER_LENGTH:g} m, C3 taper to x 1 at z_m; '
+      f'edge where S/G = {0.5 * (1 + SCREENING_OVERSHOOT):g}')
+print('  edge   z_m  node   edge of fit   S(0)  total(0)    int total'
+      '   total elements    min total  |total| beyond z_m')
 print('   [m]   [m]  offset         [m]   [mT]       [T]  0-6 m [T m]'
-      '   on |z| <= z_m   edge..z_m [mT]                 [T]')
+      '   on |z| <= z_m   edge..z_m [T]                 [T]')
 for case in cases:
     elements = f'{case["n_elements"]}'
     if case['n_short']:
@@ -344,7 +415,7 @@ for case in cases:
     print(f'  {case["edge"]:.2f}  {case["z_match"]:.2f}  {case["offset"]:+.2f}'
           f'  {case["edge_fit"]:12.4f}  {case["screening"](0.0) * 1e3:5.1f}'
           f'  {case["total"](0.0):8.4f}  {case["total"].integrate(0.0, S_END):11.4f}'
-          f'   {elements:>14s}  {case["total_between_min"] * 1e3:14.2f}'
+          f'   {elements:>14s}  {case["total_between_min"]:13.4f}'
           f'  {case["total_beyond_max"]:18.1e}')
 
 sum_check = max(np.abs(case['main'](z_fine) - case['screening'](z_fine)
@@ -372,7 +443,9 @@ for case in cases:
 
 reference = next((case for case in cases if abs(case['edge'] - 1.40) < 1e-9),
                  None)
-if reference is not None:
+if reference is not None and SCREENING_OVERSHOOT != 0:
+    print('\n  (comparison with 001d only for SCREENING_OVERSHOOT = 0)')
+elif reference is not None:
     # 001d's total with its edge moved the same way (data edge -> node)
     shift = edge_data - reference['edge']
     z_cmp = z_fine[z_fine <= reference['z_match']]
@@ -394,6 +467,11 @@ if reference is not None:
           f'{np.abs(total_001d).max() * 1e3:.1f} mT (here: 0)')
 
 # -------------------------------------------------------------------- plot
+overshoot_note = (f', screening overshoot $\\varepsilon$ = {SCREENING_OVERSHOOT:g}'
+                  if SCREENING_OVERSHOOT else '')
+overshoot_tag = (f'_eps{SCREENING_OVERSHOOT:.2f}'.replace('.', 'p')
+                 if SCREENING_OVERSHOOT else '')
+
 # main, screening and total, one panel per edge
 n_cols = 1 if len(cases) <= 5 else 2
 n_rows = -(-len(cases) // n_cols)
@@ -404,7 +482,11 @@ axes_flat = axes_parts.T.ravel()                 # fill column by column
 for ax, case in zip(axes_flat, cases):
     ax.axhline(0, color='gray', lw=0.8)
     ax.axvline(case['edge'], color='gray', lw=0.8, ls=':',
-               label='edge (S/G = 0.5)')
+               label=f'edge (S/G = {0.5 * (1 + SCREENING_OVERSHOOT):g})')
+    if SCREENING_OVERSHOOT:
+        ax.axvline(case['z_match'] - TAPER_LENGTH, color='gray', lw=0.8,
+                   ls='-.', label=r'taper start (S $\times$ '
+                   f'{1 + SCREENING_OVERSHOOT:g} before)')
     ax.axvline(case['z_match'], color='gray', lw=0.8, ls='--',
                label='match point $z_m$ (S = G beyond)')
     ax.plot(z_fine, case['main'](z_fine), color='green', lw=1.5,
@@ -419,7 +501,10 @@ for ax, case in zip(axes_flat, cases):
     ax.grid(True, alpha=0.4)
 for ax in axes_parts[:, 0]:
     ax.set_ylabel(r'$B_s$ [T]')
-axes_parts[0, 0].set_ylim(-0.05 * MAIN_FIELD, 1.075 * MAIN_FIELD)
+s_max = max(case['screening'](z_fine).max() for case in cases)
+t_min = min(case['total'](z_fine).min() for case in cases)
+axes_parts[0, 0].set_ylim(min(-0.05 * MAIN_FIELD, t_min - 0.05 * MAIN_FIELD),
+                          max(1.075 * MAIN_FIELD, s_max + 0.075 * MAIN_FIELD))
 axes_parts[0, 0].set_xlim(0, S_END)
 handles, labels = axes_parts[0, 0].get_legend_handles_labels()
 spare = axes_flat[len(cases):]
@@ -435,13 +520,14 @@ else:
 for ax in axes_parts[-1, :]:
     if ax.axison:
         ax.set_xlabel('z [m]')
-fig_parts.suptitle(f'IDEA solenoids, main field {MAIN_FIELD:g} T: main, '
-                   'screening and total per screening edge')
+fig_parts.suptitle(f'IDEA solenoids, main field {MAIN_FIELD:g} T'
+                   f'{overshoot_note}: main, screening and total per '
+                   'screening edge')
 fig_parts.tight_layout()
 
 PLOT_DIR.mkdir(parents=True, exist_ok=True)
 out_path = (PLOT_DIR / 'IDEA_solenoid_screening_edge_scan_components_'
-            f'{field_tag(MAIN_FIELD)}.pdf')
+            f'{field_tag(MAIN_FIELD)}{overshoot_tag}.pdf')
 fig_parts.savefig(out_path, bbox_inches='tight', metadata=pdf_metadata())
 print(f'\nSaved {out_path}')
 
@@ -473,12 +559,13 @@ axes_real[0, 0].set_xlim(-S_END, S_END)
 handles, labels = axes_real[0, 0].get_legend_handles_labels()
 fig_real.legend(handles, labels, loc='upper center', ncol=3, fontsize=9,
                 bbox_to_anchor=(0.5, 0.975))
-fig_real.suptitle(f'IDEA solenoids, main field {MAIN_FIELD:g} T: field on '
-                  r'the beam axis, $\theta_b$ = ' f'{TILT_ANGLE} rad')
+fig_real.suptitle(f'IDEA solenoids, main field {MAIN_FIELD:g} T'
+                  f'{overshoot_note}: field on the beam axis, '
+                  r'$\theta_b$ = ' f'{TILT_ANGLE} rad')
 fig_real.tight_layout(rect=(0, 0, 1, 0.965))
 
 out_path = (PLOT_DIR / 'IDEA_solenoid_screening_edge_scan_real_field_'
-            f'{field_tag(MAIN_FIELD)}.pdf')
+            f'{field_tag(MAIN_FIELD)}{overshoot_tag}.pdf')
 fig_real.savefig(out_path, bbox_inches='tight', metadata=pdf_metadata())
 print(f'Saved {out_path}')
 
