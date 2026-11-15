@@ -394,6 +394,15 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   Φ tan(θ/2) (≈0.24 mrad vertical kick at 2 T), every ∫(A_m − a_m), m ≥ 2, is
   exactly 0. Local residuals to O(θ⁴), per-side integrals, and the A_4 relation
   in terms of T_q (closes note 15's p = 4 item).
+- `17_idea_main_and_screening_from_opera_curves.md` — (2026-11-15,
+  exploratory, not the paper pipeline) the IDEA main and screening solenoid
+  fields digitized from an Opera plot (`IDEA_solenoid_beam_axis_raw.json`,
+  digitizer in `17_scripts/`). 001c plots them. 001d removes the ripples
+  beyond 2.05 m (idealized screening), fits main and screening with
+  `LongitudinalFitter` (0.2 / 0.1 m elements; one analytic solenoid fits main
+  only to ±35 mT because of the iron) and computes the beam-frame A_0..A_4 to
+  O(θ²). Edges: screening start ±1.40 m, main ±2.89 m (010a's total edge is at
+  1.23 m). Open: sign of `TILT_ANGLE`, building BFE elements.
 
 ## Scripts without a dedicated note (summarised 2026-10-14 from docstrings)
 
