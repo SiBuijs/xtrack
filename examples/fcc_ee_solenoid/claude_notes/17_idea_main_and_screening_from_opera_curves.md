@@ -178,7 +178,7 @@ The method is in its docstring. Key points:
       boundaries.
   - BFieldExpansion elements could not be built on 2026-11-15: the prebuilt
     kernels predate the BFieldExpansion change of 2026-11-05 and segfault.
-- **Results.**
+- **Results (2 T).**
   - S/G = 0.5 lands on the node to 0.2 mm.
   - Fit − target at the edge: 5.4–5.7 mT rms (18 max).
   - ∫B_s total over 0–6 m: +1.88 T·m per m of edge shift (2.729 T·m at
@@ -187,7 +187,20 @@ The method is in its docstring. Key points:
   - The 1.40 m case equals 001d with its edge moved by 3.7 mm (1.404 →
     1.40 m), to 1.4 mT rms. Beyond z_m, 001d's total has 1.2 mT rms of
     G/S fit mismatch, where 001e has 0.
-- **Field strength.** `MAIN_FIELD` (default 2 T) scales the digitized
+- **Real field on the beam axis** (real-field figure, `TILT_ANGLE` = +0.015).
+  - B_s: main positive, screening negative (−S), total = main + screening.
+  - B_x of the total:
+    - +θ·B_s in the body (0.030 T at 2 T, 0.037 T at 2.5 T);
+    - a sharp negative peak at ±edge, of size max |A_1|: 0.066 → 0.089 T
+      for edges 1.20 → 1.60 m at 2 T (0.082 → 0.111 T at 2.5 T);
+    - exactly 0 beyond ±z_m.
+  - Beyond z_m, main and screening each still carry B_x (S·b′/2 grows with
+    S), but they cancel exactly. Their small wiggles at 3.5–5.5 m are the
+    fit's ripple in G′, amplified by S·b′/2. They cancel too.
+  - With θ = −0.015 (`solenoid_params.py`, 010a) every B_x flips sign.
+    B_s changes only at O(θ²).
+- **Field strength.** `MAIN_FIELD` (set at the top; the user set 2.5 T on
+  2026-11-15, and 2 T reproduces the data) scales the digitized
   curves by `MAIN_FIELD / OPERA_FIELD` (2 T) when they are loaded. The
   screening follows the main field, and all later steps are linear, so every
   field, integral and residual scales and the edges stay put. Checked at
