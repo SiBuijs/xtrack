@@ -165,18 +165,39 @@ def order_tag(
 # {model}_solenoids_...). The *bfe models are the SplineBoris cases with every
 # slice converted to xt.BFieldExpansion (bfe_setup.py); they share the field,
 # templates and knobs of their SplineBoris counterpart.
-SOLENOID_MODELS = ("splineboris", "bfe", "varsol", "partialmap", "partialmap_bfe")
+SOLENOID_MODELS = ("splineboris", "bfe", "varsol", "partialmap", "partialmap_bfe",
+                   "idea_bfe")
 # Models built from the analytic 004a templates at a --max-transverse-order
 # cap: only these carry order_tag() in their filenames. VarSol is linear-only
 # and the field map's order is fixed by the 004b fit.
 ORDER_TAGGED_MODELS = ("splineboris", "bfe")
 # The 2 T BNL field map (004b_install_partial_2T_map_in_fcc_ring.py).
 FIELD_MAP_MODELS = ("partialmap", "partialmap_bfe")
+# The IDEA main + screening solenoid from the digitized Opera curves
+# (idea_solenoid_field.py, 004a_build_idea_solenoid.py,
+# 004b_install_idea_solenoids_in_fcc_ring.py). Exploratory, not in the
+# paper's pipeline. Its case (edge, eps) goes into the filenames through
+# --output-tag, as idea_case_tag().
+IDEA_MODELS = ("idea_bfe",)
 
 
 def is_bfe_model(model: str) -> bool:
     """True for the models whose solenoids are xt.BFieldExpansion slices."""
-    return model in ("bfe", "partialmap_bfe")
+    return model in ("bfe", "partialmap_bfe", "idea_bfe")
+
+
+# Default over-screening taper of the IDEA screening (001e, 004a_build_idea).
+IDEA_DEFAULT_TAPER_LENGTH = 0.5
+
+
+def idea_case_tag(edge: float, eps: float,
+                  taper_length: float = IDEA_DEFAULT_TAPER_LENGTH) -> str:
+    """Filename-safe tag of an IDEA case, e.g. (1.40, 0.75) -> 'e1p40_eps0p75'
+    ('_t0p60' appended for a non-default taper length)."""
+    tag = f"e{edge:.2f}_eps{eps:.2f}".replace(".", "p")
+    if abs(taper_length - IDEA_DEFAULT_TAPER_LENGTH) > 1e-12:
+        tag += f"_t{taper_length:.2f}".replace(".", "p")
+    return tag
 
 
 def model_order_tag(
@@ -196,7 +217,9 @@ def add_model_argument(parser, *, default: str = "splineboris",
         help=(
             f"Solenoid model (default: {default}). bfe = the SplineBoris "
             "solenoids converted to BFieldExpansion; partialmap[_bfe] = the "
-            "2 T BNL field map up to 2.4 m from each IP, needs --b0 2.0."
+            "2 T BNL field map up to 2.4 m from each IP, needs --b0 2.0; "
+            "idea_bfe = the IDEA main + screening solenoid (001e), with "
+            "its case in --output-tag (idea_case_tag)."
         ),
     )
 

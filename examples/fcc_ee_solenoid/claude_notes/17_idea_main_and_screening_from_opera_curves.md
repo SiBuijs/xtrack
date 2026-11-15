@@ -126,9 +126,18 @@ For comparison:
 
 - **Same physics.** A_1 = θ(b + S b′/2) with θ = −0.015, applied to its own
   Bz, reproduces its Bx to 1.0 mT rms.
-- **Sign.** Its Bx matches **θ_b = −0.015** in the A_m formulas, which is the
-  sign of `THETA` in `solenoid_params.py` and 010a. 001d uses +0.015, so its
-  A_1 and A_3 have the opposite sign.
+- **Sign.** Its Bx matches **θ_b = −0.015** in the A_m formulas. 001d uses
+  +0.015, so its A_1 and A_3 have the opposite sign.
+  - **Corrected 2026-11-15:** θ_b is not `THETA`. θ_b is the solenoid
+    axis' angle from the beam (B_x = +θ_b B_s at the IP). `THETA`
+    (`TiltedSolenoid`, 004a, 010a) is the beam's angle from the solenoid
+    axis, B_x = −sin(`THETA`) B_s.
+  - So the ring's `THETA = −0.015` means θ_b = +0.015, which is what
+    001d/001e use. The 004a 2 T template has B_x(IP) = +0.030 T and a
+    negative edge peak; IDEA's B_x has the same signs.
+  - This figure therefore has the opposite tilt to every ring model.
+  - 001e now sets `TILT_ANGLE = −THETA` explicitly (in
+    `idea_solenoid_field.py`).
 - **Edge.** Its 50 % point is at ±1.23 m (= the 2 T half-length in
   `solenoid_params.py`), against 1.40 m for ours. Max slope 7.5–7.8 T/m
   against 8.6 T/m for ours.
@@ -149,8 +158,12 @@ The method is in its docstring. Key points:
   tail of ρ past the IP is an exponential with a self-consistent e-folding
   length of 42.9 cm. S(0) is 11.5 / 6.8 / 4.2 mT for edges at
   1.20 / 1.40 / 1.60 m.
-- **Match point z_m = edge + 1.0 m, on a node.** It moves with the edge
-  (user's choice). For |z| ≥ z_m the B-spline coefficients are G's, so the
+- **Match point z_m on a node; it moves with the edge** (user's choice).
+  Until 2026-11-15 z_m = edge + 1.0 m (`MATCH_DISTANCE`). Since then it is
+  the node past z_p + `TAPER_LENGTH`, with z_p the peak of S for ε = 0
+  (see the over-screening section). That is edge + 1.0 m for 1.20/1.25 m and
+  edge + 0.9 m for the other edges; at ε = 0 the total changes by ≤ 1.6 mT.
+  For |z| ≥ z_m the B-spline coefficients are G's, so the
   total is identically 0 and the elements stop at ±z_m. G's 0.2 m spline on
   the 0.1 m grid is exact (nested knots). The rest is a least-squares fit,
   integral preserved; it is C3 by construction.
@@ -197,8 +210,18 @@ The method is in its docstring. Key points:
   - Beyond z_m, main and screening each still carry B_x (S·b′/2 grows with
     S), but they cancel exactly. Their small wiggles at 3.5–5.5 m are the
     fit's ripple in G′, amplified by S·b′/2. They cancel too.
-  - With θ = −0.015 (`solenoid_params.py`, 010a) every B_x flips sign.
-    B_s changes only at O(θ²).
+  - These signs are the ring's (θ_b = −`THETA`, see the Sign bullet
+    above): the same as the 004a templates and 010a.
+- **A_0 formula bug (found 2026-11-15, note 18).** 001d's A_0 = b − θ²(s b/2
+  + s² b′/4) is not even dimensionally consistent. Rederived, it is
+  b − θ²(b/2 + s b′ + s² b″/4); against `TiltedSolenoid` (analytic 2 T) the
+  error falls from 5.1 to 0.06 mT.
+  - Fixed in `idea_solenoid_field.py`, so it applies to 001e. 001d is
+    unchanged, because the user asked to leave it alone.
+  - A_1..A_4 rederive correctly at O(θ²). At the sharp IDEA edge, though,
+    s·θ ≈ 2 cm is not small against the edge width, and the O(θ³)
+    remainder of A_1 is ~2.5 mT.
+  - The ring elements therefore use exact coefficients (note 18).
 - **Field strength.** `MAIN_FIELD` (set at the top; the user set 2.5 T on
   2026-11-15, and 2 T reproduces the data) scales the digitized
   curves by `MAIN_FIELD / OPERA_FIELD` (2 T) when they are loaded. The
@@ -225,14 +248,12 @@ The method is in its docstring. Key points:
   ~2.9 m).
 - **Chosen (user):** scale S by k(z) = 1 + ε·w(z) (`SCREENING_OVERSHOOT` = ε,
   `TAPER_LENGTH`).
-  - w = 1 for |z| ≤ z_m − `TAPER_LENGTH`, then a septic (C3) smoothstep to 0
-    at z_m.
-  - The taper ends at z_m (user: "should that not depend on z_m and the
-    edge"), so it moves with the edge, and S = G stays pinned from z_m
-    (≤ 2.6 m, before the main's edge).
+  - First version: w = 1 for |z| ≤ z_m − `TAPER_LENGTH`, then a septic (C3)
+    smoothstep to 0 at z_m = edge + `MATCH_DISTANCE` (user: "should that not
+    depend on z_m and the edge"). Superseded the same day by the
+    peak-anchored taper, below.
   - The edge keeps its measured shape, scaled by 1 + ε. Its half-plateau
     point (S/G = (1 + ε)/2) stays on the node.
-  - ε = 0 reproduces the earlier 001e coefficients exactly.
 - **Taper ≥ 0.4 m.** The 0.1 m quartic cannot follow a shorter transition:
   - a 0.3 m taper gives 0.17 T fit error;
   - a hard switch at z_s leaves 0.8 T, and the integral constraint pushes
@@ -251,30 +272,85 @@ The method is in its docstring. Key points:
   The anti-solenoid's outer fringe needs ~0.6 m to die out, so its z_m moves
   out by 0.2 m. The lobe's ramp, which cannot be shorter than 0.4 m, moves
   the total's zero crossing out to 1.53 m.
-- **Results (2.5 T, ε = 0.5, taper 0.5 m):**
-  - Same elements as ε = 0. The total is 0 beyond z_m, and the edge sits on
-    its node to 0.2 mm.
-  - Min total −1.12 T (edge 1.20 m) to −1.05 T (1.60 m), 2 cm into the taper.
-  - ∫B_s total over 0–6 m: 2.06–3.05 T·m, i.e. 0.85–0.88 T·m below ε = 0
-    (2.559 vs 3.412 T·m at 1.40 m).
-  - S(0) ×1.5–1.6 (the inner tail scales too); total(0) 3–8 mT lower.
-  - Fit − target: 34–35 mT max at the edge (scales with 1 + ε), 14–18 mT in
-    the taper.
-  - B_x (A_1): the edge peak grows to 0.14–0.18 T (from 0.08–0.11 T). A
-    second peak of the opposite sign, 0.067–0.075 T, sits 0.23 m before z_m.
-    A_2–A_4 grow ×1.5.
-- Figures carry `_eps0p50` (none for ε = 0):
-  - `IDEA_solenoid_screening_edge_scan_components_2p5T_eps0p50.pdf`;
-  - `..._real_field_2p5T_eps0p50.pdf`.
+- First-version results (2.5 T, ε = 0.5, taper 0.5 m, z_m = edge + 1.0 m):
+  min total −1.12 to −1.05 T; ∫B_s total 0.85–0.88 T·m below ε = 0; B_x
+  edge peak 0.14–0.18 T, opposite-sign peak 0.067–0.075 T. Figures
+  `..._2p5T_eps0p50.pdf` (now stale).
+
+### Peak-anchored taper (2026-11-15, current)
+
+- **Why.** With the taper ending at z_m (the user had set
+  `MATCH_DISTANCE` = 1.2 m locally), the total sat flat at about −1.05 T
+  from the S peak (1.76 m at edge 1.40 m) to the taper start (2.10 m), and
+  rose only in the taper. That gave a shoulder in B_s and a B_x tail ("the
+  extra kink"). The user asked for the matching to follow the peak of the
+  field instead, aligned with the peak for ε = 0.
+- **How.** z_p = peak of the ε = 0 target G·[ρ(z − e) + ρ(−z − e)]: the vertex
+  of a parabola over ±`PEAK_WINDOW` (0.10 m) around the argmax.
+  - The peak is flat (±5 cm costs 2–5 mT), so the raw argmax steps by up to
+    3 cm between edges, on vertices of the digitized ρ.
+  - z_p = edge + 0.411 m (1.20 m) … edge + 0.338 m (1.60 m), within 1.3 cm
+    of the fitted ε = 0 spline's peak.
+  - w = 1 for |z| ≤ z_p, then the septic taper over exactly `TAPER_LENGTH`
+    (settable, ≥ 0.4 m). z_m is the next node; S = G·ρ between the taper end
+    and z_m (< 0.1 m).
+  - The ε = 0 field and w both have zero slope at z_p, so the target's peak
+    stays at z_p for any ε (fitted peaks within 1.4 cm). `MATCH_DISTANCE` is
+    gone.
+  - Note: z_m itself cannot be the peak. S = G there, so there would be no
+    overshoot at the peak.
+- **Prototype comparison** (edge 1.40 m, 2.5 T; figure
+  `IDEA_solenoid_screening_overshoot_peak_anchor_2p5T.pdf`, scratch scripts
+  not kept):
+
+  | | taper, z_m [m] | min total | ∫ 0–6 m / negative part [T·m] | max \|B_x\| / opposite-sign |
+  |---|---|---|---|---|
+  | z_m = edge + 1.2, ε = 0.5 | 2.10–2.60 | −1.08 T | 2.35 / −0.89 | 0.162 / 0.076 T |
+  | peak-anchored, ε = 0.5 | 1.78–2.28, 2.30 | −1.07 T | 2.69 / −0.55 | 0.162 / 0.065 T |
+  | peak-anchored, ε = 0.73 | same | −1.59 T | 2.35 / −0.85 | 0.193 / 0.096 T |
+  | 010a at 2.5 T | — | −1.67 T | — / −0.90 | — |
+
+  - The lobe is shorter, so the same integral needs a larger ε.
+  - A 0.6 m taper needs ε 0.68 (instead of 0.73) and gives a 0.075 T
+    opposite-sign peak, with z_m 0.1 m further out.
+  - The user chose 0.5 m, as long as it stays settable.
+- **ε = 0.75** (user: "whatever you prefer"; chosen by me). It reproduces
+  010a's lobe:
+  - at edge 1.40 m: −0.650 B0 and −0.348 m × B0, against 010a's −0.67 B0
+    and −0.358 m × B0;
+  - at edge 1.30 m, 010a's own local-solenoid start: −0.661 B0 and
+    −0.364 m.
+- **Results (2.5 T, ε = 0.75, taper 0.5 m):**
+  - Same elements as ε = 0 (44–50). The total is 0 beyond z_m, and the edge
+    sits on its node to 0.2 mm.
+  - The total crosses zero 1.6 cm past the edge.
+  - Min total −1.67 T (−0.669 B0, edge 1.20 m) to −1.56 T (−0.625 B0,
+    1.60 m), 3–4 cm past z_p. Negative part −0.95 to −0.78 T·m.
+  - ∫B_s total over 0–6 m: 1.77–2.89 T·m, i.e. 0.99–1.17 T·m below ε = 0
+    (2.328 vs 3.411 T·m at 1.40 m).
+  - S(0) ×1.67–1.82; total(0) 3.5–10.5 mT lower.
+  - Fit − target: 38–40 mT max at the edge, 5–19 mT in the taper.
+  - B_x (A_1):
+    - edge peak 0.17–0.22 T (0.08–0.11 T at ε = 0);
+    - an opposite-sign peak of 0.094–0.108 T about 0.26 m past z_p,
+      mid-taper;
+    - A_2–A_4 ×1.75.
+- Figures (`_eps0p75`):
+  - `IDEA_solenoid_screening_edge_scan_components_2p5T_eps0p75.pdf`;
+  - `..._real_field_2p5T_eps0p75.pdf`.
 
 ## Open items / next steps
 
-- Decide the sign convention of `TILT_ANGLE` (+0.015 in 001d/001e, −0.015
-  elsewhere).
-- Turn A_0..A_4 into SplineBoris / BFieldExpansion elements and install them,
-  010a-style, with the chosen edge (001e) and a corrector layout to match.
-- Choose ε. 010a's −0.67 B0 would need ε ≈ 0.7–0.8. Optionally set ε from a
-  target ∫B_s instead (the field is linear in ε). Over-screening adds a
-  second B_x peak at the end of the taper, which the corrector layout has to
-  cover.
+- ~~Decide the sign convention of `TILT_ANGLE`~~: resolved 2026-11-15.
+  +0.015 = −`THETA` is the ring's convention (Sign bullet above).
+- ~~Turn A_0..A_4 into elements and install them~~: done 2026-11-15 as
+  BFieldExpansion with exact coefficients, installed and corrected through
+  004c (note 18).
+- 001d still has the wrong A_0 θ² term (see "A_0 formula bug"). Fix it there
+  only if the user agrees to touch 001d.
+- ε = 0.75 (010a's lobe at edge 1.40 m) is a default, not a physics
+  choice. Revisit it once the corrections run: ε could instead come from a
+  target ∫B_s, since the field is linear in ε. Over-screening adds an
+  opposite-sign B_x peak (~0.1 T) mid-taper, which the corrector layout has
+  to cover.
 - Multi-coil chain, if an analytic 3D field is ever needed.

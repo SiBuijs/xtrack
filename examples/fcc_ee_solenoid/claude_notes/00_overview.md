@@ -402,10 +402,20 @@ These two *_coupling_corrected.json files are the ones actually consumed by
   `LongitudinalFitter` (0.2 / 0.1 m elements; one analytic solenoid fits main
   only to ±35 mT because of the iron) and computes the beam-frame A_0..A_4 to
   O(θ²). Edges: screening start ±1.40 m, main ±2.89 m (010a's total edge is at
-  1.23 m). 001e moves the screening edge (1.20–1.60 m in 0.05 m steps, S = G
-  from z_m = edge + 1 m). It can also over-screen by ε (010a-style negative
-  total, C3 taper back to S = G at z_m). Open: sign of `TILT_ANGLE`, choice
-  of ε, building elements.
+  1.23 m). 001e moves the screening edge (1.20–1.60 m in 0.05 m steps). It
+  over-screens by ε (default 0.75, which gives 010a's negative lobe). S is
+  ×(1 + ε) up to z_p, the peak of S for ε = 0, then a C3 taper of
+  `TAPER_LENGTH` back to S = G from the node z_m (edge + 0.9–1.0 m).
+  The construction is in `idea_solenoid_field.py` since 2026-11-15.
+  `TILT_ANGLE` = −`THETA` is the ring's convention (resolved). 001d's A_0
+  has a wrong θ² term.
+- `18_idea_bfe_in_ring.md` — (2026-11-15, exploratory) the IDEA total as
+  `xt.BFieldExpansion` elements with exact (all orders in θ) coefficients
+  (`004a_build_idea_solenoid.py`), installed with 010a-style first-corrector
+  segments (`004b_install_idea_solenoids_in_fcc_ring.py`), and corrected by
+  `004c --model idea_bfe --b0 2.5 --output-tag e1p40_eps0p75`, then 004n.
+  The O(θ²) A_m were 20 mT off at the sharp IDEA edge. The first case is
+  2.5 T, edge 1.40 m, ε = 0.75; a broader study comes later.
 
 ## Scripts without a dedicated note (summarised 2026-10-14 from docstrings)
 

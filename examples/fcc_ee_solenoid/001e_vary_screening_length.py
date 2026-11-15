@@ -7,6 +7,11 @@ standalone). Notation as in 001d: G = main solenoid, S = screening *as
 plotted* (positive; its field is -S), total = G - S; on the solenoid axis,
 mirror-symmetric about the IP.
 
+The construction (steps 1-5 below) lives in idea_solenoid_field.py since
+2026-11-15, shared with 004a_build_idea_solenoid.py (the BFieldExpansion line
+for the ring). This script runs the edge scan, the report and the figures;
+the move left its output bit-identical.
+
 Edge: where S reaches half of its own plateau, S/G = (1 + eps)/2 with the
 over-screening eps below (0.5 without: the beam sees half of the main
 field). In the data (eps = 0) it is at z_e0 = 1.404 m (half of max S:
@@ -40,34 +45,55 @@ For each edge z_e in SCREENING_EDGES:
    G, which falls by up to ~1 T/m at 3-4 m, so shifting S itself by 0.2 m
    would leave up to 0.28 T uncancelled. With the fraction, the height of
    the edge follows the local G, and for eps = 0 S never exceeds G.
-4. Match point z_m = z_e + MATCH_DISTANCE, rounded up to a node; it moves
-   with the edge. For |z| >= z_m, S = G exactly: the B-spline coefficients
-   whose support reaches past z_m are G's. The total is identically zero
-   there, so its elements can stop at +-z_m.
+4. Peak z_p of the eps = 0 target (where S stops rising and starts to
+   follow G down): the vertex of a parabola fitted over +-PEAK_WINDOW
+   around its maximum. The peak is flat (+-5 cm costs 2-5 mT), so the raw
+   argmax follows the digitization (steps of up to 3 cm between edges);
+   the parabola gives z_p = z_e + 0.411 m (1.20 m) ... z_e + 0.338 m
+   (1.60 m), within 1.3 cm of the fitted spline's peak.
+   Match point z_m = z_p + TAPER_LENGTH, rounded up to a node: z_e + 1.0 m
+   for edges 1.20 and 1.25 m, z_e + 0.9 m for the others. Both move with
+   the edge. For |z| >= z_m, S = G exactly: the B-spline coefficients whose
+   support reaches past z_m are G's. The total is identically zero there,
+   so its elements can stop at +-z_m.
 5. The other coefficients: least squares to S_target on |z| <= z_m (1 mm
    grid, mirrored), integral preserved (as LongitudinalFitter's
    preserve_integral). A quartic B-spline on simple knots is C3 for any
    coefficients, so the connection between the moved edge and the match
    point needs no extra conditions.
-6. Beam-frame A_0..A_4 of the total, as 001d step 3 (same TILT_ANGLE).
+6. Beam-frame A_0..A_4 of the total, as 001d step 3. TILT_ANGLE = theta_b
+   = -solenoid_params.THETA = +0.015: theta_b is the solenoid axis' angle
+   from the beam, THETA (TiltedSolenoid, 004a, 010a) the beam's angle from
+   the solenoid axis. Checked against the 004a 2 T template: B_x(IP) =
+   +0.030 T there, +theta_b B_s here, and both have a negative edge peak.
 
 Over-screening (SCREENING_OVERSHOOT = eps, 2026-11-15), to mimic 010a, whose
-local solenoid next to the main coil pulls the total down to ~-0.67 B0:
-- k(z) = 1 + eps w(z), with w = 1 for |z| <= z_m - TAPER_LENGTH and a
-  septic smoothstep (C3) to 0 at z_m. So S is (1 + eps) x the eps = 0 target
-  from the IP (inner tail included) to the taper, and the total goes to
-  about -eps G there.
-- The taper ends at z_m, so it moves with the edge, and S = G is pinned
-  from the same point as for eps = 0. Here z_m <= 2.6 m, before the main
-  solenoid's own edge (G = G(0)/2 at ~2.9 m), so the screening matches the
-  main field there.
+local solenoid next to the main coil pulls the total down to -0.67 B0, with
+a negative region of -0.358 m x B0:
+- k(z) = 1 + eps w(z), with w = 1 for |z| <= z_p and a septic smoothstep
+  (C3) to 0 at z_p + TAPER_LENGTH. So S is (1 + eps) x the eps = 0 target
+  from the IP (inner tail included) to z_p, and the total has a single
+  negative lobe of about -eps G, deepest just past z_p.
+- The taper starts at the peak (user, 2026-11-15). Both S_eps=0 and w have
+  zero slope there, so the target's peak stays at z_p for every eps (fitted
+  peaks within 1.4 cm). Before, the taper ended at z_m = edge + 1.2 m. The
+  total then sat flat at about -1.05 T (eps = 0.5, edge 1.40 m) from the S
+  peak (1.76 m) to the taper start (2.10 m), and rose only in the taper: a
+  shoulder in B_s, and a B_x tail with its opposite-sign peak at 2.37 m.
+- Anchored at the peak the lobe is shorter, so the same integral needs a
+  larger eps. eps = 0.75 reproduces 010a's lobe at edge 1.40 m (-0.650 B0,
+  -0.348 m x B0; at edge 1.30 m, 010a's own local-solenoid start: -0.661 B0,
+  -0.364 m). The total is linear in eps, if a target integral is preferred.
+- z_m <= 2.5 m, before the main solenoid's own edge (G = G(0)/2 at
+  ~2.9 m), so the screening matches the main field there.
 - The edge keeps its measured shape, scaled by 1 + eps; its half-plateau
-  point stays on the node. eps = 0 reproduces the results below exactly
-  (same coefficients).
+  point stays on the node.
 - TAPER_LENGTH >= 0.4 m: the 0.1 m spline cannot follow anything shorter.
   Prototype at edge 1.40 m: a hard switch at z_m leaves 0.8 T fit error, and
   the integral constraint pushes it into S(0) (+54 mT); a 0.3 m taper gives
-  0.17 T.
+  0.17 T. Peak-anchored, at the same integral (edge 1.40 m): 0.6 m instead
+  of 0.5 m needs eps 0.68 instead of 0.73, and lowers the opposite-sign B_x
+  peak from 0.096 to 0.075 T, with z_m 0.1 m further out.
 - Alternatives prototyped (2026-11-15, edge 1.40 m, 2.5 T, all lowering the
   integral of the total by 0.90 T m):
   - an extra anti-solenoid section 1.40-2.00 m with the measured edge at
@@ -89,7 +115,7 @@ Choices (2026-11-15):
   into two 0.05 m elements. The split is exact: a quartic on half the
   interval is a quartic. `element_boundaries` per case holds the result,
   |z| <= z_m.
-- The match point moves with the edge.
+- The peak z_p and the match point move with the edge.
 - Symmetric pair of edges, so S(0) (the sum of both inner tails) changes
   with the edge: 11.5 mT for 1.20 m, 6.8 mT for 1.40 m, 4.2 mT for 1.60 m.
   The inner tail of one edge is extrapolated with e-folding length 42.9 cm.
@@ -99,7 +125,7 @@ Results (2026-11-15), 2 T, eps = 0, edges 1.20-1.60 m in 0.05 m steps:
   beyond z_m, and never negative between the edge and z_m.
 - Fit - target: 5.4-5.7 mT rms (18 max) at the edge, < 1 mT rms elsewhere,
   the same on both grids.
-- Total elements on |z| <= z_m: 44 (1.20 m) to 52 (1.60 m). The 0.05 m
+- Total elements on |z| <= z_m: 44 (1.20 m) to 50 (1.60 m). The 0.05 m
   offset edges include two 0.05 m elements at the IP.
 - Integral of the total over z = 0-6 m: 1.88 T m per m of edge shift
   (2.729 T m for 1.40 m).
@@ -107,275 +133,73 @@ Results (2026-11-15), 2 T, eps = 0, edges 1.20-1.60 m in 0.05 m steps:
   that move applied to 001d too, they agree to 1.4 mT rms (2.5 max) at the
   edge. Beyond z_m, 001d's total is 1.2 mT rms (6.4 max), because G and S
   are fitted independently there; here it is 0.
+- Moving z_m from edge + 1.0 m (MATCH_DISTANCE, until 2026-11-15) to the
+  node past z_p + TAPER_LENGTH changes the total by <= 1.6 mT.
 
-Results (2026-11-15), 2.5 T, eps = 0.5, TAPER_LENGTH = 0.5 m:
+Results (2026-11-15), 2.5 T, eps = 0.75, TAPER_LENGTH = 0.5 m:
 - The edge stays on its node to 0.2 mm, and the total is exactly zero
   beyond z_m. Same number of elements as eps = 0.
-- Minimum total -1.12 T (1.20 m) to -1.05 T (1.60 m), 2 cm past the start
-  of the taper.
-- Integral of the total over 0-6 m: 2.06 (1.20 m) to 3.05 T m (1.60 m),
-  0.85-0.88 T m below eps = 0 (2.559 against 3.412 T m for 1.40 m).
-- S(0) x 1.5-1.6 (22.3 mT at 1.20 m, 8.4 mT at 1.60 m); total(0) 3-8 mT
-  lower.
-- Fit - target: 34-35 mT max at the edge (x 1.5, it scales with the edge
-  height), 14-18 mT max in the taper.
-- max |A_1| (B_x) 0.14-0.18 T, against 0.08-0.11 T for eps = 0: the total's
-  edge is steeper. A second B_x peak, 0.067-0.075 T of the opposite sign,
-  sits 0.23 m before z_m (in the taper). A_2-A_4 grow by x 1.5.
+- The total crosses zero 1.6 cm past the edge. Minimum -1.67 T (-0.669 B0,
+  edge 1.20 m) to -1.56 T (-0.625 B0, 1.60 m), 3-4 cm past z_p. Negative
+  part -0.95 to -0.78 T m (-0.379 to -0.313 m x B0).
+- Integral of the total over 0-6 m: 1.77 (1.20 m) to 2.89 T m (1.60 m),
+  0.99-1.17 T m below eps = 0 (2.328 against 3.411 T m for 1.40 m).
+- S(0) x 1.67-1.82 (24.9 mT at 1.20 m, 8.7 mT at 1.60 m); total(0)
+  3.5-10.5 mT lower.
+- Fit - target: 38-40 mT max at the edge (it scales with the edge height,
+  x 1.75), 5-19 mT max in the taper.
+- max |A_1| (B_x) 0.17-0.22 T, against 0.08-0.11 T for eps = 0: the total's
+  edge is steeper. A second B_x peak, 0.094-0.108 T of the opposite sign,
+  sits about 0.26 m past z_p (mid-taper). A_2-A_4 grow by x 1.75.
 """
-
-from pathlib import Path
-import json
 
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.interpolate import BSpline
 
 from aperture_study_io import PLOT_DIR, pdf_metadata
+from idea_solenoid_field import (
+    DZ,
+    ELEMENT_LENGTH,
+    INNER_TAIL_WINDOW,
+    OPERA_FIELD,
+    S_END,
+    TILT_ANGLE,
+    IdeaSolenoidData,
+    beam_frame_coefficients,
+    overshoot_factor,
+)
 from solenoid_params import field_tag
-from xtrack._temp.splineboris.longitudinal_fitter import LongitudinalFitter
-
-HERE = Path(__file__).resolve().parent
-DATA_FILE = HERE / 'IDEA_solenoid_beam_axis_raw.json'
 
 MAIN_FIELD = 2.5           # T, main-solenoid field (nominal, at the IP)
-OPERA_FIELD = 2.0          # T, nominal main field of the digitized Opera curves
 
-# Ripple removal and G fit: as in 001d.
-DZ = 1e-3                  # m, common grid step (raw resolution ~3.4 mm)
-Z_CUT = 2.05               # m, ripples in B start here
-FIT_WINDOW = (1.70, Z_CUT) # m, exponential fit of the clean edge of B
-BLEND = 0.05               # m, cosine blend raw -> fit, ending at Z_CUT
-S_END = 6.0                # m, spline range +-S_END
-MAIN_ELEMENT_LENGTH = 0.2  # m, G fit
-
-ELEMENT_LENGTH = 0.1       # m, grid of the screening and total splines
 SCREENING_EDGES = [1.20, 1.25, 1.30, 1.35, 1.40,  # m, S/G = 0.5;
                    1.45, 1.50, 1.55, 1.60]        # multiples of 0.05 m
-MATCH_DISTANCE = 1.0       # m, S = G beyond edge + this (rounded up to a node)
-INNER_TAIL_WINDOW = (0.5, 1.0)  # m, e-folding fit of one edge's inner tail
 
 # Over-screening (as 010a's local solenoid): S x (1 + eps) from the IP to
-# z_m - TAPER_LENGTH, back to x 1 at z_m with a C3 taper. 0 -> no overshoot.
-SCREENING_OVERSHOOT = 0.5  # eps
+# z_p, the peak of S for eps = 0, then a C3 taper of TAPER_LENGTH back to x 1.
+# S = G from the first node past the taper (z_m). eps = 0 -> no overshoot.
+SCREENING_OVERSHOOT = 0.75  # eps (0.75: 010a's negative lobe at edge 1.40 m)
 TAPER_LENGTH = 0.5         # m, >= 0.4 m (the 0.1 m spline cannot follow less)
 
-TILT_ANGLE = 0.015         # rad, theta_b, as 001d (0 -> A_m = a_m)
-
-DEG = 4                    # quartic B-splines, as LongitudinalFitter
-
-
-def load_raw_curve(curves, key):
-    """Raw points with repeated z (row-scanned steep parts) averaged."""
-    z = np.array(curves[key]['z'])
-    bz = np.array(curves[key]['Bz'])
-    z_unique, inverse = np.unique(z, return_inverse=True)
-    bz_mean = np.bincount(inverse, bz) / np.bincount(inverse)
-    return z_unique, bz_mean
-
-
-def fit_on_axis_bs(z_data, bs_data, element_length):
-    """001d's fit: C3 quartic B-spline of ("Bs", 0) on +-S_END, data mirrored
-    about the IP, field zero at both ends, integral preserved."""
-    z_mirror = np.r_[-z_data[::-1], z_data]
-    bs_mirror = np.r_[bs_data[::-1], bs_data]
-    unique = np.r_[True, np.diff(z_mirror) > 0]      # z = 0 only once
-    fitter = LongitudinalFitter(
-        s_start=-S_END, s_end=S_END,
-        n_elements=int(round(2 * S_END / element_length)),
-        end_condition='zero', preserve_integral=True)
-    fitter.fit(z_mirror[unique], bs_mirror[unique], ('Bs', 0))
-    return fitter, fitter.splines[('Bs', 0)]
-
-
-def beam_frame_coefficients(spline, s, theta):
-    """A_m at x = y = 0 in the beam frame, to O(theta^2), as 001d step 3
-    (b_s^(5) term of A_4 dropped)."""
-    b0, b1, b2, b3, b4 = (spline.derivative(k)(s) if k else spline(s)
-                          for k in range(5))
-    th2 = theta ** 2
-    return {
-        'A0': b0 - th2 * (s / 2 * b0 + s ** 2 / 4 * b1),
-        'A1': theta * (b0 + s / 2 * b1),
-        'A2': -0.5 * b1 + th2 * (1.5 * b1 + 1.25 * s * b2 + 3 / 16 * s ** 2 * b3),
-        'A3': -theta * (1.5 * b2 + 0.375 * s * b3),
-        'A4': 0.375 * b3 - th2 * (3.75 * b3 + 27 / 16 * s * b4),
-    }
-
-
-# --------------------------------------- data, ripple removal (001d step 1)
-with open(DATA_FILE) as fid:
-    curves = json.load(fid)['curves']
-
-z_g, bz_g = load_raw_curve(curves, 'main_only')
-z_b, bz_b = load_raw_curve(curves, 'both')
-
-field_scale = MAIN_FIELD / OPERA_FIELD          # everything below is linear
-bz_g = field_scale * bz_g
-bz_b = field_scale * bz_b
+# --------------------- data, ripple removal, G fit, rho (idea_solenoid_field)
+data = IdeaSolenoidData(MAIN_FIELD)
 print(f'Main field {MAIN_FIELD:g} T: Opera curves ({OPERA_FIELD:g} T) '
-      f'scaled by {field_scale:.4f}')
-
-z = np.round(np.arange(0.0, z_g.max() + 0.5 * DZ, DZ), 9)
-main = np.interp(z, z_g, bz_g)
-both_raw = np.interp(z, z_b, bz_b, right=np.nan)
-
-mask_fit = (z >= FIT_WINDOW[0]) & (z <= FIT_WINDOW[1])
-slope, intercept = np.polyfit(z[mask_fit], np.log(both_raw[mask_fit]), 1)
-both_tail = np.exp(intercept + slope * z)
-weight = np.clip((z - (Z_CUT - BLEND)) / BLEND, 0.0, 1.0)
-weight = 0.5 * (1.0 - np.cos(np.pi * weight))
-both_raw_or_tail = np.where(np.isnan(both_raw), both_tail, both_raw)
-both_clean = (1.0 - weight) * both_raw_or_tail + weight * both_tail
-screening_clean = main - both_clean
-
-# ------------------------- G fit (001d step 2), on the two 0.1 m grids
-main_fitter, main_spline = fit_on_axis_bs(z_g, bz_g, MAIN_ELEMENT_LENGTH)
-# 001d's screening fit, the reference for the 1.40 m edge
-_, screening_001d = fit_on_axis_bs(z, screening_clean, ELEMENT_LENGTH)
-main_zero_beyond = BSpline(main_spline.t, main_spline.c, DEG,
-                           extrapolate=False)    # NaN beyond +-S_END -> 0
-
-
-def make_grid(offset):
-    """ELEMENT_LENGTH grid on +-(S_END + offset), nodes at offset + k *
-    ELEMENT_LENGTH, field zero at the ends; G projected onto it."""
-    s_end = S_END + offset
-    grid = LongitudinalFitter(s_start=-s_end, s_end=s_end,
-                              n_elements=int(round(2 * s_end / ELEMENT_LENGTH)),
-                              end_condition='zero')
-    z_dense = np.linspace(-s_end, s_end, int(round(2 * s_end / 5e-4)) + 1)
-    g_dense = np.nan_to_num(main_zero_beyond(z_dense))
-    grid.fit(z_dense, g_dense, ('Bs', 0))
-    main = grid.splines[('Bs', 0)]
-    knots = grid.knots
-    support_lo, support_hi = knots[:-DEG - 1], knots[DEG + 1:]
-    return dict(offset=offset, s_end=s_end, knots=knots, nodes=grid.nodes,
-                main=main, main_coeffs=main.c.copy(),
-                support_lo=support_lo, support_hi=support_hi,
-                basis_integral=(support_hi - support_lo) / (DEG + 1),
-                projection_error=np.abs(main(z_dense) - g_dense).max())
-
-
-grids = {offset: make_grid(offset)
-         for offset in (0.0, 0.5 * ELEMENT_LENGTH)}
-for grid in grids.values():
-    print(f'G ({main_fitter.n_elements} elements of {main_fitter.delta:.2f} m) '
+      f'scaled by {data.field_scale:.4f}')
+for grid in data.grids.values():
+    print(f'G ({data.main_fitter.n_elements} elements of '
+          f'{data.main_fitter.delta:.2f} m) '
           f'on the {ELEMENT_LENGTH:.2f} m grid with nodes at '
           f'{grid["offset"]:.2f} m + k {ELEMENT_LENGTH:.2f} m: max error '
           f'{grid["projection_error"]:.1e} T')
-
-# --------------------------------- screening fraction, split into two edges
-z_profile = z[z <= 4.0]
-fraction = 1.0 - both_clean[z <= 4.0] / main_spline(z_profile)   # S/G
-i_half = np.argmax(fraction >= 0.5)
-edge_data = np.interp(0.5, fraction[i_half - 1:i_half + 1],
-                      z_profile[i_half - 1:i_half + 1])
-half_at_ip = 0.5 * fraction[0]                 # each edge's share at z = 0
-
-mask_tail = ((z_profile >= INNER_TAIL_WINDOW[0])
-             & (z_profile <= INNER_TAIL_WINDOW[1]))
-decay = 0.3
-for _ in range(200):
-    one_edge = fraction - half_at_ip * np.exp(-z_profile / decay)
-    decay_new = 1.0 / np.polyfit(z_profile[mask_tail],
-                                 np.log(one_edge[mask_tail]), 1)[0]
-    if abs(decay_new - decay) < 1e-9:
-        break
-    decay = decay_new
-else:
-    raise RuntimeError('inner-tail e-folding length did not converge')
-u_data = z_profile - edge_data
-
-
-def one_edge_fraction(u):
-    """rho(u), u = distance from the edge (negative towards the IP)."""
-    u = np.asarray(u, dtype=float)
-    beyond_ip = half_at_ip * np.exp(np.minimum(u + edge_data, 0.0) / decay)
-    return np.where(u >= -edge_data, np.interp(u, u_data, one_edge),
-                    beyond_ip)
-
-
-def overshoot_factor(z, z_match):
-    """k(z) = 1 + eps w(z): w = 1 for |z| <= z_m - TAPER_LENGTH, then a
-    septic smoothstep (derivatives 1-3 zero at both ends, so C3) to 0 at
-    |z| = z_m."""
-    t = np.clip((np.abs(z) - (z_match - TAPER_LENGTH)) / TAPER_LENGTH,
-                0.0, 1.0)
-    w = 1.0 - t ** 4 * (35.0 - 84.0 * t + 70.0 * t ** 2 - 20.0 * t ** 3)
-    return 1.0 + SCREENING_OVERSHOOT * w
-
-
-if not 0.4 - 1e-9 <= TAPER_LENGTH <= MATCH_DISTANCE - 0.3 + 1e-9:
-    raise ValueError(f'TAPER_LENGTH {TAPER_LENGTH} m: needs >= 0.4 m (0.1 m '
-                     'elements) and must start past the edge rise '
-                     f'(<= MATCH_DISTANCE - 0.3 = {MATCH_DISTANCE - 0.3:.1f} m)')
-
-print(f'Data edge (S/G = 0.5): {edge_data:.4f} m; S/G at the IP '
-      f'{fraction[0] * 1e3:.2f}e-3 = 2 x {half_at_ip * 1e3:.2f}e-3; inner tail '
-      f'of one edge decays with e-folding length {decay * 100:.1f} cm '
-      f'(self-consistent, z = {INNER_TAIL_WINDOW[0]}-{INNER_TAIL_WINDOW[1]} m)')
+print(f'Data edge (S/G = 0.5): {data.edge_data:.4f} m; S/G at the IP '
+      f'{data.fraction[0] * 1e3:.2f}e-3 = 2 x {data.half_at_ip * 1e3:.2f}e-3; '
+      f'inner tail of one edge decays with e-folding length '
+      f'{data.decay * 100:.1f} cm (self-consistent, z = '
+      f'{INNER_TAIL_WINDOW[0]}-{INNER_TAIL_WINDOW[1]} m)')
 
 # ------------------------------------------ constrained fit for each edge
-def grid_for_edge(edge):
-    """The grid with a node on `edge`: nodes at k * ELEMENT_LENGTH, or offset
-    by ELEMENT_LENGTH / 2."""
-    half_steps = edge / (0.5 * ELEMENT_LENGTH)
-    if abs(half_steps - round(half_steps)) > 1e-9:
-        raise ValueError(f'edge {edge} m is not a multiple of '
-                         f'{0.5 * ELEMENT_LENGTH} m')
-    return grids[0.0 if round(half_steps) % 2 == 0 else 0.5 * ELEMENT_LENGTH]
-
-
-def build_screening(edge):
-    """S for an edge at `edge` (S/G = (1 + eps)/2 there): S = G for
-    |z| >= z_match, least squares to the moved (and over-screened) target
-    inside, integral preserved."""
-    grid = grid_for_edge(edge)
-    knots, nodes = grid['knots'], grid['nodes']
-    support_lo, support_hi = grid['support_lo'], grid['support_hi']
-    basis_integral, main_coeffs = grid['basis_integral'], grid['main_coeffs']
-    z_match = nodes[np.searchsorted(nodes, edge + MATCH_DISTANCE - 1e-9)]
-    if z_match > z_profile.max() - 0.5:
-        raise ValueError(f'match point {z_match} m too far out')
-
-    z_half = z[z <= z_match + 1e-9]
-    target_half = (main_spline(z_half)
-                   * (one_edge_fraction(z_half - edge)
-                      + one_edge_fraction(-z_half - edge))
-                   * overshoot_factor(z_half, z_match))
-    z_t = np.r_[-z_half[:0:-1], z_half]
-    target = np.r_[target_half[:0:-1], target_half]
-
-    free = (support_lo >= -z_match - 1e-9) & (support_hi <= z_match + 1e-9)
-    coeffs = main_coeffs.copy()                  # fixed ones: G's
-    K = BSpline.design_matrix(z_t, knots, DEG).tocsc()
-    K_free = K[:, np.flatnonzero(free)]
-    rhs = target - K[:, np.flatnonzero(~free)] @ coeffs[~free]
-    normal = (K_free.T @ K_free).toarray()
-    c_lsq = np.linalg.solve(normal, K_free.T @ rhs)
-
-    # integral over |z| <= z_m equal to the target's (S = G beyond)
-    required = (np.trapezoid(target, z_t)
-                + 2 * grid['main'].integrate(z_match, grid['s_end'])
-                - basis_integral[~free] @ coeffs[~free])
-    w = basis_integral[free]
-    normal_inv_w = np.linalg.solve(normal, w)
-    coeffs[free] = (c_lsq - normal_inv_w * (w @ c_lsq - required)
-                    / (w @ normal_inv_w))
-
-    screening = BSpline(knots, coeffs, DEG)
-    total = BSpline(knots, main_coeffs - coeffs, DEG)
-    # elements of the total on |z| <= z_m, with a boundary at the IP
-    inside = nodes[np.abs(nodes) <= z_match + 1e-9]
-    boundaries = np.unique(np.round(np.r_[inside, 0.0], 12))
-    return dict(edge=edge, z_match=z_match, offset=grid['offset'],
-                main=grid['main'], screening=screening, total=total,
-                z_target=z_half, target=target_half,
-                element_boundaries=boundaries)
-
-
-cases = [build_screening(edge) for edge in SCREENING_EDGES]
+cases = [data.build_case(edge, SCREENING_OVERSHOOT, TAPER_LENGTH)
+         for edge in SCREENING_EDGES]
 
 z_fine = np.round(np.arange(0.0, S_END + 0.5 * DZ, DZ), 9)
 s_coef = np.round(np.arange(-S_END, S_END + 0.5 * DZ, DZ), 9)
@@ -384,7 +208,8 @@ for case in cases:
     s_fit, t_fit = case['screening'](z_fine), case['total'](z_fine)
     z_near = z_fine[z_fine < 4.0]
     ratio = (case['screening'](z_near) / case['main'](z_near)
-             / overshoot_factor(z_near, z_match))   # S / (k G), 0.5 at the edge
+             / overshoot_factor(z_near, case['z_peak'], SCREENING_OVERSHOOT,
+                                TAPER_LENGTH))   # S/(k G), 0.5 at edge
     i = np.argmax(ratio >= 0.5)
     case['edge_fit'] = np.interp(0.5, ratio[i - 1:i + 1], z_near[i - 1:i + 1])
     lengths = np.diff(case['element_boundaries'])
@@ -399,20 +224,22 @@ for case in cases:
     case['total_between_min'] = t_fit[between].min()
 
 # ----------------------------------------------------------------- report
-print(f'\nScreening edge scan: {ELEMENT_LENGTH} m elements, S = G beyond '
-      f'z_m = edge + {MATCH_DISTANCE} m (rounded up to a node)')
+print(f'\nScreening edge scan: {ELEMENT_LENGTH} m elements; z_p = peak of S '
+      f'for eps = 0; S = G beyond z_m = z_p + {TAPER_LENGTH:g} m (rounded up '
+      'to a node)')
 print(f'Over-screening eps = {SCREENING_OVERSHOOT:g}: S x {1 + SCREENING_OVERSHOOT:g}'
-      f' up to z_m - {TAPER_LENGTH:g} m, C3 taper to x 1 at z_m; '
+      f' up to z_p, C3 taper of {TAPER_LENGTH:g} m to x 1; '
       f'edge where S/G = {0.5 * (1 + SCREENING_OVERSHOOT):g}')
-print('  edge   z_m  node   edge of fit   S(0)  total(0)    int total'
+print('  edge    z_p   z_m  node   edge of fit   S(0)  total(0)    int total'
       '   total elements    min total  |total| beyond z_m')
-print('   [m]   [m]  offset         [m]   [mT]       [T]  0-6 m [T m]'
+print('   [m]    [m]   [m]  offset         [m]   [mT]       [T]  0-6 m [T m]'
       '   on |z| <= z_m   edge..z_m [T]                 [T]')
 for case in cases:
     elements = f'{case["n_elements"]}'
     if case['n_short']:
         elements += f' ({case["n_short"]} x {0.5 * ELEMENT_LENGTH:.2f} m)'
-    print(f'  {case["edge"]:.2f}  {case["z_match"]:.2f}  {case["offset"]:+.2f}'
+    print(f'  {case["edge"]:.2f}  {case["z_peak"]:.3f}  {case["z_match"]:.2f}'
+          f'  {case["offset"]:+.2f}'
           f'  {case["edge_fit"]:12.4f}  {case["screening"](0.0) * 1e3:5.1f}'
           f'  {case["total"](0.0):8.4f}  {case["total"].integrate(0.0, S_END):11.4f}'
           f'   {elements:>14s}  {case["total_between_min"]:13.4f}'
@@ -447,12 +274,12 @@ if reference is not None and SCREENING_OVERSHOOT != 0:
     print('\n  (comparison with 001d only for SCREENING_OVERSHOOT = 0)')
 elif reference is not None:
     # 001d's total with its edge moved the same way (data edge -> node)
-    shift = edge_data - reference['edge']
+    shift = data.edge_data - reference['edge']
     z_cmp = z_fine[z_fine <= reference['z_match']]
-    fraction_001d = (screening_001d(z_cmp + shift)
-                     / main_spline(z_cmp + shift))
+    fraction_001d = (data.screening_001d(z_cmp + shift)
+                     / data.main_spline(z_cmp + shift))
     diff = (reference['total'](z_cmp)
-            - main_spline(z_cmp) * (1.0 - fraction_001d))
+            - data.main_spline(z_cmp) * (1.0 - fraction_001d))
     print(f'\n  edge 1.40 m against 001d (unconstrained S fit), its edge moved '
           f'by the same {-shift * 1e3:.1f} mm, difference of the totals:')
     for z_min, z_max in [(0.0, 1.2), (1.2, 1.7), (1.7, reference['z_match'])]:
@@ -461,7 +288,8 @@ elif reference is not None:
               f'{np.sqrt(np.mean(diff[mask] ** 2)) * 1e3:.2f} mT, max '
               f'{np.abs(diff[mask]).max() * 1e3:.1f} mT')
     beyond = z_fine >= reference['z_match']
-    total_001d = main_spline(z_fine[beyond]) - screening_001d(z_fine[beyond])
+    total_001d = (data.main_spline(z_fine[beyond])
+                  - data.screening_001d(z_fine[beyond]))
     print(f'    beyond z_m = {reference["z_match"]:.2f} m, 001d total: rms '
           f'{np.sqrt(np.mean(total_001d ** 2)) * 1e3:.2f} mT, max '
           f'{np.abs(total_001d).max() * 1e3:.1f} mT (here: 0)')
@@ -483,10 +311,11 @@ for ax, case in zip(axes_flat, cases):
     ax.axhline(0, color='gray', lw=0.8)
     ax.axvline(case['edge'], color='gray', lw=0.8, ls=':',
                label=f'edge (S/G = {0.5 * (1 + SCREENING_OVERSHOOT):g})')
-    if SCREENING_OVERSHOOT:
-        ax.axvline(case['z_match'] - TAPER_LENGTH, color='gray', lw=0.8,
-                   ls='-.', label=r'taper start (S $\times$ '
-                   f'{1 + SCREENING_OVERSHOOT:g} before)')
+    ax.axvline(case['z_peak'], color='gray', lw=0.8, ls='-.',
+               label=r'$z_p$: peak of S for $\varepsilon$ = 0'
+               + (r', taper start (S $\times$ '
+                  f'{1 + SCREENING_OVERSHOOT:g} before)'
+                  if SCREENING_OVERSHOOT else ''))
     ax.axvline(case['z_match'], color='gray', lw=0.8, ls='--',
                label='match point $z_m$ (S = G beyond)')
     ax.plot(z_fine, case['main'](z_fine), color='green', lw=1.5,
@@ -496,7 +325,7 @@ for ax, case in zip(axes_flat, cases):
     ax.plot(z_fine, case['total'](z_fine), color='black', lw=1.5,
             label='total = G $-$ S')
     ax.text(0.98, 0.94, f'edge {case["edge"]:.2f} m, '
-            f'$z_m$ = {case["z_match"]:.2f} m',
+            f'$z_p$ = {case["z_peak"]:.2f} m, $z_m$ = {case["z_match"]:.2f} m',
             transform=ax.transAxes, ha='right', va='top', fontsize=9)
     ax.grid(True, alpha=0.4)
 for ax in axes_parts[:, 0]:

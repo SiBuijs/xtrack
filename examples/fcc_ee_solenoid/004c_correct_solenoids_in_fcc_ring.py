@@ -9,6 +9,7 @@ import xtrack as xt
 
 from solenoid_params import (
     FIELD_MAP_MODELS,
+    IDEA_MODELS,
     MAIN_SOLENOID_B0,
     add_b0_argument,
     add_max_order_argument,
@@ -26,14 +27,19 @@ parser = argparse.ArgumentParser(
 )
 parser.add_argument(
     '--model',
-    choices=['splineboris', 'bfe', 'varsol', 'partialmap', 'partialmap_bfe'],
+    choices=['splineboris', 'bfe', 'varsol', 'partialmap', 'partialmap_bfe',
+             'idea_bfe'],
     default='splineboris',
     help='Solenoid model to correct (default: splineboris). partialmap = the '
          '2 T BNL field map up to 2.4 m from each IP '
          '(004b_install_partial_2T_map_in_fcc_ring.py); needs --b0 2.0. '
          'bfe / partialmap_bfe = the same with the solenoid slices converted '
          'to BFieldExpansion (004b --model bfe / partialmap_bfe), valid at '
-         'nominal field only (bfe_setup.check_bfe_nominal_field).',
+         'nominal field only (bfe_setup.check_bfe_nominal_field). idea_bfe = '
+         'the IDEA main + screening solenoid '
+         '(004b_install_idea_solenoids_in_fcc_ring.py), exploratory; its case '
+         'goes in --output-tag (solenoid_params.idea_case_tag, e.g. '
+         'e1p40_eps0p75) with the matching --b0.',
 )
 add_b0_argument(parser, default=MAIN_SOLENOID_B0)
 add_max_order_argument(parser)
@@ -135,6 +141,17 @@ for _map_model in FIELD_MAP_MODELS:
     )
 if args.model in FIELD_MAP_MODELS and args.b0 != 2.0:
     raise SystemExit(f'--model {args.model} is the 2 T BNL field map: use --b0 2.0.')
+# The IDEA solenoid (exploratory): the case (edge, eps) is in the tag, the
+# order is fixed by its construction (004a_build_idea_solenoid.py).
+for _idea_model in IDEA_MODELS:
+    _MODEL_LATTICE_PATHS[_idea_model] = (
+        f'temp_fcc_ee_lcc_{_idea_model}_solenoids_{FIELD_TAG}{IN_TAG}.json',
+        f'fccee_z_lcc_{_idea_model}_solenoids_coupling_corrected_{FIELD_TAG}{OUT_TAG}.json',
+    )
+if args.model in IDEA_MODELS and not IN_TAG:
+    raise SystemExit(f'--model {args.model} needs the IDEA case in --output-tag '
+                     '(solenoid_params.idea_case_tag), e.g. --b0 2.5 '
+                     '--output-tag e1p40_eps0p75.')
 
 INPUT_LATTICE_JSON = HERE / _MODEL_LATTICE_PATHS[args.model][0]
 OUTPUT_LATTICE_JSON = HERE / _MODEL_LATTICE_PATHS[args.model][1]

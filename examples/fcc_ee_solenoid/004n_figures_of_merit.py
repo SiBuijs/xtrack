@@ -32,7 +32,9 @@ For `on`, against `off` (corrected - bare, closed ring):
   between the two edges, normalised with the bare W matrices.
 
 Usage: python 004n_figures_of_merit.py --b0 3.0 [--max-transverse-order N]
-       [--output-tag TAG] [--model {splineboris,bfe,varsol,partialmap,partialmap_bfe}]
+       [--output-tag TAG] [--model {splineboris,bfe,varsol,partialmap,partialmap_bfe,idea_bfe}]
+       (idea_bfe: the IDEA case in --output-tag, e.g. --b0 2.5 --output-tag
+       e1p40_eps0p75, as 004c)
 """
 import argparse
 import json
@@ -65,7 +67,7 @@ parser.add_argument('--output-tag', default='',
                     help='Same as 004c --output-tag: selects the lattice.')
 parser.add_argument('--model', default='splineboris',
                     choices=['splineboris', 'bfe', 'varsol',
-                             'partialmap', 'partialmap_bfe'],
+                             'partialmap', 'partialmap_bfe', 'idea_bfe'],
                     help='Same as 004c --model (default: splineboris).')
 args = parser.parse_args()
 
